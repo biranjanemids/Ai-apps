@@ -1,0 +1,31 @@
+{
+  "name": "multi-model-api",
+  "version": "1.0.0",
+  "description": "OpenAI-compatible HTTP API gateway for multiple AI model providers",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fastify/cors": "^9.0.1",
+    "@fastify/rate-limit": "^9.1.0",
+    "@fastify/request-context": "^5.1.0",
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.4.5",
+    "js-yaml": "^4.1.0",
+    "ollama": "^0.5.9",
+    "openai": "^4.52.7",
+    "fastify": "^4.28.1",
+    "pino-pretty": "^11.2.1",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.9",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.3"
+  }
+}

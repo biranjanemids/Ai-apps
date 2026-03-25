@@ -1,0 +1,73 @@
+# Model registry — maps public model IDs to provider + upstream model name.
+# To add a new model: append an entry here, no code changes required.
+#
+# Fields:
+#   id          — the model ID clients use in requests   (e.g. "gpt-4o")
+#   provider    — one of: openai | gemini | ollama | grok
+#   upstream    — the actual model name sent to the provider's API
+#   description — human-readable label shown in /v1/models
+
+models:
+  # ── OpenAI ──────────────────────────────────────────────────────────────────
+  - id: gpt-4o
+    provider: openai
+    upstream: gpt-4o
+    description: "OpenAI GPT-4o (multimodal)"
+
+  - id: gpt-4o-mini
+    provider: openai
+    upstream: gpt-4o-mini
+    description: "OpenAI GPT-4o Mini (fast & affordable)"
+
+  - id: gpt-4-turbo
+    provider: openai
+    upstream: gpt-4-turbo
+    description: "OpenAI GPT-4 Turbo"
+
+  # ── Google Gemini ────────────────────────────────────────────────────────────
+  - id: gemini-1.5-pro
+    provider: gemini
+    upstream: gemini-1.5-pro-latest
+    description: "Google Gemini 1.5 Pro"
+
+  - id: gemini-1.5-flash
+    provider: gemini
+    upstream: gemini-1.5-flash-latest
+    description: "Google Gemini 1.5 Flash (fast)"
+
+  - id: gemini-2.0-flash
+    provider: gemini
+    upstream: gemini-2.0-flash
+    description: "Google Gemini 2.0 Flash"
+
+  # ── Ollama (local) ───────────────────────────────────────────────────────────
+  - id: llama3
+    provider: ollama
+    upstream: llama3
+    description: "Meta Llama 3 8B (local via Ollama)"
+
+  - id: llama3:70b
+    provider: ollama
+    upstream: llama3:70b
+    description: "Meta Llama 3 70B (local via Ollama)"
+
+  - id: mistral
+    provider: ollama
+    upstream: mistral
+    description: "Mistral 7B (local via Ollama)"
+
+  - id: codellama
+    provider: ollama
+    upstream: codellama
+    description: "Code Llama (local via Ollama)"
+
+  # ── Grok (xAI) ───────────────────────────────────────────────────────────────
+  - id: grok-beta
+    provider: grok
+    upstream: grok-beta
+    description: "xAI Grok Beta"
+
+  - id: grok-2
+    provider: grok
+    upstream: grok-2-latest
+    description: "xAI Grok 2"
