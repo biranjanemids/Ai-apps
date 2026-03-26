@@ -42,7 +42,7 @@ program
     // Launch TUI
     const { waitUntilExit } = render(
       React.createElement(App, { agent, initialModel: model, cwd, models }),
-      { fullscreen: true, exitOnCtrlC: true },
+      { exitOnCtrlC: true },
     )
 
     await waitUntilExit()

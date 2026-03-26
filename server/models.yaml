@@ -1,10 +1,16 @@
 # ─────────────────────────────────────────────────────────────────────────────
 #  Multi-Model Registry
 #  Add / remove models here — no code changes needed.
-#  provider: openai | gemini | ollama | grok | openai-compatible
+#  provider: mock | openai | gemini | ollama | grok | openai-compatible
 # ─────────────────────────────────────────────────────────────────────────────
 
 models:
+
+  # ── Mock — always available, no API key needed (for testing / CI) ──────────
+  - id: mock/echo
+    provider: mock
+    upstream: echo
+    description: "Mock provider — deterministic echo responses, no API key needed"
 
   # ── OpenAI — Best code generation models ───────────────────────────────────
   - id: gpt-4o
@@ -54,7 +60,7 @@ models:
     upstream: grok-3-mini
     description: "xAI Grok 3 Mini — fast, efficient coding"
 
-  # ── Ollama — Best local code generation models ────────────────────────────
+  # ── Ollama — Best local code generation models ─────────────────────────────
   # Run: ollama pull <model-name>
 
   - id: qwen2.5-coder:32b
@@ -89,7 +95,6 @@ models:
 
   # ── OpenAI-Compatible Local Servers ───────────────────────────────────────
   # Works with: LM Studio, vLLM, llama.cpp server, LocalAI, Jan, etc.
-  # Just change base_url to match your local server port.
 
   - id: lmstudio/default
     provider: openai-compatible

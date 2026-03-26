@@ -9,6 +9,7 @@ import { GeminiProvider }           from './providers/gemini.provider.js'
 import { OllamaProvider }           from './providers/ollama.provider.js'
 import { GrokProvider }             from './providers/grok.provider.js'
 import { OpenAICompatibleProvider } from './providers/openai-compatible.provider.js'
+import { MockProvider }             from './providers/mock.provider.js'
 
 interface ModelConfig {
   id:           string
@@ -33,11 +34,12 @@ export class ModelRegistry {
     const raw  = readFileSync(resolve(modelsPath), 'utf-8')
     const data = yaml.load(raw) as { models: ModelConfig[] }
 
-    // Instantiate shared providers once
+    // Instantiate shared providers once (null = API key not configured → models skipped)
     this.providers.set('openai', config.OPENAI_API_KEY ? new OpenAIProvider(config.OPENAI_API_KEY) : null)
     this.providers.set('gemini', config.GEMINI_API_KEY ? new GeminiProvider(config.GEMINI_API_KEY) : null)
-    this.providers.set('ollama', new OllamaProvider(config.OLLAMA_BASE_URL))
+    this.providers.set('ollama', config.OLLAMA_BASE_URL ? new OllamaProvider(config.OLLAMA_BASE_URL) : null)
     this.providers.set('grok',   config.GROK_API_KEY   ? new GrokProvider(config.GROK_API_KEY)     : null)
+    this.providers.set('mock',   new MockProvider())
 
     for (const model of data.models) {
       let provider: BaseProvider | null = null

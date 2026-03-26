@@ -4,7 +4,7 @@ import type { BaseProvider } from './base.js'
 import type { ChatCompletionRequest, ChatCompletionResponse, ModelObject } from '../schemas/openai.js'
 
 export class OpenAIProvider implements BaseProvider {
-  readonly name = 'openai'
+  readonly name: string = 'openai'
   protected client: OpenAI
 
   constructor(apiKey: string, baseURL?: string) {
@@ -21,7 +21,8 @@ export class OpenAIProvider implements BaseProvider {
   }
 
   async *chatCompleteStream(req: ChatCompletionRequest, upstream: string): AsyncGenerator<string> {
-    const stream = await this.client.chat.completions.create({
+    // Use `as any` to bypass overload ambiguity — stream:true returns AsyncIterable<ChatCompletionChunk>
+    const stream: AsyncIterable<any> = await (this.client.chat.completions.create as any)({
       ...(req as any),
       model:  upstream,
       stream: true,
