@@ -31,7 +31,7 @@ export async function searchAmazon(params: SearchParams): Promise<Product[]> {
 
     const { data } = await axios.get<string>(url, {
       headers: buildHeaders(),
-      timeout: 12000,
+      timeout: 5000,
     });
 
     const $ = cheerio.load(data);
@@ -97,7 +97,7 @@ export async function getAmazonProduct(productId: string): Promise<Product | nul
   try {
     const { data } = await axios.get<string>(`${BASE}/dp/${productId}`, {
       headers: buildHeaders(),
-      timeout: 12000,
+      timeout: 5000,
     });
 
     const $ = cheerio.load(data);

@@ -89,7 +89,7 @@ export async function searchMyntra(params: SearchParams): Promise<Product[]> {
         plaEnabled: 'false',
       },
       headers: buildHeaders(),
-      timeout: 12000,
+      timeout: 4000,
     });
 
     const items: MyntraGatewayProduct[] =
@@ -126,7 +126,7 @@ export async function getMyntraProduct(productId: string): Promise<Product | nul
     // Myntra product detail endpoint
     const response = await axios.get(`https://www.myntra.com/gateway/v2/product/${productId}`, {
       headers: buildHeaders(),
-      timeout: 12000,
+      timeout: 4000,
     });
 
     const d = response.data?.style ?? response.data;

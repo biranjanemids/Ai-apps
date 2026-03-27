@@ -40,7 +40,7 @@ export async function searchFlipkart(params: SearchParams): Promise<Product[]> {
 
     const { data } = await axios.get<string>(url, {
       headers: buildHeaders(),
-      timeout: 12000,
+      timeout: 5000,
     });
 
     const $ = cheerio.load(data);
@@ -134,7 +134,7 @@ export async function getFlipkartProduct(productId: string): Promise<Product | n
     const url = `${BASE}/product/p/p?pid=${productId}`;
     const { data } = await axios.get<string>(url, {
       headers: buildHeaders(),
-      timeout: 12000,
+      timeout: 5000,
     });
 
     const $ = cheerio.load(data);
