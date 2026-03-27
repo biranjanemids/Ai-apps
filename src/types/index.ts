@@ -37,11 +37,19 @@ export interface ComparisonRow {
   values: Record<string, string>;
 }
 
+export interface BuyIntent {
+  product: Product;
+  checkoutUrl: string;
+  stage: 'awaiting_address' | 'awaiting_phone' | 'confirmed';
+  address?: string;
+}
+
 export interface UserSession {
   userId: string;
   messages: ConversationMessage[];
   lastActivity: Date;
   searchResults?: Product[];
+  buyIntent?: BuyIntent;
 }
 
 export interface ConversationMessage {

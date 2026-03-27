@@ -1,4 +1,4 @@
-import { UserSession, ConversationMessage, Product } from '../types/index.js';
+import { UserSession, ConversationMessage, Product, BuyIntent } from '../types/index.js';
 
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_MESSAGES = 20;
@@ -35,6 +35,20 @@ export function saveSearchResults(userId: string, products: Product[]): void {
 
 export function getSearchResults(userId: string): Product[] {
   return sessions.get(userId)?.searchResults ?? [];
+}
+
+export function setBuyIntent(userId: string, intent: BuyIntent): void {
+  const session = getSession(userId);
+  session.buyIntent = intent;
+}
+
+export function getBuyIntent(userId: string): BuyIntent | undefined {
+  return sessions.get(userId)?.buyIntent;
+}
+
+export function clearBuyIntent(userId: string): void {
+  const session = sessions.get(userId);
+  if (session) session.buyIntent = undefined;
 }
 
 export function clearSession(userId: string): void {
