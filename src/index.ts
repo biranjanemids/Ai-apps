@@ -33,7 +33,7 @@ app.listen(PORT, () => {
 
   // Validate required env vars
   const required = [
-    'ANTHROPIC_API_KEY',
+    'GROQ_API_KEY',
     'WHATSAPP_ACCESS_TOKEN',
     'WHATSAPP_PHONE_NUMBER_ID',
     'WHATSAPP_WEBHOOK_VERIFY_TOKEN',
