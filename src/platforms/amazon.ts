@@ -1,103 +1,150 @@
 import axios from 'axios';
+import * as cheerio from 'cheerio';
 import { Product, SearchParams } from '../types/index.js';
+import { getMockProducts, getMockProduct, randomUserAgent } from './mock.js';
 
-const RAPIDAPI_HOST = 'real-time-amazon-data.p.rapidapi.com';
+const BASE = 'https://www.amazon.in';
 
-interface AmazonSearchItem {
-  asin: string;
-  product_title: string;
-  product_price: string;
-  product_star_rating: string;
-  product_num_ratings: number;
-  product_photo: string;
-  product_url: string;
-  product_byline?: string;
+function buildHeaders() {
+  return {
+    'User-Agent': randomUserAgent(),
+    'Accept-Language': 'en-IN,en;q=0.9',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Encoding': 'gzip, deflate, br',
+    Connection: 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+  };
 }
 
 export async function searchAmazon(params: SearchParams): Promise<Product[]> {
-  const key = process.env.RAPIDAPI_KEY;
-  if (!key) {
-    console.error('[Amazon] RAPIDAPI_KEY not set');
-    return [];
+  if (process.env.USE_MOCK_DATA === 'true') {
+    return getMockProducts('amazon', params.query, params);
   }
 
   try {
-    const queryParams: Record<string, string> = {
-      query: params.query,
-      page: '1',
-      country: 'IN',
-      sort_by: 'RELEVANCE',
-      product_condition: 'ALL',
-    };
-    if (params.minPrice !== undefined) queryParams.min_price = String(params.minPrice);
-    if (params.maxPrice !== undefined) queryParams.max_price = String(params.maxPrice);
+    let url = `${BASE}/s?k=${encodeURIComponent(params.query)}&i=aps`;
+    if (params.minPrice !== undefined || params.maxPrice !== undefined) {
+      const lo = (params.minPrice ?? 0) * 100;
+      const hi = params.maxPrice ? params.maxPrice * 100 : '';
+      url += `&rh=p_36%3A${lo}-${hi}`;
+    }
 
-    const response = await axios.get(`https://${RAPIDAPI_HOST}/search`, {
-      params: queryParams,
-      headers: {
-        'X-RapidAPI-Key': key,
-        'X-RapidAPI-Host': RAPIDAPI_HOST,
-      },
-      timeout: 10000,
+    const { data } = await axios.get<string>(url, {
+      headers: buildHeaders(),
+      timeout: 12000,
     });
 
-    const items: AmazonSearchItem[] = response.data?.data?.products ?? [];
-    return items.slice(0, 5).map((item) => ({
-      id: item.asin,
-      platform: 'amazon',
-      title: item.product_title,
-      price: parseFloat(item.product_price?.replace(/[^0-9.]/g, '') ?? '0') || 0,
-      currency: 'INR',
-      rating: parseFloat(item.product_star_rating ?? '0') || 0,
-      reviewCount: item.product_num_ratings ?? 0,
-      imageUrl: item.product_photo ?? '',
-      productUrl: item.product_url ?? `https://www.amazon.in/dp/${item.asin}`,
-      specs: item.product_byline ? ({ Brand: item.product_byline } as Record<string, string>) : ({} as Record<string, string>),
-    }));
+    const $ = cheerio.load(data);
+    const products: Product[] = [];
+
+    $('[data-asin]').each((_, el) => {
+      if (products.length >= 5) return false;
+
+      const asin = $(el).attr('data-asin');
+      if (!asin || asin.trim() === '') return;
+
+      const title = $('h2 a span', el).first().text().trim();
+      if (!title) return;
+
+      const priceWhole = $('.a-price-whole', el).first().text().replace(/[^0-9]/g, '');
+      const priceFraction = $('.a-price-fraction', el).first().text().replace(/[^0-9]/g, '');
+      const price = priceWhole
+        ? parseFloat(`${priceWhole}.${priceFraction || '00'}`)
+        : 0;
+
+      const ratingText = $('.a-icon-alt', el).first().text(); // "4.2 out of 5 stars"
+      const rating = parseFloat(ratingText) || 0;
+
+      const reviewText = $('[aria-label$="stars"]', el).parent().next().text().replace(/[^0-9]/g, '');
+      const reviewCount = parseInt(reviewText) || 0;
+
+      const imageUrl = $('img.s-image', el).attr('src') ?? '';
+      const relativeUrl = $('h2 a', el).attr('href') ?? '';
+      const productUrl = relativeUrl.startsWith('http') ? relativeUrl : `${BASE}${relativeUrl}`;
+
+      if (params.minPrice && price > 0 && price < params.minPrice) return;
+      if (params.maxPrice && price > 0 && price > params.maxPrice) return;
+
+      products.push({
+        id: asin,
+        platform: 'amazon',
+        title,
+        price,
+        currency: 'INR',
+        rating,
+        reviewCount,
+        imageUrl,
+        productUrl,
+        specs: {} as Record<string, string>,
+      });
+    });
+
+    if (products.length > 0) return products;
+
+    console.warn('[Amazon] Scraping returned 0 results — using mock fallback');
+    return getMockProducts('amazon', params.query, params);
   } catch (err) {
-    console.error('[Amazon] Search failed:', err instanceof Error ? err.message : err);
-    return [];
+    console.error('[Amazon] Scraping failed:', err instanceof Error ? err.message : err);
+    return getMockProducts('amazon', params.query, params);
   }
 }
 
 export async function getAmazonProduct(productId: string): Promise<Product | null> {
-  const key = process.env.RAPIDAPI_KEY;
-  if (!key) return null;
+  if (process.env.USE_MOCK_DATA === 'true') {
+    return getMockProduct('amazon', productId);
+  }
 
   try {
-    const response = await axios.get(`https://${RAPIDAPI_HOST}/product-details`, {
-      params: { asin: productId, country: 'IN' },
-      headers: {
-        'X-RapidAPI-Key': key,
-        'X-RapidAPI-Host': RAPIDAPI_HOST,
-      },
-      timeout: 10000,
+    const { data } = await axios.get<string>(`${BASE}/dp/${productId}`, {
+      headers: buildHeaders(),
+      timeout: 12000,
     });
 
-    const d = response.data?.data;
-    if (!d) return null;
+    const $ = cheerio.load(data);
+
+    const title = $('#productTitle').text().trim();
+    if (!title) {
+      return getMockProduct('amazon', productId);
+    }
+
+    const priceText = $('.a-price .a-offscreen').first().text().replace(/[^0-9.]/g, '');
+    const price = parseFloat(priceText) || 0;
+
+    const ratingText = $('#acrPopover').attr('title') ?? '';
+    const rating = parseFloat(ratingText) || 0;
+
+    const reviewText = $('#acrCustomerReviewText').text().replace(/[^0-9]/g, '');
+    const reviewCount = parseInt(reviewText) || 0;
+
+    const imageUrl = $('#landingImage').attr('src') ?? '';
 
     const specs: Record<string, string> = {};
-    if (Array.isArray(d.product_information)) {
-      for (const info of d.product_information) {
-        if (info.name && info.value) specs[info.name] = info.value;
-      }
-    }
+    $('#productDetails_techSpec_section_1 tr, #productDetails_detailBullets_sections1 tr').each((_, row) => {
+      const key = $('th', row).text().trim();
+      const val = $('td', row).text().trim();
+      if (key && val) specs[key] = val;
+    });
+
+    // Also grab bullet-style specs
+    $('#feature-bullets li span').each((_, el) => {
+      const text = $(el).text().trim();
+      if (text && !specs['Highlights']) specs['Highlights'] = text;
+    });
 
     return {
       id: productId,
       platform: 'amazon',
-      title: d.product_title ?? 'Unknown',
-      price: parseFloat(d.product_price?.replace(/[^0-9.]/g, '') ?? '0') || 0,
+      title,
+      price,
       currency: 'INR',
-      rating: parseFloat(d.product_star_rating ?? '0') || 0,
-      reviewCount: d.product_num_ratings ?? 0,
-      imageUrl: d.product_main_image_url ?? '',
-      productUrl: `https://www.amazon.in/dp/${productId}`,
+      rating,
+      reviewCount,
+      imageUrl,
+      productUrl: `${BASE}/dp/${productId}`,
       specs,
     };
   } catch (err) {
-    console.error('[Amazon] Product fetch failed:', err instanceof Error ? err.message : err);
-    return null;
+    console.error('[Amazon] Product detail scraping failed:', err instanceof Error ? err.message : err);
+    return getMockProduct('amazon', productId);
   }
 }

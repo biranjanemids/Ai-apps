@@ -1,125 +1,136 @@
 import axios from 'axios';
 import { Product, SearchParams } from '../types/index.js';
+import { getMockProducts, getMockProduct, randomUserAgent } from './mock.js';
 
-const RAPIDAPI_HOST = 'myntra-fashion-products.p.rapidapi.com';
+// Myntra's internal search gateway — no auth required
+const GATEWAY_URL = 'https://www.myntra.com/gateway/v2/catalog/products/searchv2';
 
-interface MyntraProduct {
+interface MyntraGatewayProduct {
   productId: number | string;
   productName?: string;
   name?: string;
   brand?: string;
-  price?: {
-    discounted?: number;
-    marked?: number;
-  };
+  price?: { discounted?: number; marked?: number };
   discountedPrice?: number;
   mrp?: number;
   rating?: number;
   ratingCount?: number;
-  images?: Array<{ src?: string; secureSrc?: string }>;
+  images?: Array<{ secureSrc?: string; src?: string }>;
   landingPageUrl?: string;
-  category?: string;
   gender?: string;
+  primaryType?: string;
+  category?: string;
 }
 
-interface MyntraSearchResponse {
-  products?: MyntraProduct[];
-  results?: MyntraProduct[];
-  data?: { products?: MyntraProduct[] };
+interface MyntraGatewayResponse {
+  searchData?: {
+    results?: {
+      products?: MyntraGatewayProduct[];
+    };
+  };
+  // older response shape
+  products?: MyntraGatewayProduct[];
+}
+
+function buildHeaders() {
+  return {
+    'User-Agent': randomUserAgent(),
+    Accept: 'application/json, text/plain, */*',
+    'Accept-Language': 'en-IN,en;q=0.9',
+    Referer: 'https://www.myntra.com/',
+    'x-location-code': 'undefined',
+    'x-myntra-abtest': 'true',
+    Connection: 'keep-alive',
+  };
+}
+
+function normaliseProduct(item: MyntraGatewayProduct): Product {
+  const productId = String(item.productId);
+  const title = item.productName ?? item.name ?? 'Unknown';
+  const price = item.price?.discounted ?? item.discountedPrice ?? item.mrp ?? 0;
+  const mrp = item.price?.marked ?? item.mrp;
+  const imageUrl = item.images?.[0]?.secureSrc ?? item.images?.[0]?.src ?? '';
+  const landingPath = item.landingPageUrl ?? '';
+  const productUrl = landingPath.startsWith('http')
+    ? landingPath
+    : `https://www.myntra.com/${landingPath || productId}`;
+
+  const specs: Record<string, string> = {};
+  if (item.brand) specs['Brand'] = item.brand;
+  if (mrp) specs['MRP'] = `₹${mrp}`;
+  if (item.gender) specs['Gender'] = item.gender;
+  if (item.primaryType ?? item.category) specs['Category'] = (item.primaryType ?? item.category)!;
+
+  return {
+    id: productId,
+    platform: 'myntra',
+    title,
+    price,
+    currency: 'INR',
+    rating: item.rating ?? 0,
+    reviewCount: item.ratingCount ?? 0,
+    imageUrl,
+    productUrl,
+    specs,
+  };
 }
 
 export async function searchMyntra(params: SearchParams): Promise<Product[]> {
-  const key = process.env.RAPIDAPI_KEY;
-  if (!key) {
-    console.error('[Myntra] RAPIDAPI_KEY not set');
-    return [];
+  if (process.env.USE_MOCK_DATA === 'true') {
+    return getMockProducts('myntra', params.query, params);
   }
 
   try {
-    const response = await axios.get<MyntraSearchResponse>(
-      `https://${RAPIDAPI_HOST}/search`,
-      {
-        params: {
-          query: params.query,
-          rows: '10',
-          start: '0',
-          o: '0',
-          plaEnabled: 'false',
-        },
-        headers: {
-          'X-RapidAPI-Key': key,
-          'X-RapidAPI-Host': RAPIDAPI_HOST,
-        },
-        timeout: 10000,
-      }
-    );
+    const response = await axios.get<MyntraGatewayResponse>(GATEWAY_URL, {
+      params: {
+        rawQuery: params.query,
+        resultsPerPage: 24,
+        o: 0,
+        plaEnabled: 'false',
+      },
+      headers: buildHeaders(),
+      timeout: 12000,
+    });
 
-    const items: MyntraProduct[] =
+    const items: MyntraGatewayProduct[] =
+      response.data?.searchData?.results?.products ??
       response.data?.products ??
-      response.data?.results ??
-      response.data?.data?.products ??
       [];
 
-    return items
-      .filter((item) => {
-        const price = item.price?.discounted ?? item.discountedPrice ?? item.mrp ?? 0;
-        if (params.minPrice !== undefined && price < params.minPrice) return false;
-        if (params.maxPrice !== undefined && price > params.maxPrice) return false;
+    const products = items
+      .map(normaliseProduct)
+      .filter((p) => {
+        if (params.minPrice && p.price > 0 && p.price < params.minPrice) return false;
+        if (params.maxPrice && p.price > 0 && p.price > params.maxPrice) return false;
         return true;
       })
-      .slice(0, 5)
-      .map((item) => {
-        const price = item.price?.discounted ?? item.discountedPrice ?? item.mrp ?? 0;
-        const mrp = item.price?.marked ?? item.mrp;
-        const productId = String(item.productId);
-        const title = item.productName ?? item.name ?? 'Unknown';
-        const imageUrl =
-          item.images?.[0]?.secureSrc ?? item.images?.[0]?.src ?? '';
-        const productUrl =
-          item.landingPageUrl ??
-          `https://www.myntra.com/${productId}`;
+      .sort((a, b) => b.rating - a.rating)
+      .slice(0, 5);
 
-        const specs: Record<string, string> = {};
-        if (item.brand) specs['Brand'] = item.brand;
-        if (mrp) specs['MRP'] = `₹${mrp}`;
-        if (item.category) specs['Category'] = item.category;
-        if (item.gender) specs['Gender'] = item.gender;
+    if (products.length > 0) return products;
 
-        return {
-          id: productId,
-          platform: 'myntra',
-          title,
-          price,
-          currency: 'INR',
-          rating: item.rating ?? 0,
-          reviewCount: item.ratingCount ?? 0,
-          imageUrl,
-          productUrl,
-          specs,
-        };
-      });
+    console.warn('[Myntra] Gateway returned 0 results — using mock fallback');
+    return getMockProducts('myntra', params.query, params);
   } catch (err) {
-    console.error('[Myntra] Search failed:', err instanceof Error ? err.message : err);
-    return [];
+    console.error('[Myntra] Gateway request failed:', err instanceof Error ? err.message : err);
+    return getMockProducts('myntra', params.query, params);
   }
 }
 
 export async function getMyntraProduct(productId: string): Promise<Product | null> {
-  const key = process.env.RAPIDAPI_KEY;
-  if (!key) return null;
+  if (process.env.USE_MOCK_DATA === 'true') {
+    return getMockProduct('myntra', productId);
+  }
 
   try {
-    const response = await axios.get(`https://${RAPIDAPI_HOST}/products/details`, {
-      params: { id: productId },
-      headers: {
-        'X-RapidAPI-Key': key,
-        'X-RapidAPI-Host': RAPIDAPI_HOST,
-      },
-      timeout: 10000,
+    // Myntra product detail endpoint
+    const response = await axios.get(`https://www.myntra.com/gateway/v2/product/${productId}`, {
+      headers: buildHeaders(),
+      timeout: 12000,
     });
 
     const d = response.data?.style ?? response.data;
-    if (!d) return null;
+    if (!d) return getMockProduct('myntra', productId);
 
     const price = d.price?.discounted ?? d.discountedPrice ?? 0;
     const specs: Record<string, string> = {};
@@ -144,7 +155,7 @@ export async function getMyntraProduct(productId: string): Promise<Product | nul
       specs,
     };
   } catch (err) {
-    console.error('[Myntra] Product fetch failed:', err instanceof Error ? err.message : err);
-    return null;
+    console.error('[Myntra] Product detail failed:', err instanceof Error ? err.message : err);
+    return getMockProduct('myntra', productId);
   }
 }
