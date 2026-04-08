@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, unlinkSync, existsSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { globSync } from 'glob'
 
@@ -52,16 +52,33 @@ export const fileTools = {
       const full   = resolve(cwd, args.path)
       const before = readFileSync(full, 'utf-8')
       if (!before.includes(args.old_str)) {
-        return {
-          ok:      false,
-          message: `old_str not found in ${args.path}. Make sure the string matches exactly.`,
-        }
+        return { ok: false, message: `old_str not found in ${args.path}. Verify the exact string including whitespace.` }
       }
       const after = before.replace(args.old_str, args.new_str)
       writeFileSync(full, after, 'utf-8')
       return { ok: true, message: `Edited: ${args.path}`, before, after }
     } catch (e: any) {
       return { ok: false, message: `Error editing file: ${e.message}` }
+    }
+  },
+
+  create_directory(args: { path: string }, cwd: string): string {
+    try {
+      mkdirSync(resolve(cwd, args.path), { recursive: true })
+      return `Directory created: ${args.path}`
+    } catch (e: any) {
+      return `Error creating directory: ${e.message}`
+    }
+  },
+
+  delete_file(args: { path: string }, cwd: string): string {
+    try {
+      const full = resolve(cwd, args.path)
+      if (!existsSync(full)) return `File not found: ${args.path}`
+      unlinkSync(full)
+      return `Deleted: ${args.path}`
+    } catch (e: any) {
+      return `Error deleting file: ${e.message}`
     }
   },
 }
