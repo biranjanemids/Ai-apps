@@ -21,7 +21,7 @@ async function start() {
   // ── Fastify HTTP/2 server ────────────────────────────────────────────────────
   const app = Fastify({
     http2: true,
-    https: { cert, key },
+    https: { allowHTTP1: true, cert, key },  // allowHTTP1 lets HTTP/1.1 clients connect too
     logger: { level: process.env.LOG_LEVEL || 'info' }
   });
 
