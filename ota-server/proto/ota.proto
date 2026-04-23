@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package ota;
+
+service OTAService {
+  // Register or re-register a device, receive auth token
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Client polls — server streams file chunks if clientVersion < serverVersion
+  rpc Poll(PollRequest) returns (stream PollResponse);
+
+  // Client reports update result back to server
+  rpc ReportStatus(StatusReport) returns (StatusAck);
+}
+
+// ── Registration ──────────────────────────────────────────────────────────────
+
+message RegisterRequest {
+  string device_id       = 1;
+  string hostname        = 2;
+  string os_version      = 3;
+  string current_version = 4;
+}
+
+message RegisterResponse {
+  string auth_token = 1;
+  string device_id  = 2;
+}
+
+// ── Polling ───────────────────────────────────────────────────────────────────
+
+message PollRequest {
+  string device_id          = 1;
+  string auth_token         = 2;
+  string current_version    = 3;
+  repeated string installed_services = 4;
+}
+
+// Server-side file path mapping (overrides manifest.json paths on client)
+message FileMapping {
+  string source_path = 1;   // relative path inside zip, e.g. "files/app.exe"
+  string dest_path   = 2;   // absolute Windows destination path
+  string file_type   = 3;   // binary | config | script
+  bool   backup      = 4;
+}
+
+message PollResponse {
+  bool   update_available  = 1;
+  string version           = 2;
+  string package_name      = 3;
+  int32  package_id        = 4;
+  string sha256_hash       = 5;
+  string release_notes     = 6;
+  bytes  chunk             = 7;   // zip file bytes, 256 KB per message
+  bool   last_chunk        = 8;
+  repeated FileMapping file_mappings = 9;  // populated in first message only
+}
+
+// ── Status Report ─────────────────────────────────────────────────────────────
+
+message StatusReport {
+  string device_id         = 1;
+  string auth_token        = 2;
+  int32  package_id        = 3;
+  string status            = 4;   // success | failed | rolled_back
+  string error_message     = 5;
+  string installed_version = 6;
+}
+
+message StatusAck {
+  bool ok = 1;
+}

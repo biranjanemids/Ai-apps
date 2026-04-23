@@ -1,0 +1,25 @@
+{
+  "server": {
+    "httpUrl": "https://SERVER_IP:8443",
+    "grpcEndpoint": "SERVER_IP:50051",
+    "preferGrpc": true,
+    "timeoutMs": 30000,
+    "retryAttempts": 3,
+    "tlsCert": ""
+  },
+  "agent": {
+    "deviceId": "",
+    "authToken": "",
+    "currentVersion": "0.0.0",
+    "pollIntervalMs": 300000,
+    "workDir": "C:\\ProgramData\\OTAAgent\\work",
+    "stateDir": "C:\\ProgramData\\OTAAgent\\state",
+    "logFile": "C:\\ProgramData\\OTAAgent\\logs\\ota-agent.log"
+  },
+  "update": {
+    "backupKeepCount": 3,
+    "serviceStopTimeoutMs": 30000,
+    "serviceStartTimeoutMs": 60000,
+    "healthCheckTimeoutMs": 60000
+  }
+}

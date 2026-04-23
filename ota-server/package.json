@@ -1,0 +1,21 @@
+{
+  "name": "ota-server",
+  "version": "1.0.0",
+  "description": "OTA update server — Fastify HTTP/2 + gRPC",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@fastify/multipart": "^8.3.0",
+    "@grpc/grpc-js": "^1.12.0",
+    "@grpc/proto-loader": "^0.7.13",
+    "adm-zip": "^0.5.16",
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^4.28.1",
+    "semver": "^7.6.3",
+    "uuid": "^10.0.0"
+  }
+}
