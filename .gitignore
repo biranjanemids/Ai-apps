@@ -4,7 +4,7 @@ node_modules/
 *.db-wal
 certs/
 logs/
-data/packages/
+ota-server/data/packages/
 work/
 state/backups/
 *.env.local
