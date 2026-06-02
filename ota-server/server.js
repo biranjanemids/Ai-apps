@@ -25,6 +25,11 @@ async function start() {
     logger: { level: process.env.LOG_LEVEL || 'info' }
   });
 
+  await app.register(require('@fastify/static'), {
+    root: require('path').join(__dirname, 'public'),
+    prefix: '/dashboard'
+  });
+
   await app.register(require('@fastify/multipart'), {
     limits: {
       fileSize: parseInt(process.env.MAX_PACKAGE_SIZE_MB || '500') * 1024 * 1024

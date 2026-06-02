@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>OTA Update Server Dashboard</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"/>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"/>
+<style>
+  :root{--bs-body-bg:#0f1117;--bs-body-color:#e2e8f0}
+  body{background:#0f1117;color:#e2e8f0;font-family:'Segoe UI',system-ui,sans-serif}
+  .navbar{background:#161b27!important;border-bottom:1px solid #2d3748}
+  .navbar-brand{color:#60a5fa!important;font-weight:700;letter-spacing:.5px}
+  .nav-tabs{border-bottom:1px solid #2d3748}
+  .nav-tabs .nav-link{color:#94a3b8;border:none;padding:.6rem 1.2rem;border-radius:6px 6px 0 0}
+  .nav-tabs .nav-link:hover{color:#e2e8f0;background:#1e2535}
+  .nav-tabs .nav-link.active{color:#60a5fa;background:#1e2535;border-bottom:2px solid #60a5fa}
+  .card{background:#161b27;border:1px solid #2d3748;border-radius:10px}
+  .card-header{background:#1e2535;border-bottom:1px solid #2d3748;font-weight:600;color:#94a3b8;font-size:.8rem;text-transform:uppercase;letter-spacing:.8px}
+  .table{color:#e2e8f0}
+  .table thead th{background:#1e2535;color:#94a3b8;font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;border-bottom:1px solid #2d3748}
+  .table tbody tr{border-bottom:1px solid #1e2535}
+  .table tbody tr:hover{background:#1a2035}
+  .table td,.table th{border:none;vertical-align:middle;padding:.65rem .8rem}
+  .form-control,.form-select{background:#0f1117;border:1px solid #2d3748;color:#e2e8f0;border-radius:6px}
+  .form-control:focus,.form-select:focus{background:#0f1117;border-color:#60a5fa;color:#e2e8f0;box-shadow:0 0 0 2px rgba(96,165,250,.2)}
+  .form-label{color:#94a3b8;font-size:.82rem;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:.3rem}
+  .btn-primary{background:#3b82f6;border-color:#3b82f6}
+  .btn-primary:hover{background:#2563eb;border-color:#2563eb}
+  .btn-danger{background:#ef4444;border-color:#ef4444}
+  .btn-danger:hover{background:#dc2626;border-color:#dc2626}
+  .btn-outline-secondary{color:#94a3b8;border-color:#2d3748}
+  .btn-outline-secondary:hover{background:#1e2535;border-color:#60a5fa;color:#60a5fa}
+  .btn-sm{font-size:.75rem;padding:.25rem .6rem}
+  .stat-card{background:linear-gradient(135deg,#1e2535,#161b27);border:1px solid #2d3748;border-radius:10px;padding:1.4rem}
+  .stat-card .stat-val{font-size:2.2rem;font-weight:700;line-height:1}
+  .stat-card .stat-label{font-size:.75rem;text-transform:uppercase;letter-spacing:.6px;color:#94a3b8;margin-top:.4rem}
+  .stat-card.blue .stat-val{color:#60a5fa}
+  .stat-card.green .stat-val{color:#34d399}
+  .stat-card.purple .stat-val{color:#a78bfa}
+  .stat-card.orange .stat-val{color:#fb923c}
+  .stat-card.red .stat-val{color:#f87171}
+  .badge-status{font-size:.7rem;padding:.25rem .6rem;border-radius:20px;font-weight:600}
+  .badge-success{background:#064e3b;color:#34d399}
+  .badge-failed{background:#450a0a;color:#f87171}
+  .badge-rolledback{background:#3b0764;color:#c084fc}
+  .badge-downloading{background:#1e3a5f;color:#60a5fa}
+  .badge-applying{background:#451a03;color:#fb923c}
+  .badge-pending{background:#1c1917;color:#a3a3a3}
+  .badge-active{background:#052e16;color:#4ade80;border-radius:20px;padding:.2rem .6rem;font-size:.7rem}
+  .badge-inactive{background:#1c1917;color:#737373;border-radius:20px;padding:.2rem .6rem;font-size:.7rem}
+  .mono{font-family:'Cascadia Code','Fira Code',monospace;font-size:.78rem}
+  .toast-container{position:fixed;top:1rem;right:1rem;z-index:9999}
+  .toast{background:#1e2535;border:1px solid #2d3748;color:#e2e8f0}
+  .toast.success .toast-body{color:#34d399}
+  .toast.error .toast-body{color:#f87171}
+  .modal-content{background:#161b27;border:1px solid #2d3748;color:#e2e8f0}
+  .modal-header{border-bottom:1px solid #2d3748;background:#1e2535}
+  .modal-footer{border-top:1px solid #2d3748;background:#1e2535}
+  .section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem}
+  .section-header h5{font-weight:700;color:#e2e8f0;margin:0}
+  .empty-state{text-align:center;padding:3rem;color:#64748b}
+  .empty-state i{font-size:2.5rem;margin-bottom:.8rem;display:block}
+  #secretBar{background:#1e2535;border-bottom:1px solid #2d3748;padding:.5rem 1rem}
+  .hash-cell{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  code{background:#0f1117;color:#f472b6;padding:.1rem .4rem;border-radius:4px;font-size:.8rem}
+  pre{background:#0a0d14;border:1px solid #2d3748;border-radius:8px;padding:1rem;color:#e2e8f0;font-size:.8rem;overflow-x:auto}
+  .spinner-border-sm{width:1rem;height:1rem;border-width:.15rem}
+  .copy-btn{cursor:pointer;color:#60a5fa;border:none;background:none;padding:0 .3rem}
+  .upload-zone{border:2px dashed #2d3748;border-radius:8px;padding:2rem;text-align:center;cursor:pointer;transition:.2s}
+  .upload-zone:hover,.upload-zone.drag{border-color:#60a5fa;background:#1a2035}
+  .upload-zone i{font-size:2rem;color:#60a5fa;display:block;margin-bottom:.5rem}
+</style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark">
+  <div class="container-fluid px-3">
+    <span class="navbar-brand"><i class="bi bi-broadcast-pin me-2"></i>OTA Update Server</span>
+    <div class="d-flex align-items-center gap-2">
+      <span id="healthDot" class="badge bg-secondary">Checking…</span>
+      <span class="text-muted mono" id="serverTs" style="font-size:.72rem"></span>
+    </div>
+  </div>
+</nav>
+
+<!-- Admin secret bar -->
+<div id="secretBar">
+  <div class="container-fluid">
+    <div class="row align-items-center g-2">
+      <div class="col-auto"><label class="form-label mb-0" style="font-size:.75rem">ADMIN SECRET</label></div>
+      <div class="col-md-4 col-6">
+        <input type="password" id="adminSecret" class="form-control form-control-sm mono" placeholder="Enter admin secret…" autocomplete="off"/>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary btn-sm" onclick="saveSecret()"><i class="bi bi-check2 me-1"></i>Apply</button>
+      </div>
+      <div class="col-auto ms-auto text-muted" style="font-size:.72rem">
+        Dashboard → <code>https://localhost:8443/dashboard</code>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Main content -->
+<div class="container-fluid px-3 py-3">
+
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3" id="mainTabs">
+    <li class="nav-item"><a class="nav-link active" href="#" data-tab="overview"  onclick="switchTab(this,'overview')"><i class="bi bi-grid-1x2 me-1"></i>Overview</a></li>
+    <li class="nav-item"><a class="nav-link"        href="#" data-tab="packages" onclick="switchTab(this,'packages')"><i class="bi bi-archive me-1"></i>Packages</a></li>
+    <li class="nav-item"><a class="nav-link"        href="#" data-tab="devices"  onclick="switchTab(this,'devices')"><i class="bi bi-pc-display me-1"></i>Devices</a></li>
+    <li class="nav-item"><a class="nav-link"        href="#" data-tab="jobs"     onclick="switchTab(this,'jobs')"><i class="bi bi-arrow-repeat me-1"></i>Update Jobs</a></li>
+    <li class="nav-item"><a class="nav-link"        href="#" data-tab="apiref"   onclick="switchTab(this,'apiref')"><i class="bi bi-terminal me-1"></i>API Reference</a></li>
+  </ul>
+
+  <!-- ── OVERVIEW TAB ─────────────────────────────────────────────────── -->
+  <div id="tab-overview">
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-2"><div class="stat-card blue"><div class="stat-val" id="s-devices">–</div><div class="stat-label"><i class="bi bi-pc-display me-1"></i>Devices</div></div></div>
+      <div class="col-6 col-md-2"><div class="stat-card purple"><div class="stat-val" id="s-packages">–</div><div class="stat-label"><i class="bi bi-archive me-1"></i>Packages</div></div></div>
+      <div class="col-6 col-md-2"><div class="stat-card green"><div class="stat-val" id="s-success">–</div><div class="stat-label"><i class="bi bi-check-circle me-1"></i>Successful</div></div></div>
+      <div class="col-6 col-md-2"><div class="stat-card orange"><div class="stat-val" id="s-pending">–</div><div class="stat-label"><i class="bi bi-hourglass-split me-1"></i>Pending</div></div></div>
+      <div class="col-6 col-md-2"><div class="stat-card red"><div class="stat-val" id="s-failed">–</div><div class="stat-label"><i class="bi bi-x-circle me-1"></i>Failed</div></div></div>
+      <div class="col-md-2 d-flex align-items-end">
+        <button class="btn btn-outline-secondary btn-sm w-100" onclick="loadStats()"><i class="bi bi-arrow-clockwise me-1"></i>Refresh</button>
+      </div>
+    </div>
+
+    <div class="row g-3">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header"><i class="bi bi-archive me-1"></i>Latest Packages</div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" id="overview-pkgs">
+              <thead><tr><th>Version</th><th>Name</th><th>Size</th><th>Uploaded</th><th>Status</th></tr></thead>
+              <tbody><tr><td colspan="5" class="empty-state"><i class="bi bi-archive"></i>No data</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header"><i class="bi bi-clock-history me-1"></i>Recent Update Jobs</div>
+          <div class="card-body p-0">
+            <table class="table table-sm mb-0" id="overview-jobs">
+              <thead><tr><th>Device</th><th>Pkg</th><th>Status</th><th>Updated</th></tr></thead>
+              <tbody><tr><td colspan="4" class="empty-state"><i class="bi bi-arrow-repeat"></i>No data</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PACKAGES TAB ────────────────────────────────────────────────── -->
+  <div id="tab-packages" style="display:none">
+
+    <!-- Upload form -->
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-cloud-upload me-1"></i>Upload New Package</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-5">
+            <label class="form-label">Package ZIP File</label>
+            <div class="upload-zone" id="dropZone" onclick="document.getElementById('pkgFile').click()"
+                 ondragover="e=>{e.preventDefault();this.classList.add('drag')}"
+                 ondragleave="this.classList.remove('drag')"
+                 ondrop="handleDrop(event)">
+              <i class="bi bi-file-earmark-zip"></i>
+              <span id="dropLabel">Drop .zip here or click to browse</span>
+              <input type="file" id="pkgFile" accept=".zip" style="display:none" onchange="onFileSelect(this)"/>
+            </div>
+          </div>
+          <div class="col-md-7">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label">Version <span class="text-danger">*</span></label>
+                <input type="text" id="upVersion" class="form-control" placeholder="1.2.3"/>
+              </div>
+              <div class="col-6">
+                <label class="form-label">Min Client Version</label>
+                <input type="text" id="upMinVer" class="form-control" placeholder="0.0.0"/>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Target Services (comma-separated)</label>
+                <input type="text" id="upServices" class="form-control" placeholder="MyWindowsSvc, AnotherSvc"/>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Release Notes</label>
+                <textarea id="upNotes" class="form-control" rows="2" placeholder="What changed in this version…"></textarea>
+              </div>
+              <div class="col-12 d-flex gap-2 mt-1">
+                <button class="btn btn-primary" onclick="uploadPackage()"><i class="bi bi-cloud-upload me-1"></i>Upload Package</button>
+                <div id="upProgress" style="display:none" class="d-flex align-items-center gap-2 text-muted"><span class="spinner-border spinner-border-sm"></span>Uploading…</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Packages table -->
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-archive me-1"></i>All Packages</span>
+        <div class="d-flex gap-2">
+          <div class="form-check form-switch mb-0 d-flex align-items-center gap-2">
+            <input class="form-check-input" type="checkbox" id="activeOnly" checked onchange="loadPackages()"/>
+            <label class="form-check-label" for="activeOnly" style="font-size:.78rem;color:#94a3b8">Active only</label>
+          </div>
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadPackages()"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+      </div>
+      <div class="card-body p-0">
+        <table class="table mb-0" id="pkgTable">
+          <thead><tr><th>ID</th><th>Version</th><th>Name</th><th>Size</th><th>SHA256</th><th>Rollout</th><th>Status</th><th>Uploaded</th><th>Actions</th></tr></thead>
+          <tbody id="pkgBody"><tr><td colspan="9" class="empty-state"><i class="bi bi-archive"></i><br>No packages uploaded yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── DEVICES TAB ─────────────────────────────────────────────────── -->
+  <div id="tab-devices" style="display:none">
+    <div class="card">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-pc-display me-1"></i>Registered Devices</span>
+        <button class="btn btn-outline-secondary btn-sm" onclick="loadDevices()"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <div class="card-body p-0">
+        <table class="table mb-0" id="devTable">
+          <thead><tr><th>Device ID</th><th>Hostname</th><th>OS Version</th><th>Current Version</th><th>Registered</th><th>Last Seen</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="devBody"><tr><td colspan="8" class="empty-state"><i class="bi bi-pc-display"></i><br>No devices registered yet</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── JOBS TAB ────────────────────────────────────────────────────── -->
+  <div id="tab-jobs" style="display:none">
+    <div class="card mb-3">
+      <div class="card-header"><i class="bi bi-search me-1"></i>Search Device Update History</div>
+      <div class="card-body">
+        <div class="row g-2 align-items-end">
+          <div class="col-md-6">
+            <label class="form-label">Device ID</label>
+            <input type="text" id="jobDeviceId" class="form-control mono" placeholder="Paste device UUID…"/>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-primary" onclick="loadJobs()"><i class="bi bi-search me-1"></i>Load History</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><i class="bi bi-arrow-repeat me-1"></i>Update Job History</div>
+      <div class="card-body p-0">
+        <table class="table mb-0" id="jobTable">
+          <thead><tr><th>Job ID</th><th>Package ID</th><th>Status</th><th>Attempts</th><th>Created</th><th>Updated</th><th>Error</th></tr></thead>
+          <tbody id="jobBody"><tr><td colspan="7" class="empty-state"><i class="bi bi-arrow-repeat"></i><br>Enter a device ID above to load history</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── API REFERENCE TAB ───────────────────────────────────────────── -->
+  <div id="tab-apiref" style="display:none">
+    <div class="row g-3">
+      <!-- Health -->
+      <div class="col-12"><div class="card"><div class="card-header"><span class="badge bg-success me-2">GET</span>Health Check</div><div class="card-body">
+        <pre id="curl-health">curl -sk https://localhost:8443/health</pre>
+        <button class="btn btn-outline-secondary btn-sm" onclick="runApiCall('GET','/health',null,null,true)"><i class="bi bi-play-fill me-1"></i>Run</button>
+        <pre id="resp-health" style="display:none;margin-top:.5rem"></pre>
+      </div></div></div>
+
+      <!-- Register device -->
+      <div class="col-md-6"><div class="card"><div class="card-header"><span class="badge bg-primary me-2">POST</span>Register Device</div><div class="card-body">
+        <div class="row g-2 mb-2">
+          <div class="col-6"><input id="reg-host" class="form-control form-control-sm" placeholder="hostname"/></div>
+          <div class="col-6"><input id="reg-os" class="form-control form-control-sm" placeholder="os_version"/></div>
+          <div class="col-6"><input id="reg-ver" class="form-control form-control-sm" placeholder="current_version (0.0.0)"/></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="runRegister()"><i class="bi bi-play-fill me-1"></i>Run</button>
+        <pre id="resp-register" style="display:none;margin-top:.5rem"></pre>
+      </div></div></div>
+
+      <!-- Poll update -->
+      <div class="col-md-6"><div class="card"><div class="card-header"><span class="badge bg-primary me-2">POST</span>Poll for Update</div><div class="card-body">
+        <div class="row g-2 mb-2">
+          <div class="col-12"><input id="poll-token" class="form-control form-control-sm mono" placeholder="Device auth_token"/></div>
+          <div class="col-6"><input id="poll-ver" class="form-control form-control-sm" placeholder="current_version"/></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="runPoll()"><i class="bi bi-play-fill me-1"></i>Run</button>
+        <pre id="resp-poll" style="display:none;margin-top:.5rem"></pre>
+      </div></div></div>
+
+      <!-- Report status -->
+      <div class="col-md-6"><div class="card"><div class="card-header"><span class="badge bg-primary me-2">POST</span>Report Update Status</div><div class="card-body">
+        <div class="row g-2 mb-2">
+          <div class="col-12"><input id="stat-token" class="form-control form-control-sm mono" placeholder="Device auth_token"/></div>
+          <div class="col-4"><input id="stat-pkgid" class="form-control form-control-sm" placeholder="package_id"/></div>
+          <div class="col-4">
+            <select id="stat-status" class="form-select form-select-sm">
+              <option value="success">success</option>
+              <option value="failed">failed</option>
+              <option value="rolled_back">rolled_back</option>
+              <option value="applying">applying</option>
+            </select>
+          </div>
+          <div class="col-4"><input id="stat-ver" class="form-control form-control-sm" placeholder="installed_version"/></div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="runReportStatus()"><i class="bi bi-play-fill me-1"></i>Run</button>
+        <pre id="resp-status" style="display:none;margin-top:.5rem"></pre>
+      </div></div></div>
+
+      <!-- Admin stats -->
+      <div class="col-md-6"><div class="card"><div class="card-header"><span class="badge bg-warning text-dark me-2">GET</span>Admin Stats</div><div class="card-body">
+        <pre>curl -sk https://localhost:8443/admin/stats \
+  -H "Authorization: Bearer &lt;ADMIN_SECRET&gt;"</pre>
+        <button class="btn btn-primary btn-sm" onclick="runApiCall('GET','/admin/stats',null,'admin',true)"><i class="bi bi-play-fill me-1"></i>Run</button>
+        <pre id="resp-adminstats" style="display:none;margin-top:.5rem"></pre>
+      </div></div></div>
+
+      <!-- curl reference table -->
+      <div class="col-12"><div class="card"><div class="card-header"><i class="bi bi-terminal me-1"></i>Full curl Command Reference</div><div class="card-body">
+        <table class="table table-sm">
+          <thead><tr><th>Method</th><th>Path</th><th>Auth</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/health</code></td><td>None</td><td>Server health check</td></tr>
+            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/devices/register</code></td><td>None</td><td>Register a new device, returns auth_token</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/devices/me</code></td><td>Device</td><td>Get own device info</td></tr>
+            <tr><td><span class="badge bg-warning text-dark">PUT</span></td><td><code>/devices/me/version</code></td><td>Device</td><td>Report installed version</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/devices/</code></td><td>Admin</td><td>List all devices</td></tr>
+            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/packages/upload</code></td><td>Admin</td><td>Upload .zip package (multipart)</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/packages/</code></td><td>Admin</td><td>List all packages</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/packages/:id</code></td><td>Device</td><td>Get package metadata</td></tr>
+            <tr><td><span class="badge bg-secondary">PATCH</span></td><td><code>/packages/:id</code></td><td>Admin</td><td>Toggle active / set rollout %</td></tr>
+            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/packages/:id</code></td><td>Admin</td><td>Delete a package</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/packages/:id/mappings</code></td><td>Admin</td><td>List file path mappings for package</td></tr>
+            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/packages/:id/mappings</code></td><td>Admin</td><td>Add a file destination mapping</td></tr>
+            <tr><td><span class="badge bg-warning text-dark">PUT</span></td><td><code>/packages/:id/mappings/:mid</code></td><td>Admin</td><td>Update a mapping</td></tr>
+            <tr><td><span class="badge bg-danger">DELETE</span></td><td><code>/packages/:id/mappings/:mid</code></td><td>Admin</td><td>Remove a mapping</td></tr>
+            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/updates/poll</code></td><td>Device</td><td>Poll for update (streams zip if available)</td></tr>
+            <tr><td><span class="badge bg-primary">POST</span></td><td><code>/updates/status</code></td><td>Device</td><td>Report update result</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/updates/history/:deviceId</code></td><td>Admin</td><td>Get update job history for a device</td></tr>
+            <tr><td><span class="badge bg-success">GET</span></td><td><code>/admin/stats</code></td><td>Admin</td><td>Dashboard statistics</td></tr>
+          </tbody>
+        </table>
+      </div></div></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Toast container -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- File Mappings Modal -->
+<div class="modal fade" id="mappingsModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-map me-2"></i>File Path Mappings — Package <span id="mappingPkgId"></span></h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <!-- Add mapping form -->
+        <div class="card mb-3">
+          <div class="card-header">Add New Mapping</div>
+          <div class="card-body">
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label">Source Path (in zip)</label>
+                <input type="text" id="m-src" class="form-control form-control-sm mono" placeholder="files/MyService.exe"/>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Destination Path (Windows)</label>
+                <input type="text" id="m-dst" class="form-control form-control-sm mono" placeholder="C:\Program Files\MyService\MyService.exe"/>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">File Type</label>
+                <select id="m-type" class="form-select form-select-sm">
+                  <option value="binary">binary</option>
+                  <option value="config">config</option>
+                  <option value="script">script</option>
+                </select>
+              </div>
+              <div class="col-md-2 d-flex align-items-end">
+                <div class="form-check me-3">
+                  <input class="form-check-input" type="checkbox" id="m-backup" checked/>
+                  <label class="form-check-label" for="m-backup" style="font-size:.8rem">Backup</label>
+                </div>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary btn-sm" onclick="addMapping()"><i class="bi bi-plus-circle me-1"></i>Add Mapping</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- Mappings table -->
+        <table class="table table-sm mb-0" id="mappingTable">
+          <thead><tr><th>ID</th><th>Source Path</th><th>Destination Path</th><th>Type</th><th>Backup</th><th>Actions</th></tr></thead>
+          <tbody id="mappingBody"><tr><td colspan="6" class="empty-state">No mappings defined</td></tr></tbody>
+        </table>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Rollout Modal -->
+<div class="modal fade" id="rolloutModal" tabindex="-1">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header"><h5 class="modal-title">Set Rollout %</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <label class="form-label">Rollout Percentage (0–100)</label>
+        <input type="number" id="rolloutVal" class="form-control" min="0" max="100" value="100"/>
+        <input type="hidden" id="rolloutPkgId"/>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" onclick="applyRollout()">Apply</button>
+        <button class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+'use strict';
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let adminSecret = sessionStorage.getItem('ota_secret') || '';
+let activeMappingPkgId = null;
+document.getElementById('adminSecret').value = adminSecret;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function saveSecret() {
+  adminSecret = document.getElementById('adminSecret').value.trim();
+  sessionStorage.setItem('ota_secret', adminSecret);
+  toast('Admin secret saved', 'success');
+  loadAll();
+}
+
+function adminHdr()  { return { 'Authorization': 'Bearer ' + adminSecret }; }
+function jsonHdr()   { return { 'Content-Type': 'application/json' }; }
+
+async function api(method, path, body, auth='admin') {
+  const headers = {};
+  if (auth === 'admin') Object.assign(headers, adminHdr());
+  if (body) Object.assign(headers, jsonHdr());
+  const opts = { method, headers };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  return { status: r.status, headers: r.headers, data: r.status === 204 ? null : await r.json().catch(()=>null) };
+}
+
+function toast(msg, type='success') {
+  const el = document.createElement('div');
+  el.className = `toast show ${type}`;
+  el.innerHTML = `<div class="toast-body"><i class="bi bi-${type==='success'?'check-circle':'x-circle'} me-2"></i>${msg}</div>`;
+  document.getElementById('toastContainer').appendChild(el);
+  setTimeout(()=>el.remove(), 3500);
+}
+
+function fmt(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  return d.toLocaleDateString()+'<br><small class="text-muted">'+d.toLocaleTimeString()+'</small>';
+}
+function fmtSize(bytes) {
+  if (!bytes) return '–';
+  return bytes < 1048576 ? (bytes/1024).toFixed(1)+' KB' : (bytes/1048576).toFixed(2)+' MB';
+}
+function statusBadge(s) {
+  const m={success:'success',failed:'failed',rolled_back:'rolledback',downloading:'downloading',applying:'applying',pending:'pending'};
+  return `<span class="badge-status badge-${m[s]||'pending'}">${s||'–'}</span>`;
+}
+
+function switchTab(el, tab) {
+  document.querySelectorAll('#mainTabs .nav-link').forEach(l=>l.classList.remove('active'));
+  el.classList.add('active');
+  document.querySelectorAll('[id^="tab-"]').forEach(t=>t.style.display='none');
+  document.getElementById('tab-'+tab).style.display='block';
+  if (tab==='overview') loadAll();
+  if (tab==='packages') loadPackages();
+  if (tab==='devices') loadDevices();
+}
+
+// ── Health ────────────────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch('/health');
+    const d = await r.json();
+    const dot = document.getElementById('healthDot');
+    dot.className = 'badge bg-success'; dot.textContent = 'Online';
+    document.getElementById('serverTs').textContent = new Date(d.ts).toLocaleTimeString();
+  } catch {
+    const dot = document.getElementById('healthDot');
+    dot.className = 'badge bg-danger'; dot.textContent = 'Offline';
+  }
+}
+setInterval(checkHealth, 10000); checkHealth();
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+async function loadStats() {
+  try {
+    const r = await api('GET', '/admin/stats');
+    const d = r.data;
+    document.getElementById('s-devices').textContent  = d.total_devices  ?? '–';
+    document.getElementById('s-packages').textContent = d.total_packages ?? '–';
+    document.getElementById('s-success').textContent  = d.success_jobs   ?? '–';
+    document.getElementById('s-pending').textContent  = d.pending_jobs   ?? '–';
+    document.getElementById('s-failed').textContent   = d.failed_jobs    ?? '–';
+  } catch(e) { console.warn('stats:', e.message); }
+}
+
+// ── Overview tables ───────────────────────────────────────────────────────────
+async function loadOverviewPkgs() {
+  try {
+    const r = await api('GET', '/packages/?active_only=false');
+    const items = (r.data?.items||[]).slice(0,5);
+    const tbody = document.querySelector('#overview-pkgs tbody');
+    if (!items.length) { tbody.innerHTML='<tr><td colspan="5" class="empty-state">No packages</td></tr>'; return; }
+    tbody.innerHTML = items.map(p=>`<tr>
+      <td><span class="badge bg-primary mono">${p.version}</span></td>
+      <td>${p.package_name}</td>
+      <td class="mono">${fmtSize(p.file_size)}</td>
+      <td>${fmt(p.uploaded_at)}</td>
+      <td>${p.is_active?'<span class="badge-active">Active</span>':'<span class="badge-inactive">Inactive</span>'}</td>
+    </tr>`).join('');
+  } catch {}
+}
+
+async function loadOverviewJobs() {
+  try {
+    const dr = await api('GET', '/devices/');
+    const devices = dr.data?.items || [];
+    const rows = [];
+    for (const dev of devices.slice(0,3)) {
+      const jr = await api('GET', `/updates/history/${dev.device_id}`);
+      for (const j of (jr.data?.items||[]).slice(0,2)) {
+        rows.push(`<tr>
+          <td class="mono" title="${dev.device_id}">${dev.hostname}</td>
+          <td>${j.package_id}</td>
+          <td>${statusBadge(j.status)}</td>
+          <td>${fmt(j.updated_at||j.created_at)}</td>
+        </tr>`);
+      }
+    }
+    const tbody = document.querySelector('#overview-jobs tbody');
+    tbody.innerHTML = rows.length ? rows.join('') : '<tr><td colspan="4" class="empty-state">No jobs yet</td></tr>';
+  } catch {}
+}
+
+async function loadAll() { await Promise.all([loadStats(), loadOverviewPkgs(), loadOverviewJobs()]); }
+loadAll();
+
+// ── Packages ──────────────────────────────────────────────────────────────────
+async function loadPackages() {
+  const activeOnly = document.getElementById('activeOnly')?.checked;
+  const r = await api('GET', `/packages/?active_only=${activeOnly}`);
+  const items = r.data?.items || [];
+  const tbody = document.getElementById('pkgBody');
+  if (!items.length) { tbody.innerHTML='<tr><td colspan="9" class="empty-state"><i class="bi bi-archive"></i><br>No packages yet</td></tr>'; return; }
+  tbody.innerHTML = items.map(p=>`<tr>
+    <td class="mono">${p.id}</td>
+    <td><span class="badge bg-primary mono">${p.version}</span></td>
+    <td>${p.package_name}</td>
+    <td class="mono">${fmtSize(p.file_size)}</td>
+    <td class="hash-cell mono" title="${p.sha256_hash}">${p.sha256_hash?.slice(0,12)}…</td>
+    <td><span class="mono">${p.rollout_percentage}%</span></td>
+    <td>${p.is_active?'<span class="badge-active">Active</span>':'<span class="badge-inactive">Inactive</span>'}</td>
+    <td>${fmt(p.uploaded_at)}</td>
+    <td>
+      <div class="d-flex gap-1 flex-wrap">
+        <button class="btn btn-outline-secondary btn-sm" title="File Mappings" onclick="openMappings(${p.id})"><i class="bi bi-map"></i></button>
+        <button class="btn btn-outline-secondary btn-sm" title="${p.is_active?'Deactivate':'Activate'}" onclick="toggleActive(${p.id},${p.is_active})">${p.is_active?'<i class="bi bi-pause-circle"></i>':'<i class="bi bi-play-circle"></i>'}</button>
+        <button class="btn btn-outline-secondary btn-sm" title="Set Rollout %" onclick="openRollout(${p.id},${p.rollout_percentage})"><i class="bi bi-sliders"></i></button>
+        <button class="btn btn-danger btn-sm" title="Delete" onclick="deletePackage(${p.id},'${p.version}')"><i class="bi bi-trash3"></i></button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+function onFileSelect(input) {
+  const f = input.files[0];
+  if (f) document.getElementById('dropLabel').textContent = f.name + ' (' + fmtSize(f.size) + ')';
+}
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f) { document.getElementById('pkgFile').files = e.dataTransfer.files; onFileSelect(document.getElementById('pkgFile')); }
+}
+
+async function uploadPackage() {
+  const file = document.getElementById('pkgFile').files[0];
+  const version = document.getElementById('upVersion').value.trim();
+  if (!file || !version) { toast('File and version are required', 'error'); return; }
+
+  document.getElementById('upProgress').style.display='flex';
+  const fd = new FormData();
+  fd.append('file', file);
+  fd.append('version', version);
+  fd.append('release_notes', document.getElementById('upNotes').value);
+  fd.append('min_client_version', document.getElementById('upMinVer').value || '0.0.0');
+  const svcs = document.getElementById('upServices').value.split(',').map(s=>s.trim()).filter(Boolean);
+  fd.append('target_services', JSON.stringify(svcs));
+
+  try {
+    const r = await fetch('/packages/upload', { method:'POST', headers: adminHdr(), body: fd });
+    const d = await r.json();
+    document.getElementById('upProgress').style.display='none';
+    if (r.status===201) {
+      toast(`Package v${d.version} uploaded (id=${d.package_id})`, 'success');
+      loadPackages();
+      document.getElementById('pkgFile').value='';
+      document.getElementById('dropLabel').textContent='Drop .zip here or click to browse';
+      document.getElementById('upVersion').value='';
+      document.getElementById('upNotes').value='';
+    } else {
+      toast(d.error||'Upload failed', 'error');
+    }
+  } catch(e) { document.getElementById('upProgress').style.display='none'; toast(e.message,'error'); }
+}
+
+async function toggleActive(id, isActive) {
+  const r = await api('PATCH', `/packages/${id}`, { is_active: !isActive });
+  if (r.status===200) { toast(`Package ${!isActive?'activated':'deactivated'}`, 'success'); loadPackages(); }
+  else toast(r.data?.error||'Failed', 'error');
+}
+
+async function deletePackage(id, version) {
+  if (!confirm(`Delete package v${version}? This cannot be undone.`)) return;
+  const r = await api('DELETE', `/packages/${id}`);
+  if (r.status===200) { toast(`Package v${version} deleted`, 'success'); loadPackages(); }
+  else toast(r.data?.error||'Delete failed','error');
+}
+
+function openRollout(id, current) {
+  document.getElementById('rolloutPkgId').value = id;
+  document.getElementById('rolloutVal').value = current;
+  new bootstrap.Modal(document.getElementById('rolloutModal')).show();
+}
+async function applyRollout() {
+  const id = document.getElementById('rolloutPkgId').value;
+  const pct = parseInt(document.getElementById('rolloutVal').value);
+  const r = await api('PATCH', `/packages/${id}`, { rollout_percentage: pct });
+  if (r.status===200) { toast(`Rollout set to ${pct}%`, 'success'); bootstrap.Modal.getInstance(document.getElementById('rolloutModal')).hide(); loadPackages(); }
+  else toast(r.data?.error||'Failed','error');
+}
+
+// ── File Mappings ─────────────────────────────────────────────────────────────
+async function openMappings(pkgId) {
+  activeMappingPkgId = pkgId;
+  document.getElementById('mappingPkgId').textContent = pkgId;
+  await loadMappings(pkgId);
+  new bootstrap.Modal(document.getElementById('mappingsModal')).show();
+}
+async function loadMappings(pkgId) {
+  const r = await api('GET', `/packages/${pkgId}/mappings`);
+  const items = r.data?.items || [];
+  const tbody = document.getElementById('mappingBody');
+  if (!items.length) { tbody.innerHTML='<tr><td colspan="6" class="empty-state">No mappings. Add one above.</td></tr>'; return; }
+  tbody.innerHTML = items.map(m=>`<tr>
+    <td class="mono">${m.id}</td>
+    <td class="mono">${m.source_path}</td>
+    <td class="mono">${m.dest_path}</td>
+    <td><span class="badge bg-secondary">${m.file_type}</span></td>
+    <td>${m.backup?'<i class="bi bi-check2-circle text-success"></i>':'<i class="bi bi-x-circle text-muted"></i>'}</td>
+    <td><button class="btn btn-danger btn-sm" onclick="deleteMapping(${pkgId},${m.id})"><i class="bi bi-trash3"></i></button></td>
+  </tr>`).join('');
+}
+async function addMapping() {
+  const src = document.getElementById('m-src').value.trim();
+  const dst = document.getElementById('m-dst').value.trim();
+  if (!src||!dst) { toast('Source and destination required','error'); return; }
+  const r = await api('POST', `/packages/${activeMappingPkgId}/mappings`, {
+    source_path: src, dest_path: dst,
+    file_type: document.getElementById('m-type').value,
+    backup: document.getElementById('m-backup').checked
+  });
+  if (r.status===201) {
+    toast('Mapping added','success');
+    document.getElementById('m-src').value=''; document.getElementById('m-dst').value='';
+    loadMappings(activeMappingPkgId);
+  } else toast(r.data?.error||'Failed','error');
+}
+async function deleteMapping(pkgId, mid) {
+  const r = await api('DELETE', `/packages/${pkgId}/mappings/${mid}`);
+  if (r.status===200) { toast('Mapping deleted','success'); loadMappings(pkgId); }
+  else toast(r.data?.error||'Failed','error');
+}
+
+// ── Devices ───────────────────────────────────────────────────────────────────
+async function loadDevices() {
+  const r = await api('GET', '/devices/');
+  const items = r.data?.items || [];
+  const tbody = document.getElementById('devBody');
+  if (!items.length) { tbody.innerHTML='<tr><td colspan="8" class="empty-state"><i class="bi bi-pc-display"></i><br>No devices</td></tr>'; return; }
+  tbody.innerHTML = items.map(d=>`<tr>
+    <td class="mono" style="max-width:120px;overflow:hidden;text-overflow:ellipsis" title="${d.device_id}">${d.device_id.slice(0,8)}…</td>
+    <td>${d.hostname}</td>
+    <td class="mono" style="font-size:.75rem">${d.os_version}</td>
+    <td><span class="badge bg-primary mono">${d.current_version}</span></td>
+    <td>${fmt(d.registered_at)}</td>
+    <td>${fmt(d.last_seen)}</td>
+    <td>${d.is_active?'<span class="badge-active">Active</span>':'<span class="badge-inactive">Inactive</span>'}</td>
+    <td><button class="btn btn-outline-secondary btn-sm" onclick="loadJobsForDevice('${d.device_id}')"><i class="bi bi-clock-history me-1"></i>Jobs</button></td>
+  </tr>`).join('');
+}
+
+function loadJobsForDevice(deviceId) {
+  document.getElementById('jobDeviceId').value = deviceId;
+  switchTab(document.querySelector('[data-tab="jobs"]'), 'jobs');
+  loadJobs();
+}
+
+// ── Jobs ──────────────────────────────────────────────────────────────────────
+async function loadJobs() {
+  const deviceId = document.getElementById('jobDeviceId').value.trim();
+  if (!deviceId) { toast('Enter a device ID','error'); return; }
+  const r = await api('GET', `/updates/history/${deviceId}`);
+  const items = r.data?.items || [];
+  const tbody = document.getElementById('jobBody');
+  if (r.status===404||!items.length) { tbody.innerHTML='<tr><td colspan="7" class="empty-state">No jobs found for this device</td></tr>'; return; }
+  tbody.innerHTML = items.map(j=>`<tr>
+    <td class="mono">${j.id}</td>
+    <td class="mono">${j.package_id}</td>
+    <td>${statusBadge(j.status)}</td>
+    <td>${j.attempt_count}</td>
+    <td>${fmt(j.created_at)}</td>
+    <td>${fmt(j.updated_at)}</td>
+    <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:.75rem;color:#f87171">${j.error_message||''}</td>
+  </tr>`).join('');
+}
+
+// ── API Reference runners ─────────────────────────────────────────────────────
+async function runApiCall(method, path, body, auth, showResp) {
+  const id = 'resp-'+path.replace(/\//g,'')||'resp';
+  try {
+    const r = await api(method, path, body, auth);
+    const el = document.getElementById('resp-'+path.replace(/\//g,'').replace(/:/g,''));
+    const target = document.getElementById('resp-'+{'/health':'health','/admin/stats':'adminstats'}[path]);
+    if (target) { target.style.display='block'; target.textContent=JSON.stringify(r.data,null,2); }
+  } catch(e) { toast(e.message,'error'); }
+}
+
+async function runRegister() {
+  const body = {
+    hostname: document.getElementById('reg-host').value||'TestDevice',
+    os_version: document.getElementById('reg-os').value||'Windows 10',
+    current_version: document.getElementById('reg-ver').value||'0.0.0'
+  };
+  const r = await api('POST', '/devices/register', body, null);
+  const el = document.getElementById('resp-register');
+  el.style.display='block';
+  el.textContent = JSON.stringify(r.data, null, 2);
+  if (r.status===200) toast('Device registered! Copy the auth_token.','success');
+}
+
+async function runPoll() {
+  const token = document.getElementById('poll-token').value.trim();
+  const ver   = document.getElementById('poll-ver').value.trim()||'0.0.0';
+  if (!token) { toast('Enter device auth_token','error'); return; }
+  const r = await fetch('/updates/poll', {
+    method:'POST',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({current_version: ver})
+  });
+  const el = document.getElementById('resp-poll');
+  el.style.display='block';
+  if (r.status===204) { el.textContent='HTTP 204 — No update available (device is up-to-date)'; return; }
+  const ct = r.headers.get('content-type')||'';
+  if (ct.includes('zip')) {
+    const buf = await r.arrayBuffer();
+    el.textContent = `HTTP 200 — Update available!\n` +
+      `X-Package-Version: ${r.headers.get('x-package-version')}\n` +
+      `X-SHA256: ${r.headers.get('x-sha256')}\n` +
+      `X-Package-Id: ${r.headers.get('x-package-id')}\n` +
+      `Body: ${buf.byteLength} bytes of zip data streamed`;
+  } else {
+    el.textContent = await r.text();
+  }
+}
+
+async function runReportStatus() {
+  const token  = document.getElementById('stat-token').value.trim();
+  const pkgId  = parseInt(document.getElementById('stat-pkgid').value);
+  const status = document.getElementById('stat-status').value;
+  const ver    = document.getElementById('stat-ver').value.trim();
+  if (!token||!pkgId) { toast('Token and package_id required','error'); return; }
+  const r = await fetch('/updates/status', {
+    method:'POST',
+    headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+    body: JSON.stringify({package_id:pkgId, status, installed_version:ver||undefined})
+  });
+  const el = document.getElementById('resp-status');
+  el.style.display='block';
+  el.textContent = JSON.stringify(await r.json().catch(()=>({})),null,2);
+  if (r.status===200) toast('Status reported','success');
+}
+</script>
+</body>
+</html>
