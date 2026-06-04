@@ -1,0 +1,31 @@
+#!/bin/bash
+# Show current state of the USB SSH devtool installation.
+
+CONF=/etc/usb-ssh-devtool/devtool.conf
+[[ -f "$CONF" ]] && source "$CONF"
+SSH_PORT="${SSH_PORT:-22}"
+RECOVERY_USER="${RECOVERY_USER:-devrecovery}"
+KEYDIR=/etc/usb-ssh-devtool/keys
+
+SSH_ACTIVE=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo "unknown")
+TIMER_ACTIVE=$(systemctl is-active usb-ssh-devtool-watchdog.timer 2>/dev/null || echo "unknown")
+USER_EXISTS=$(id "$RECOVERY_USER" &>/dev/null && echo "yes" || echo "NO")
+KEY_EXISTS=$([[ -f "$KEYDIR/recovery_key" ]] && echo "yes" || echo "NO")
+MY_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  USB SSH Devtool — Status"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+printf "  sshd             : %s\n" "$SSH_ACTIVE"
+printf "  Watchdog timer   : %s\n" "$TIMER_ACTIVE"
+printf "  Recovery user    : %s (exists: %s)\n" "$RECOVERY_USER" "$USER_EXISTS"
+printf "  SSH port         : %s\n" "$SSH_PORT"
+printf "  Machine IP       : %s\n" "$MY_IP"
+printf "  Keypair present  : %s\n" "$KEY_EXISTS"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+if [[ "$KEY_EXISTS" == "yes" ]]; then
+  echo "  Connect command:"
+  echo "    ssh -i recovery_key -p $SSH_PORT $RECOVERY_USER@$MY_IP"
+fi
+echo ""

@@ -1,0 +1,360 @@
+#!/bin/bash
+# USB SSH Devtool — self-extracting installer for Ubuntu
+# Single-file, no dependencies beyond bash + openssh-server.
+#
+# Usage:
+#   sudo ./usb-ssh-devtool.run              # install with defaults
+#   sudo ./usb-ssh-devtool.run --port 2222  # custom SSH port
+#   sudo ./usb-ssh-devtool.run --user myuser
+#   sudo ./usb-ssh-devtool.run --uninstall
+#
+# This file is self-contained: the payload is base64-encoded below the
+# __PAYLOAD__ marker and extracted at runtime — no internet required.
+
+set -euo pipefail
+
+VERSION="1.0.0"
+SSH_PORT=22
+RECOVERY_USER="devrecovery"
+UNINSTALL=false
+INSTALL_DIR="/opt/usb-ssh-devtool"
+SERVICE_NAME="usb-ssh-devtool-watchdog"
+
+# ── Colour helpers ────────────────────────────────────────────────────────────
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+CYAN='\033[0;36m'; BOLD='\033[1m'; NC='\033[0m'
+info()    { echo -e "${CYAN}[info]${NC}  $*"; }
+success() { echo -e "${GREEN}[ok]${NC}    $*"; }
+warn()    { echo -e "${YELLOW}[warn]${NC}  $*"; }
+die()     { echo -e "${RED}[error]${NC} $*" >&2; exit 1; }
+
+# ── Banner ────────────────────────────────────────────────────────────────────
+echo -e "${BOLD}"
+echo "  ╔══════════════════════════════════════════════╗"
+echo "  ║      USB SSH Devtool  v${VERSION}               ║"
+echo "  ║      Ubuntu Self-Extracting Installer        ║"
+echo "  ╚══════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+# ── Argument parsing ──────────────────────────────────────────────────────────
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --port)        SSH_PORT="$2";       shift 2 ;;
+    --user)        RECOVERY_USER="$2";  shift 2 ;;
+    --uninstall)   UNINSTALL=true;      shift   ;;
+    --help|-h)
+      echo "Usage: sudo $0 [--port PORT] [--user USER] [--uninstall]"
+      exit 0 ;;
+    *) die "Unknown option: $1" ;;
+  esac
+done
+
+[[ $EUID -eq 0 ]] || die "Run as root:  sudo $0"
+
+# ── Uninstall path ─────────────────────────────────────────────────────────────
+if $UNINSTALL; then
+  info "Uninstalling USB SSH Devtool ..."
+  systemctl stop    "${SERVICE_NAME}.timer"   2>/dev/null || true
+  systemctl disable "${SERVICE_NAME}.timer"   2>/dev/null || true
+  rm -f "/etc/systemd/system/${SERVICE_NAME}.service" \
+        "/etc/systemd/system/${SERVICE_NAME}.timer"
+  systemctl daemon-reload
+
+  userdel -r "$RECOVERY_USER" 2>/dev/null && success "User '$RECOVERY_USER' removed." \
+    || warn "User '$RECOVERY_USER' not found."
+  rm -f "/etc/sudoers.d/90-usb-ssh-devtool"
+
+  sed -i -E "s/[[:space:]]*${RECOVERY_USER}//g" /etc/ssh/sshd_config 2>/dev/null || true
+  sed -i -E '/^AllowUsers[[:space:]]*$/d'        /etc/ssh/sshd_config 2>/dev/null || true
+
+  if command -v ufw &>/dev/null; then
+    ufw delete allow "${SSH_PORT}/tcp" 2>/dev/null && success "UFW rule removed." || true
+  fi
+
+  rm -rf "$INSTALL_DIR"
+  systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+  success "Uninstall complete."
+  exit 0
+fi
+
+# ── Extract payload ───────────────────────────────────────────────────────────
+TMPDIR_EXTRACT=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_EXTRACT"' EXIT
+
+info "Extracting payload ..."
+PAYLOAD_LINE=$(grep -n "^__PAYLOAD__$" "$0" | cut -d: -f1)
+tail -n +"$((PAYLOAD_LINE + 1))" "$0" | base64 -d | tar -xz -C "$TMPDIR_EXTRACT"
+success "Payload extracted."
+
+# ── Install files ──────────────────────────────────────────────────────────────
+info "Installing to $INSTALL_DIR ..."
+mkdir -p "$INSTALL_DIR"/{keys,scripts,config}
+cp -r "$TMPDIR_EXTRACT"/scripts/* "$INSTALL_DIR/scripts/"
+cp -r "$TMPDIR_EXTRACT"/config/*  "$INSTALL_DIR/config/"
+chmod 755 "$INSTALL_DIR/scripts/"*.sh
+chmod 700 "$INSTALL_DIR/keys"
+
+# Install CLI commands
+cp "$TMPDIR_EXTRACT/bin/usb-ssh-devtool-status"  /usr/local/bin/
+cp "$TMPDIR_EXTRACT/bin/usb-ssh-devtool-cleanup" /usr/local/bin/
+chmod 755 /usr/local/bin/usb-ssh-devtool-{status,cleanup}
+
+# Install systemd units
+cp "$TMPDIR_EXTRACT/systemd/${SERVICE_NAME}.service" /etc/systemd/system/
+cp "$TMPDIR_EXTRACT/systemd/${SERVICE_NAME}.timer"   /etc/systemd/system/
+success "Files installed."
+
+# ── Install openssh-server if absent ──────────────────────────────────────────
+if ! dpkg -l openssh-server 2>/dev/null | grep -q "^ii"; then
+  info "Installing openssh-server ..."
+  apt-get update -qq && apt-get install -y openssh-server
+  success "openssh-server installed."
+fi
+
+# ── Generate keypair ──────────────────────────────────────────────────────────
+KEYFILE="$INSTALL_DIR/keys/recovery_key"
+if [[ ! -f "$KEYFILE" ]]; then
+  info "Generating ED25519 keypair ..."
+  ssh-keygen -t ed25519 -C "usb-devtool-$(hostname)-$(date +%Y%m%d)" \
+    -N "" -f "$KEYFILE"
+  chmod 600 "$KEYFILE"
+  chmod 644 "${KEYFILE}.pub"
+  success "Keypair generated: $KEYFILE"
+else
+  warn "Existing keypair found — reusing."
+fi
+PUBKEY="$(cat "${KEYFILE}.pub")"
+
+# ── Create recovery user ──────────────────────────────────────────────────────
+info "Setting up user '$RECOVERY_USER' ..."
+if ! id "$RECOVERY_USER" &>/dev/null; then
+  useradd -m -s /bin/bash -G sudo "$RECOVERY_USER"
+fi
+passwd -l "$RECOVERY_USER"
+echo "$RECOVERY_USER ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/90-usb-ssh-devtool"
+chmod 440 "/etc/sudoers.d/90-usb-ssh-devtool"
+
+SSH_DIR="/home/$RECOVERY_USER/.ssh"
+mkdir -p "$SSH_DIR"
+AUTH_KEYS="$SSH_DIR/authorized_keys"
+grep -qF "$PUBKEY" "$AUTH_KEYS" 2>/dev/null || echo "$PUBKEY" >> "$AUTH_KEYS"
+chmod 700 "$SSH_DIR"
+chmod 600 "$AUTH_KEYS"
+chown -R "$RECOVERY_USER:$RECOVERY_USER" "$SSH_DIR"
+success "User '$RECOVERY_USER' configured."
+
+# ── Patch sshd_config ─────────────────────────────────────────────────────────
+info "Patching /etc/ssh/sshd_config ..."
+SSHD_CONF=/etc/ssh/sshd_config
+patch_sshd() {
+  local key="$1" val="$2"
+  if grep -qE "^#?[[:space:]]*${key}[[:space:]]" "$SSHD_CONF"; then
+    sed -i -E "s|^#?[[:space:]]*${key}[[:space:]].*|${key} ${val}|" "$SSHD_CONF"
+  else
+    echo "${key} ${val}" >> "$SSHD_CONF"
+  fi
+}
+patch_sshd Port                           "$SSH_PORT"
+patch_sshd PubkeyAuthentication           yes
+patch_sshd PasswordAuthentication         no
+patch_sshd PermitRootLogin                no
+patch_sshd ChallengeResponseAuthentication no
+patch_sshd AuthorizedKeysFile             ".ssh/authorized_keys"
+
+if ! grep -qE "^AllowUsers.*$RECOVERY_USER" "$SSHD_CONF"; then
+  grep -qE "^AllowUsers" "$SSHD_CONF" \
+    && sed -i -E "s|^(AllowUsers.*)|\1 $RECOVERY_USER|" "$SSHD_CONF" \
+    || echo "AllowUsers $RECOVERY_USER" >> "$SSHD_CONF"
+fi
+success "sshd_config patched."
+
+# ── Firewall ──────────────────────────────────────────────────────────────────
+info "Opening firewall port $SSH_PORT ..."
+if command -v ufw &>/dev/null; then
+  ufw allow "${SSH_PORT}/tcp" comment "usb-ssh-devtool" 2>/dev/null || true
+  ufw --force enable 2>/dev/null || true
+  success "UFW rule added."
+else
+  warn "UFW not found — skipping firewall config."
+fi
+
+# ── Enable sshd ───────────────────────────────────────────────────────────────
+info "Enabling sshd ..."
+systemctl enable ssh  2>/dev/null || systemctl enable sshd  2>/dev/null || true
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+success "sshd running."
+
+# ── Watchdog timer ────────────────────────────────────────────────────────────
+info "Enabling watchdog timer ..."
+systemctl daemon-reload
+systemctl enable "${SERVICE_NAME}.timer"
+systemctl start  "${SERVICE_NAME}.timer"
+success "Watchdog active."
+
+# ── Copy key to Desktop ───────────────────────────────────────────────────────
+REAL_USER="${SUDO_USER:-$(logname 2>/dev/null || echo "")}"
+if [[ -n "$REAL_USER" ]]; then
+  DESKTOP="/home/$REAL_USER/Desktop"
+  if [[ -d "$DESKTOP" ]]; then
+    cp "$KEYFILE" "$DESKTOP/usb_devtool_recovery_key"
+    chown "$REAL_USER:" "$DESKTOP/usb_devtool_recovery_key"
+    chmod 600 "$DESKTOP/usb_devtool_recovery_key"
+    success "Private key copied to Desktop — save it to your USB!"
+  fi
+fi
+
+# ── Write config file ─────────────────────────────────────────────────────────
+cat > "$INSTALL_DIR/devtool.conf" <<CONF
+SSH_PORT=$SSH_PORT
+RECOVERY_USER=$RECOVERY_USER
+CONF
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+MY_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+echo ""
+echo -e "${BOLD}${GREEN}"
+echo "  ╔══════════════════════════════════════════════════════════╗"
+echo "  ║  Installation complete!                                  ║"
+echo "  ╠══════════════════════════════════════════════════════════╣"
+printf "  ║  User   : %-46s║\n" "$RECOVERY_USER"
+printf "  ║  Port   : %-46s║\n" "$SSH_PORT"
+printf "  ║  IP     : %-46s║\n" "$MY_IP"
+printf "  ║  Key    : %-46s║\n" "$INSTALL_DIR/keys/recovery_key"
+echo "  ╠══════════════════════════════════════════════════════════╣"
+echo "  ║  Connect from your workstation:                          ║"
+printf "  ║    ssh -i recovery_key -p %s %s@%s\n" "$SSH_PORT" "$RECOVERY_USER" "$MY_IP"
+echo "  ╠══════════════════════════════════════════════════════════╣"
+echo "  ║  Check status :  usb-ssh-devtool-status                  ║"
+echo "  ║  Remove access:  sudo usb-ssh-devtool-cleanup            ║"
+echo "  ║  Uninstall    :  sudo ./usb-ssh-devtool.run --uninstall  ║"
+echo "  ╚══════════════════════════════════════════════════════════╝"
+echo -e "${NC}"
+
+exit 0
+
+__PAYLOAD__
+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

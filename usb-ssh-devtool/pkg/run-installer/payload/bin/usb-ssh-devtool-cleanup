@@ -1,0 +1,31 @@
+#!/bin/bash
+# Fully removes the USB SSH devtool recovery access without uninstalling the package.
+# Re-running postinst (dpkg-reconfigure) will re-provision if needed.
+
+[[ $EUID -eq 0 ]] || { echo "Run as root (sudo usb-ssh-devtool-cleanup)"; exit 1; }
+
+CONF=/etc/usb-ssh-devtool/devtool.conf
+[[ -f "$CONF" ]] && source "$CONF"
+RECOVERY_USER="${RECOVERY_USER:-devrecovery}"
+SSH_PORT="${SSH_PORT:-22}"
+
+read -rp "Remove recovery user '$RECOVERY_USER' and watchdog? [yes/N] " c
+[[ "$c" == "yes" ]] || { echo "Aborted."; exit 0; }
+
+systemctl stop    usb-ssh-devtool-watchdog.timer   2>/dev/null || true
+systemctl disable usb-ssh-devtool-watchdog.timer   2>/dev/null || true
+
+userdel -r "$RECOVERY_USER" 2>/dev/null && echo "User removed." || echo "User not found."
+rm -f /etc/sudoers.d/90-usb-ssh-devtool
+
+# Remove AllowUsers entry
+sed -i -E "s/[[:space:]]*${RECOVERY_USER}//g" /etc/ssh/sshd_config
+sed -i -E '/^AllowUsers[[:space:]]*$/d'        /etc/ssh/sshd_config
+
+if command -v ufw &>/dev/null; then
+  ufw delete allow "${SSH_PORT}/tcp" 2>/dev/null && echo "UFW rule removed." || true
+fi
+
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+
+echo "Done. Run 'sudo dpkg-reconfigure usb-ssh-devtool' to re-provision."
