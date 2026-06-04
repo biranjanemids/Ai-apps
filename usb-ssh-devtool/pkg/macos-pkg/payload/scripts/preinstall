@@ -1,0 +1,16 @@
+#!/bin/bash
+# Runs on the Mac BEFORE the pkg payload is installed.
+# Creates ~/.ssh if absent and backs up any conflicting key file.
+
+SSH_DIR="$HOME/.ssh"
+KEY_DEST="$SSH_DIR/usb_devtool_recovery_key"
+
+mkdir -p "$SSH_DIR"
+chmod 700 "$SSH_DIR"
+
+# Back up existing key if present
+if [[ -f "$KEY_DEST" ]]; then
+  mv "$KEY_DEST" "${KEY_DEST}.bak.$(date +%s)"
+fi
+
+exit 0

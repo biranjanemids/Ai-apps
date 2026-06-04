@@ -1,0 +1,47 @@
+#!/bin/bash
+# Runs on the Mac AFTER the pkg payload is installed.
+# Sets key permissions, injects SSH config block, prints usage.
+
+SSH_DIR="$HOME/.ssh"
+KEY_DEST="$SSH_DIR/usb_devtool_recovery_key"
+SSH_CONFIG="$SSH_DIR/config"
+
+# Fix permissions on the installed key
+chmod 600 "$KEY_DEST"
+
+# ── Inject SSH config block (idempotent) ─────────────────────────────────────
+CONFIG_BLOCK="
+# --- USB SSH Devtool ---
+Host devtool-target
+    HostName REPLACE_WITH_TARGET_IP
+    Port 22
+    User devrecovery
+    IdentityFile ~/.ssh/usb_devtool_recovery_key
+    StrictHostKeyChecking no
+# --- End USB SSH Devtool ---"
+
+if ! grep -q "USB SSH Devtool" "$SSH_CONFIG" 2>/dev/null; then
+  touch "$SSH_CONFIG"
+  chmod 600 "$SSH_CONFIG"
+  echo "$CONFIG_BLOCK" >> "$SSH_CONFIG"
+fi
+
+# ── Print usage ───────────────────────────────────────────────────────────────
+echo ""
+echo "┌────────────────────────────────────────────────────────────────┐"
+echo "│  USB SSH Devtool — Mac client installed                        │"
+echo "├────────────────────────────────────────────────────────────────┤"
+echo "│  Private key : ~/.ssh/usb_devtool_recovery_key                 │"
+echo "│                                                                │"
+echo "│  Edit the target IP in ~/.ssh/config, then connect:            │"
+echo "│    ssh devtool-target                                          │"
+echo "│                                                                │"
+echo "│  Or connect directly:                                          │"
+echo "│    ssh -i ~/.ssh/usb_devtool_recovery_key \\                   │"
+echo "│         devrecovery@<target-ip>                                │"
+echo "│                                                                │"
+echo "│  Remove when done:                                             │"
+echo "│    /usr/local/bin/usb-ssh-devtool-mac-cleanup                 │"
+echo "└────────────────────────────────────────────────────────────────┘"
+
+exit 0

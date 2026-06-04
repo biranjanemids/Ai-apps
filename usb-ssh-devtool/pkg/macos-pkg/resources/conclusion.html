@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"/></head>
+<body style="font-family:system-ui;padding:20px">
+  <h2>Installation Complete</h2>
+  <p>Your Mac is now configured with the USB SSH Devtool credentials.</p>
+  <h3>Next steps</h3>
+  <ol>
+    <li>Edit <code>~/.ssh/config</code> — replace <code>REPLACE_WITH_TARGET_IP</code>
+        with your Ubuntu machine's IP address.</li>
+    <li>Connect: <pre style="background:#f0f0f0;padding:8px">ssh devtool-target</pre>
+        or: <pre style="background:#f0f0f0;padding:8px">usb-ssh-devtool-connect devrecovery@&lt;ip&gt;</pre></li>
+    <li>When done, run <code>usb-ssh-devtool-mac-cleanup</code> to remove all artifacts.</li>
+  </ol>
+</body>
+</html>

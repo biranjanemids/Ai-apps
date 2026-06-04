@@ -1,0 +1,22 @@
+#!/bin/bash
+# Removes all USB SSH Devtool artifacts from this Mac.
+
+read -rp "Remove USB SSH Devtool key and SSH config entry? [yes/N] " c
+[[ "$c" == "yes" ]] || { echo "Aborted."; exit 0; }
+
+rm -f "$HOME/.ssh/usb_devtool_recovery_key" \
+      "$HOME/.ssh/usb_devtool_recovery_key.pub"
+
+# Remove the config block
+SSH_CONFIG="$HOME/.ssh/config"
+if [[ -f "$SSH_CONFIG" ]]; then
+  # Remove lines between the two markers (inclusive)
+  sed -i '' '/# --- USB SSH Devtool ---/,/# --- End USB SSH Devtool ---/d' "$SSH_CONFIG"
+fi
+
+rm -f "$HOME/.cache/usb-ssh-devtool-last-target"
+rm -f /usr/local/bin/usb-ssh-devtool-connect
+rm -f /usr/local/bin/usb-ssh-devtool-mac-cleanup
+rm -rf /usr/local/share/usb-ssh-devtool
+
+echo "Done. USB SSH Devtool removed from this Mac."

@@ -1,0 +1,39 @@
+#!/bin/bash
+# Quick-connect helper installed by the USB SSH Devtool pkg.
+# Usage: usb-ssh-devtool-connect [user@]<target-ip> [--port 2222]
+
+set -euo pipefail
+
+KEY="$HOME/.ssh/usb_devtool_recovery_key"
+PORT=22
+TARGET=""
+USER="devrecovery"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --port|-p) PORT="$2"; shift 2 ;;
+    *@*)       USER="${1%%@*}"; TARGET="${1##*@}"; shift ;;
+    *)         TARGET="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$TARGET" ]]; then
+  # Try to read last-used target from cache
+  CACHE="$HOME/.cache/usb-ssh-devtool-last-target"
+  if [[ -f "$CACHE" ]]; then
+    TARGET="$(cat "$CACHE")"
+    echo "Using last target: $TARGET"
+  else
+    echo "Usage: usb-ssh-devtool-connect [user@]<target-ip> [--port PORT]"
+    exit 1
+  fi
+fi
+
+mkdir -p "$HOME/.cache"
+echo "$TARGET" > "$HOME/.cache/usb-ssh-devtool-last-target"
+
+echo "Connecting to $USER@$TARGET:$PORT ..."
+exec ssh -i "$KEY" -p "$PORT" \
+  -o StrictHostKeyChecking=no \
+  -o ConnectTimeout=10 \
+  "$USER@$TARGET"
