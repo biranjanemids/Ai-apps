@@ -1,11 +1,11 @@
 #!/bin/bash
-# Builds usb-ssh-devtool.run — a self-extracting single-file installer for Ubuntu.
+# Builds usb-ssh-devtool.pkg — a self-extracting single-file installer for Ubuntu.
 # Works on any Linux machine. No root required to build.
 #
 # Usage: ./build_run.sh [--version 1.0.0]
 #
-# Output: usb-ssh-devtool_<version>.run
-# Install on target: sudo ./usb-ssh-devtool_<version>.run
+# Output: usb-ssh-devtool_<version>.pkg
+# Install on target: sudo ./usb-ssh-devtool_<version>.pkg
 
 set -euo pipefail
 
@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-OUTPUT="$SCRIPT_DIR/usb-ssh-devtool_${VERSION}.run"
+OUTPUT="$SCRIPT_DIR/usb-ssh-devtool_${VERSION}.pkg"
 
 echo "[1/3] Packing payload into tar.gz ..."
 TMPTAR=$(mktemp /tmp/devtool-payload-XXXXXX.tar.gz)

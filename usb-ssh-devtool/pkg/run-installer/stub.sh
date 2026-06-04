@@ -3,10 +3,10 @@
 # Single-file, no dependencies beyond bash + openssh-server.
 #
 # Usage:
-#   sudo ./usb-ssh-devtool.run              # install with defaults
-#   sudo ./usb-ssh-devtool.run --port 2222  # custom SSH port
-#   sudo ./usb-ssh-devtool.run --user myuser
-#   sudo ./usb-ssh-devtool.run --uninstall
+#   sudo ./usb-ssh-devtool.pkg              # install with defaults
+#   sudo ./usb-ssh-devtool.pkg --port 2222  # custom SSH port
+#   sudo ./usb-ssh-devtool.pkg --user myuser
+#   sudo ./usb-ssh-devtool.pkg --uninstall
 #
 # This file is self-contained: the payload is base64-encoded below the
 # __PAYLOAD__ marker and extracted at runtime — no internet required.
@@ -226,7 +226,7 @@ printf "  ║    ssh -i recovery_key -p %s %s@%s\n" "$SSH_PORT" "$RECOVERY_USER"
 echo "  ╠══════════════════════════════════════════════════════════╣"
 echo "  ║  Check status :  usb-ssh-devtool-status                  ║"
 echo "  ║  Remove access:  sudo usb-ssh-devtool-cleanup            ║"
-echo "  ║  Uninstall    :  sudo ./usb-ssh-devtool.run --uninstall  ║"
+echo "  ║  Uninstall    :  sudo ./usb-ssh-devtool.pkg --uninstall  ║"
 echo "  ╚══════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 
