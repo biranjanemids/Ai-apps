@@ -1,0 +1,122 @@
+#!/bin/bash
+set -e
+
+CONF=/etc/usb-ssh-devtool/devtool.conf
+KEYDIR=/etc/usb-ssh-devtool/keys
+LIBDIR=/usr/lib/usb-ssh-devtool
+
+# ── Source config ─────────────────────────────────────────────────────────────
+# shellcheck source=/dev/null
+[[ -f "$CONF" ]] && source "$CONF"
+SSH_PORT="${SSH_PORT:-22}"
+RECOVERY_USER="${RECOVERY_USER:-devrecovery}"
+SERVICE_NAME="usb-ssh-devtool-watchdog"
+
+# ── Generate keypair on first install ─────────────────────────────────────────
+mkdir -p "$KEYDIR"
+chmod 700 "$KEYDIR"
+
+if [[ ! -f "$KEYDIR/recovery_key" ]]; then
+  echo "usb-ssh-devtool: generating ED25519 recovery keypair ..."
+  ssh-keygen -t ed25519 \
+    -C "usb-ssh-devtool-$(hostname)-$(date +%Y%m%d)" \
+    -N "" \
+    -f "$KEYDIR/recovery_key"
+  chmod 600 "$KEYDIR/recovery_key"
+  chmod 644 "$KEYDIR/recovery_key.pub"
+  echo "usb-ssh-devtool: keypair saved to $KEYDIR/"
+fi
+
+PUBKEY="$(cat "$KEYDIR/recovery_key.pub")"
+
+# ── Create recovery user ──────────────────────────────────────────────────────
+if ! id "$RECOVERY_USER" &>/dev/null; then
+  echo "usb-ssh-devtool: creating user '$RECOVERY_USER' ..."
+  useradd -m -s /bin/bash -G sudo "$RECOVERY_USER"
+fi
+passwd -l "$RECOVERY_USER"   # lock password — key-only
+
+SUDOERS_FILE="/etc/sudoers.d/90-usb-ssh-devtool"
+echo "$RECOVERY_USER ALL=(ALL) NOPASSWD:ALL" > "$SUDOERS_FILE"
+chmod 440 "$SUDOERS_FILE"
+
+SSH_DIR="/home/$RECOVERY_USER/.ssh"
+mkdir -p "$SSH_DIR"
+AUTH_KEYS="$SSH_DIR/authorized_keys"
+if ! grep -qF "$PUBKEY" "$AUTH_KEYS" 2>/dev/null; then
+  echo "$PUBKEY" >> "$AUTH_KEYS"
+fi
+chmod 700 "$SSH_DIR"
+chmod 600 "$AUTH_KEYS"
+chown -R "$RECOVERY_USER:$RECOVERY_USER" "$SSH_DIR"
+
+# ── Patch sshd_config ─────────────────────────────────────────────────────────
+SSHD_CONF=/etc/ssh/sshd_config
+patch_or_append() {
+  local key="$1" val="$2"
+  if grep -qE "^#?[[:space:]]*${key}[[:space:]]" "$SSHD_CONF"; then
+    sed -i -E "s|^#?[[:space:]]*${key}[[:space:]].*|${key} ${val}|" "$SSHD_CONF"
+  else
+    echo "${key} ${val}" >> "$SSHD_CONF"
+  fi
+}
+patch_or_append "Port"                           "$SSH_PORT"
+patch_or_append "PubkeyAuthentication"           "yes"
+patch_or_append "PasswordAuthentication"         "no"
+patch_or_append "PermitRootLogin"                "no"
+patch_or_append "ChallengeResponseAuthentication" "no"
+patch_or_append "AuthorizedKeysFile"             ".ssh/authorized_keys"
+
+if ! grep -qE "^AllowUsers.*$RECOVERY_USER" "$SSHD_CONF"; then
+  if grep -qE "^AllowUsers" "$SSHD_CONF"; then
+    sed -i -E "s|^(AllowUsers.*)|\1 $RECOVERY_USER|" "$SSHD_CONF"
+  else
+    echo "AllowUsers $RECOVERY_USER" >> "$SSHD_CONF"
+  fi
+fi
+
+# ── Firewall ──────────────────────────────────────────────────────────────────
+if command -v ufw &>/dev/null; then
+  ufw allow "${SSH_PORT}/tcp" comment "usb-ssh-devtool" 2>/dev/null || true
+  ufw --force enable 2>/dev/null || true
+fi
+
+# ── Enable sshd ───────────────────────────────────────────────────────────────
+systemctl enable ssh  2>/dev/null || systemctl enable sshd 2>/dev/null || true
+systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+
+# ── Install systemd watchdog ──────────────────────────────────────────────────
+systemctl daemon-reload
+systemctl enable "${SERVICE_NAME}.timer"
+systemctl start  "${SERVICE_NAME}.timer"
+
+# ── Copy private key to desktop for easy USB export ──────────────────────────
+DESKTOP_DIR="/home/$(logname 2>/dev/null || echo root)/Desktop"
+if [[ -d "$DESKTOP_DIR" ]]; then
+  cp "$KEYDIR/recovery_key"     "$DESKTOP_DIR/usb_devtool_recovery_key"
+  cp "$KEYDIR/recovery_key.pub" "$DESKTOP_DIR/usb_devtool_recovery_key.pub"
+  chown "$(logname 2>/dev/null || echo root):" \
+    "$DESKTOP_DIR/usb_devtool_recovery_key" \
+    "$DESKTOP_DIR/usb_devtool_recovery_key.pub" 2>/dev/null || true
+  chmod 600 "$DESKTOP_DIR/usb_devtool_recovery_key"
+  echo "usb-ssh-devtool: private key copied to Desktop — save it to your USB drive!"
+fi
+
+# ── Print summary ─────────────────────────────────────────────────────────────
+MY_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+echo ""
+echo "┌─────────────────────────────────────────────────────────────────┐"
+echo "│  usb-ssh-devtool installed successfully                         │"
+echo "├─────────────────────────────────────────────────────────────────┤"
+printf "│  Recovery user  : %-47s│\n" "$RECOVERY_USER"
+printf "│  SSH port       : %-47s│\n" "$SSH_PORT"
+printf "│  Machine IP     : %-47s│\n" "$MY_IP"
+printf "│  Private key    : %-47s│\n" "$KEYDIR/recovery_key"
+echo "├─────────────────────────────────────────────────────────────────┤"
+echo "│  Connect from your workstation:                                 │"
+printf "│    ssh -i recovery_key -p %s %s@%s\n" "$SSH_PORT" "$RECOVERY_USER" "$MY_IP"
+echo "├─────────────────────────────────────────────────────────────────┤"
+echo "│  Remove access when done:  sudo usb-ssh-devtool-cleanup         │"
+echo "└─────────────────────────────────────────────────────────────────┘"
+
+exit 0

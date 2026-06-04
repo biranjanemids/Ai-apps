@@ -1,0 +1,41 @@
+#!/bin/bash
+set -e
+
+CONF=/etc/usb-ssh-devtool/devtool.conf
+[[ -f "$CONF" ]] && source "$CONF"
+RECOVERY_USER="${RECOVERY_USER:-devrecovery}"
+SSH_PORT="${SSH_PORT:-22}"
+
+case "$1" in
+  remove|purge)
+    echo "usb-ssh-devtool: removing recovery user and artifacts ..."
+
+    # Remove user
+    userdel -r "$RECOVERY_USER" 2>/dev/null || true
+    rm -f "/etc/sudoers.d/90-usb-ssh-devtool"
+
+    # Remove AllowUsers entry
+    if [[ -f /etc/ssh/sshd_config ]]; then
+      sed -i -E "s/[[:space:]]*${RECOVERY_USER}//g" /etc/ssh/sshd_config
+      sed -i -E '/^AllowUsers[[:space:]]*$/d'        /etc/ssh/sshd_config
+    fi
+
+    # Close firewall port
+    if command -v ufw &>/dev/null; then
+      ufw delete allow "${SSH_PORT}/tcp" 2>/dev/null || true
+    fi
+
+    # Reload systemd
+    systemctl daemon-reload 2>/dev/null || true
+
+    # Restart sshd with clean config
+    systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null || true
+
+    echo "usb-ssh-devtool: cleanup complete."
+    ;;
+  purge)
+    rm -rf /etc/usb-ssh-devtool
+    ;;
+esac
+
+exit 0

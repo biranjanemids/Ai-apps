@@ -1,0 +1,13 @@
+Package: usb-ssh-devtool
+Version: 1.0.0
+Section: admin
+Priority: optional
+Architecture: all
+Depends: openssh-server, ufw, bash (>= 4.0)
+Recommends: fail2ban
+Maintainer: homelab <biranjan15@gmail.com>
+Description: USB SSH Recovery & Access Devtool for hardened Ubuntu systems
+ Installs a key-based SSH recovery agent on a secured Ubuntu machine.
+ Generates an ED25519 keypair on first install, configures sshd, opens
+ the firewall, and runs a watchdog systemd timer to keep SSH alive.
+ Designed to be carried on a USB drive and installed on any Ubuntu 20.04+.

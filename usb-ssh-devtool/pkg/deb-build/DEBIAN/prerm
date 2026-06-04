@@ -1,0 +1,12 @@
+#!/bin/bash
+set -e
+
+# Called on: apt remove / dpkg -r
+# Full cleanup is handled by the usb-ssh-devtool-cleanup command;
+# prerm only stops services so files can be removed cleanly.
+
+systemctl stop  usb-ssh-devtool-watchdog.timer   2>/dev/null || true
+systemctl stop  usb-ssh-devtool-watchdog.service 2>/dev/null || true
+systemctl disable usb-ssh-devtool-watchdog.timer 2>/dev/null || true
+
+exit 0

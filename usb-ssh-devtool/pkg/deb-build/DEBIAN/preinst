@@ -1,0 +1,17 @@
+#!/bin/bash
+set -e
+
+# Abort if not root
+if [[ $EUID -ne 0 ]]; then
+  echo "usb-ssh-devtool: must be installed as root" >&2
+  exit 1
+fi
+
+# Install openssh-server if missing (apt may not run pre-depends in time)
+if ! dpkg -l openssh-server 2>/dev/null | grep -q "^ii"; then
+  echo "usb-ssh-devtool: installing openssh-server dependency ..."
+  apt-get update -qq
+  apt-get install -y openssh-server
+fi
+
+exit 0

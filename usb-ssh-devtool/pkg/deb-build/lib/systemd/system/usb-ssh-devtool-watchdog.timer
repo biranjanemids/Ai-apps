@@ -1,0 +1,10 @@
+[Unit]
+Description=USB SSH Devtool — run watchdog every 5 minutes
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=5min
+Unit=usb-ssh-devtool-watchdog.service
+
+[Install]
+WantedBy=timers.target

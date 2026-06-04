@@ -1,0 +1,13 @@
+[Unit]
+Description=USB SSH Devtool — SSH watchdog
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/usb-ssh-devtool/devtool.conf
+ExecStart=/bin/bash -c 'systemctl is-active ssh 2>/dev/null || systemctl restart ssh 2>/dev/null || systemctl restart sshd'
+ExecStartPost=/bin/bash -c 'source /etc/usb-ssh-devtool/devtool.conf 2>/dev/null; ufw allow "${SSH_PORT:-22}/tcp" 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target
