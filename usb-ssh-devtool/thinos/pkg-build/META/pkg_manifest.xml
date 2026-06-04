@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ThinOSPackage>
+  <PackageInfo>
+    <Name>usb-ssh-devtool</Name>
+    <Version>1.0.0</Version>
+    <Vendor>homelab</Vendor>
+    <Description>USB SSH Devtool — enables key-based SSH access on ThinOS 10.x</Description>
+    <TargetOS>ThinOS</TargetOS>
+    <TargetOSVersion>10.0</TargetOSVersion>
+    <Architecture>x86_64</Architecture>
+    <Category>Security</Category>
+    <InstallScript>install.sh</InstallScript>
+    <UninstallScript>uninstall.sh</UninstallScript>
+    <RequiresReboot>false</RequiresReboot>
+  </PackageInfo>
+  <Dependencies>
+    <Dependency name="openssh" minVersion="7.0"/>
+  </Dependencies>
+  <Files>
+    <File src="payload/etc/ssh/sshd_config.devtool"   dest="/etc/ssh/sshd_config.devtool"/>
+    <File src="payload/etc/init.d/ssh-devtool"        dest="/etc/init.d/ssh-devtool"       mode="755"/>
+    <File src="payload/usr/local/bin/devtool-status"  dest="/usr/local/bin/devtool-status" mode="755"/>
+    <File src="payload/usr/local/bin/devtool-cleanup" dest="/usr/local/bin/devtool-cleanup" mode="755"/>
+  </Files>
+</ThinOSPackage>

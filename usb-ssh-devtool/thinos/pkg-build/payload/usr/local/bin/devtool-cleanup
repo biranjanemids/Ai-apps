@@ -1,0 +1,32 @@
+#!/bin/sh
+# Remove USB SSH Devtool access from ThinOS without full uninstall.
+# Removes recovery user keys and restores SSH config.
+
+KEY_DIR="/etc/ssh/devtool_keys"
+SSH_CONF="/etc/ssh/sshd_config"
+
+echo "Removing USB SSH Devtool access ..."
+
+# Remove devtool block from sshd_config
+sed -i '/# --- usb-ssh-devtool ---/,/# --- end usb-ssh-devtool ---/d' "$SSH_CONF" 2>/dev/null || true
+
+# Remove authorized key from Admin home
+if [ -f "$KEY_DIR/recovery_key.pub" ]; then
+  PUBKEY="$(cat "$KEY_DIR/recovery_key.pub")"
+  for ADMIN_HOME in /root /home/Admin /home/admin; do
+    AUTH_KEYS="$ADMIN_HOME/.ssh/authorized_keys"
+    if [ -f "$AUTH_KEYS" ]; then
+      grep -v "$PUBKEY" "$AUTH_KEYS" > "${AUTH_KEYS}.tmp" && mv "${AUTH_KEYS}.tmp" "$AUTH_KEYS"
+    fi
+  done
+fi
+
+# Remove keys
+rm -rf "$KEY_DIR"
+rm -f /wnos/devtool_recovery_key.pub
+
+# Restart SSH
+command -v systemctl >/dev/null 2>&1 && \
+  (systemctl restart ssh 2>/dev/null || systemctl restart sshd 2>/dev/null) || true
+
+echo "Done. USB SSH Devtool access removed."

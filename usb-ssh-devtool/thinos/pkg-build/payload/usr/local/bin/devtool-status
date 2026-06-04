@@ -1,0 +1,25 @@
+#!/bin/sh
+# Show USB SSH Devtool status on ThinOS.
+
+KEY_DIR="/etc/ssh/devtool_keys"
+MY_IP=$(ip addr show 2>/dev/null | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -1)
+
+SSH_STATE="unknown"
+command -v systemctl >/dev/null 2>&1 && \
+  SSH_STATE=$(systemctl is-active ssh 2>/dev/null || systemctl is-active sshd 2>/dev/null || echo "unknown")
+
+KEY_STATE="missing"
+[ -f "$KEY_DIR/recovery_key" ] && KEY_STATE="present"
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  USB SSH Devtool — ThinOS Status"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+printf "  SSH service : %s\n" "$SSH_STATE"
+printf "  Keypair     : %s\n" "$KEY_STATE"
+printf "  Device IP   : %s\n" "${MY_IP:-not detected}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+if [ "$KEY_STATE" = "present" ]; then
+  echo "  Connect:"
+  echo "    ssh -i recovery_key Admin@${MY_IP:-<ip>}"
+fi
+echo ""
