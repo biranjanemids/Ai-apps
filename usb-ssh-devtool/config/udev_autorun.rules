@@ -1,0 +1,8 @@
+# Optional udev rule: when this USB drive is inserted on a machine where
+# the devtool is ALREADY installed, automatically start the watchdog service.
+#
+# Install: copy to /etc/udev/rules.d/99-ssh-devtool.rules on the target
+# Replace ATTRS{serial} with your USB drive's serial (run: udevadm info /dev/sdX)
+
+ACTION=="add", SUBSYSTEM=="block", ATTRS{serial}=="YOUR_USB_SERIAL_HERE", \
+  RUN+="/bin/systemctl start ssh-devtool-watchdog.service"
