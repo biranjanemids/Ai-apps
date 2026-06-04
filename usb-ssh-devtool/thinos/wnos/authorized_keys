@@ -1,0 +1,6 @@
+# Place your ED25519 public key on this line.
+# Generate one on your workstation with:
+#   ssh-keygen -t ed25519 -C "devtool-thinos" -f thinos_recovery_key
+# Then paste the contents of thinos_recovery_key.pub below:
+
+# ssh-ed25519 AAAAC3Nza... devtool-thinos
