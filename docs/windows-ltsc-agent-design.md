@@ -235,13 +235,96 @@ Mirrors WMS group-token enrollment.
 
 ## 8. App deployment subsystem
 
-- **Spec:** installer type (`msi|exe|msix|script`), artifact ref (Transfer id + hash + signature), install/
-  uninstall command lines, **detection rules** (file version, MSI product code, registry, MSIX package family),
-  **applicability rules** (OS build, arch), success exit codes (e.g. `0,1641,3010`), reboot behavior, order/deps.
-- **Flow:** detect (skip if present) → `WriteFilterGuard` servicing bracket → download to excluded temp →
-  verify hash+signature → execute (msiexec/exe/Add-AppxProvisionedPackage) → re-run detection → report
-  `CommandResult{exit_code, reboot_required}` → commit/enable UWF.
-- **Reboot orchestration:** `3010`/`1641` surfaced to Orchestrator; reboot honored per maintenance-window policy.
+Designed for **scheduled/deferrable, restart-aware, write-filter-safe** delivery with **per-stage status
+reporting**. The unit of work is a `DeploymentJob` → per-device `install` `CommandEnvelope` whose `spec` is the
+`InstallSpec` below. Execution is a **resumable state machine** persisted in `LocalStore` (on a UWF-excluded
+volume) so it survives the reboots an install may require.
+
+### 8.1 Install spec
+```proto
+message InstallSpec {
+  string app_id = 1; string version = 2;
+  Installer installer = 3;                 // type=msi|exe|msix|script; artifact ref; cmdlines; valid_exit_codes
+  repeated DetectionRule detect = 4;       // file ver / MSI product code / registry / MSIX family
+  repeated Applicability  applies_if = 5;  // os_build, arch, model
+  repeated ConfigTask     config = 6;      // post-install config that MUST apply+verify before success (§8.5)
+  Delivery   delivery = 7;                 // §8.2  immediate | scheduled | maintenance_window
+  DeferPolicy defer = 8;                   // §8.3  user deferral (count + max time)
+  RebootPolicy reboot = 9;                 // §8.4  required? deferral + deadline; restart-services list
+  UwfPolicy  uwf = 10;                     // §8.6  hybrid commit-in-place → fall back to disable cycle
+  repeated string depends_on = 11;         // ordering / prerequisites
+}
+```
+
+### 8.2 Delivery scheduling (immediate · scheduled · window)
+`Delivery { mode; not_before (UTC, device-local resolved); maintenance_window {days,start,end,tz}; deadline }`
+- **immediate** — eligible as soon as the command lands.
+- **scheduled** — eligible at `not_before` (server sends UTC; agent resolves to device-local clock).
+- **maintenance_window** — eligible only inside the recurring window; otherwise parks in `WaitingWindow`.
+A per-device **DeliveryScheduler** in the App module evaluates eligibility on each heartbeat tick and on
+window-open; it never blocks the gRPC stream.
+
+### 8.3 User deferral (count + max time)
+`DeferPolicy { max_count, max_total (e.g. 72h), snooze_step, prompt_text, allow_defer (bool) }`
+- When eligible and a user is logged on, `Agent` asks `SessionAgent` (named-pipe) to show a deferral prompt:
+  *Install now / Snooze*. Each snooze increments `defer_count` and pushes `effective_deadline =
+  min(now+snooze_step, first_eligible + max_total)`.
+- Forced install fires when `defer_count ≥ max_count` **OR** `now ≥ first_eligible + max_total` **OR** no
+  interactive session (headless/kiosk → install silently in window). Every prompt/snooze/force is an `Event`
+  to the server so the console shows live deferral state.
+- Deferral counters persist in `LocalStore` so reboots/reconnects don't reset the budget.
+
+### 8.4 Install state machine (device-state aware, resumable)
+```
+Queued → Scheduled → WaitingWindow → AwaitingUserDefer
+   → PreCheck(detect+applicability; skip→AlreadyInstalled)
+   → EnterServicing(UWF: §8.6)                 ┐ resumable across reboot
+   → Downloading(verify hash+sig)              │  (stage + resume token in LocalStore,
+   → Installing(run installer; map exit codes) │   excluded volume; on boot, Agent resumes
+   → ConfiguringApp(run+verify ConfigTasks §8.5)│   the in-flight job before normal loop)
+   → Verifying(re-run detection)               │
+   → ExitServicing(commit / re-enable UWF)      ┘
+   → [reboot_required?] → PendingReboot(§8.4 reboot) → PostRebootVerify
+   → Succeeded | Failed(→Rollback) | RolledBack
+```
+- **Reboot policy** (your choice = *separate deferral + deadline*): installer `3010`/`1641` (or
+  `RebootPolicy.force`) marks app **Installed-PendingReboot** and reports that interim status. Reboot gets its
+  **own** `SessionAgent` deferral prompt + hard deadline, independent of the install deferral. Final config
+  verification (`PostRebootVerify`) runs after the reboot; success is reported only then.
+- **Restart-aware (no full reboot):** `RebootPolicy.restart_services[]` lets the agent restart specific
+  services/processes (or the shell via `SessionAgent`) instead of a machine reboot when the installer only
+  needs a service bounce — reported as `ServiceRestarted`, avoids an OS reboot.
+- **Resumability:** the current stage + idempotency token live in `LocalStore`. On service start, Agent checks
+  for an in-flight install and resumes at the recorded stage before entering the normal online loop — this is
+  what makes the UWF disable→reboot→install→enable→reboot path safe.
+
+### 8.5 App configuration must apply *and* verify
+`ConfigTask` = an ordered post-install step (registry, file drop, app config file/XML/JSON, run a configure
+command, import a profile) **each with its own detection/verify rule**. `ConfiguringApp` runs every task and
+re-checks its verify rule; **success is reported only when both the app detection rules and all ConfigTask
+verify rules pass.** A failed/unverifiable config task fails the job (→ `Rollback`), so "installed but
+misconfigured" never reports green.
+
+### 8.6 Write-filter persistence (hybrid: commit-in-place → fall back to disable cycle)
+`WriteFilterGuard` (from §4.5) drives `EnterServicing`/`ExitServicing`:
+1. Read UWF state (`UWF_Filter/Volume/Overlay`). If UWF disabled → install normally, no extra reboots.
+2. **Commit-in-place first:** if the installer + ConfigTasks write only within scope UWF can persist live,
+   apply, then `UWF_File.CommitFile` / `UWF_RegistryFilter.CommitRegistry` the touched paths — **no reboot**.
+3. **Fall back to disable cycle** when paths are outside committable scope (broad MSI, drivers, MSIX
+   provisioning): `disable UWF → reboot → (resume) install + configure + verify → re-enable UWF → reboot`,
+   each transition persisted so the resume logic (§8.4) continues correctly.
+4. Post-`ExitServicing`, re-read UWF to **confirm protection is re-enabled** and overlay is healthy before
+   reporting `Succeeded`; otherwise raise an `Event` and fail closed.
+5. On any failure mid-servicing, `Rollback` restores the prior UWF protection state so the device is never left
+   unprotected.
+
+### 8.7 Status model → server
+Each transition streams `Progress{command_id, state, pct, detail}` and terminal `CommandResult{status,
+exit_code, reboot_state, uwf_state, config_results[], stdout_tail}` over `DeviceLink` (buffered in the outbox
+when offline, dedup by `command_id`). Status enum surfaced in the console:
+`Queued · Scheduled · WaitingWindow · UserDeferred(n/max,deadline) · Downloading · Installing · Configuring ·
+Verifying · InstalledPendingReboot · RebootDeferred(deadline) · Succeeded · Failed · RolledBack`.
+This gives per-device live deployment state, deferral budget, and reboot-pending visibility for fleet reporting.
 
 ---
 
@@ -398,7 +481,9 @@ audit(id, actor, action, target, ts, detail)
 1. **M0 Contract + skeleton:** `/proto`, mTLS enrollment, DeviceLink stream, heartbeat, DeviceRegistry, Console
    device list. (Online dot lights up.)
 2. **M1 Config + inventory:** PolicyService + Config module + WriteFilterGuard + reconcile loop.
-3. **M2 App deployment:** PackageService + Transfer + App module (detection/exit-codes/reboot).
+3. **M2 App deployment:** PackageService + Transfer + App module — InstallSpec, DeliveryScheduler
+   (immediate/scheduled/window), user deferral (count+time) via SessionAgent, resumable install state machine,
+   hybrid UWF persistence, ConfigTask apply+verify, reboot deferral, per-stage status reporting.
 4. **M3 Kiosk/lockdown:** UWF, Shell Launcher, Assigned Access, Keyboard Filter, AppLocker + watchdog.
 5. **M4 Update + remote commands:** WUA control, reboot/shutdown/WoL, run_script, shadow, log collection.
 6. **M5 Imaging/BMR:** ImageService capture, USB-media builder, RecoveryAgent + remote BMR state machine.
@@ -415,6 +500,12 @@ audit(id, actor, action, target, ts, detail)
   capability end-to-end (push registry policy, install an MSI, enable kiosk, force a WU scan, run a script).
 - **Imaging/BMR:** capture FFU from a reference VM → build USB media → apply to a blank VM → confirm auto-enroll;
   trigger remote BMR on a managed VM → confirm recovery-partition boot, FFU pull/apply, rejoin.
+- **App deployment:** schedule an install for a future `not_before` and a maintenance window (parks until
+  open); exhaust user deferral by both count and max-time (each path forces install); UWF-enabled device —
+  verify commit-in-place path (no reboot) and the disable/reboot fallback both persist and re-enable UWF;
+  kill power during the disable-cycle reboot and confirm the install **resumes at the recorded stage**; a
+  ConfigTask that fails verification fails the job and rolls back (never reports green); reboot deferral
+  prompt + deadline drives `PostRebootVerify`; confirm every transition reaches the console as live status.
 - **Resilience:** kill the network mid-stream (outbox flush on reconnect), power-loss mid-BMR (state resumes),
   bad kiosk config (watchdog reverts), wrong-model image (compat check blocks wipe).
 - **Security:** tamper a command signature / artifact hash → agent rejects; expired device cert → re-enroll path.
