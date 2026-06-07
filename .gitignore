@@ -1,0 +1,13 @@
+# .NET build output
+bin/
+obj/
+*.user
+
+# Agent local state (SQLite)
+*.db
+*.db-wal
+*.db-shm
+
+# Tooling
+.vs/
+.idea/

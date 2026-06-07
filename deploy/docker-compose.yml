@@ -1,0 +1,22 @@
+# Single-node on-prem profile (design §12.4). The server runs the in-process
+# control plane (Enrollment, DeviceLink, Transfer). PostgreSQL / Redis / MinIO /
+# NATS are listed as the production backing services to wire in next.
+services:
+  mgmtserver:
+    build:
+      context: ..
+      dockerfile: src/Ltsc.Server/Dockerfile
+    ports:
+      - "8080:8080"   # gRPC (h2c) for the local demo; terminate mTLS here in prod
+
+  # --- Production backing services (not yet wired into the scaffold) ---
+  # postgres:
+  #   image: postgres:16
+  #   environment: { POSTGRES_PASSWORD: ltsc, POSTGRES_DB: ltsc }
+  # redis:
+  #   image: redis:7
+  # minio:
+  #   image: minio/minio
+  #   command: server /data
+  # nats:
+  #   image: nats:2-alpine
