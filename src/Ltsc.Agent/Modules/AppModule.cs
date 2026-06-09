@@ -43,6 +43,22 @@ public sealed class AppModule : IManagementModule
         ServicingPlan? plan = null;
         var configResults = new List<ConfigResult>();
 
+        // Resume shortcut (design §8.4): a job persisted at PostRebootVerify was
+        // already installed, configured and verified before the reboot — just
+        // confirm detection and finish, without re-running the installer.
+        if (job.State == InstallState.PostRebootVerify)
+        {
+            await Transition(job, ctx, InstallState.PostRebootVerify, 96, "verifying after reboot (resumed)");
+            if (spec.Detect.Count > 0 && !spec.Detect.All(ctx.Detection.Evaluate))
+            {
+                await Fail(job, ctx, plan: null, exit: 0, configResults, "post-reboot detection failed");
+                return;
+            }
+            await Succeed(job, ctx, exit: 0, rebootState: "rebooted", uwfReenabled: ctx.Uwf.IsEnabled(),
+                configResults, detail: "resumed after reboot");
+            return;
+        }
+
         try
         {
             // ---- 1. Delivery scheduling (§8.2) --------------------------------
