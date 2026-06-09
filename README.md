@@ -8,9 +8,11 @@ This repository currently contains the **M0 scaffold plus the App-deployment
 state machine** (design §8): a runnable gRPC server and agent that demonstrate
 enroll → stream → heartbeat → command → install state machine → status reporting.
 
-> **Build status:** not built/verified in CI yet — the development container has
-> no network egress to restore NuGet/.NET. Run the commands below where you have
-> the .NET 8 SDK and network access.
+> **Build status:** builds clean with the .NET 8 SDK (`dotnet build Ltsc.sln`) and
+> the demo below has been run end-to-end on Linux — the agent enrolls, opens the
+> DeviceLink stream, receives the pushed install, and drives the full state
+> machine through to `Succeeded` (exit 3010 → `InstalledPendingReboot` →
+> `PostRebootVerify` → `Succeeded`, UWF re-enabled).
 
 ## Layout
 
