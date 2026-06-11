@@ -46,6 +46,12 @@ public interface IArtifactFetcher
     Task<string> FetchAsync(string artifactId, byte[] expectedSha256, CancellationToken ct);
 }
 
+/// <summary>Uploads a local file (captured image, log bundle) to the server (design §5, §11).</summary>
+public interface IArtifactUploader
+{
+    Task<string> UploadAsync(string path, CancellationToken ct);   // returns server artifact id
+}
+
 public sealed record InstallerResult(int ExitCode, bool RebootRequired, string StdoutTail);
 
 /// <summary>Evaluates a detection / verify rule (design §8.5).</summary>

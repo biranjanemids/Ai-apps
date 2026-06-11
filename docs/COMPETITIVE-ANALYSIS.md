@@ -35,8 +35,8 @@ provide." It is a living document — status reflects what is actually in the re
 | Service restart (no full reboot) | ✅ | ✅ | ✅ | 🟡 | 🟡 | ✅ |
 | Log collection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Remote shadow / remote assist | ✅ | ✅ | ✅ | ✅ | 🟡 | 🟩 |
-| OS / firmware update control (WUA) | ✅ | ✅ | ✅ | ✅ | ✅ | 🟩 |
-| Imaging / BMR (USB + network) | ✅ | ✅ | ✅ | 🟡 | ❌ | 🟩 |
+| OS / firmware update control (WUA) | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (scan/install/ring/defer/reboot ✅; WUA COM device-validated ❌) |
+| Imaging / BMR (USB + network) | ✅ | ✅ | ✅ | 🟡 | ❌ | 🟡 (capture+BMR state machine ✅; DISM/WinPE device-validated ❌) |
 | Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (read-only + command actions) |
 | RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | 🟩 |
 | Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (events ✅, rules ❌) |
@@ -51,12 +51,13 @@ provide." It is a living document — status reflects what is actually in the re
   are imperative push), shipped **container-native** for on-prem.
 
 ## Honest gaps vs. incumbents (priority order)
-1. **Windows-device validation** of UWF/kiosk/installer/inventory interop (needs a hardware lab).
-2. **OS update (WUA)** and **imaging/BMR** capabilities — designed, not built.
-3. **Console depth**: policy/app authoring UI, RBAC, audit, alert rules.
-4. **Scale/HA**: PostgreSQL + Redis + NATS, multi-tenant isolation.
-5. **Remote shadow** (framebuffer streaming + consent).
-6. **Agent lifecycle**: signed MSI packaging, self-update, watchdog.
+1. **Windows-device validation** of UWF/kiosk/installer/inventory/**WUA**/**DISM-FFU**
+   interop (needs a hardware lab — the logic exists and is tested with stubs).
+2. **Console depth**: policy/app authoring UI, RBAC, audit, alert rules.
+3. **Scale/HA**: PostgreSQL + Redis + NATS, multi-tenant isolation.
+4. **Remote shadow** (framebuffer streaming + consent).
+5. **Agent lifecycle**: signed MSI packaging, self-update, watchdog.
+6. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
 
 These are tracked here and in `docs/windows-ltsc-agent-design.md` (§10–§13). Each
 PR that closes one updates the matrix above.

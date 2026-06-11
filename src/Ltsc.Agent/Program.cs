@@ -29,6 +29,8 @@ builder.Services.AddSingleton<ISessionUi, StubSessionUi>();
 // Inventory + remote commands are genuinely cross-platform (OS-aware at runtime).
 builder.Services.AddSingleton<IInventoryCollector, DefaultInventoryCollector>();
 builder.Services.AddSingleton<IRemoteCommandExecutor, DefaultRemoteCommandExecutor>();
+builder.Services.AddSingleton<IOsUpdateManager, DefaultOsUpdateManager>();
+builder.Services.AddSingleton<IImagingEngine, DefaultImagingEngine>();
 
 // Write filter + config setting appliers: real Windows implementations when
 // running on Windows (net8.0-windows build), cross-platform stubs otherwise so
@@ -50,6 +52,8 @@ builder.Services.AddSingleton<IManagementModule, AppModule>();
 builder.Services.AddSingleton<IManagementModule, ConfigModule>();
 builder.Services.AddSingleton<IManagementModule, InventoryModule>();
 builder.Services.AddSingleton<IManagementModule, CommandModule>();
+builder.Services.AddSingleton<IManagementModule, UpdateModule>();
+builder.Services.AddSingleton<IManagementModule, ImageModule>();
 
 // Comm + orchestrator. CommChannel is also the artifact fetcher (verified
 // downloads over the same mTLS channel).
@@ -58,6 +62,7 @@ builder.Services.AddSingleton(sp => new CommChannel(
     sp.GetRequiredService<LocalStore>(),
     sp.GetRequiredService<ILogger<CommChannel>>()));
 builder.Services.AddSingleton<IArtifactFetcher>(sp => sp.GetRequiredService<CommChannel>());
+builder.Services.AddSingleton<IArtifactUploader>(sp => sp.GetRequiredService<CommChannel>());
 builder.Services.AddSingleton<Orchestrator>();
 
 builder.Services.AddHostedService<AgentService>();

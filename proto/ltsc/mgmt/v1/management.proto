@@ -128,6 +128,44 @@ message InstalledApp { string name = 1; string version = 2; }
 message ScriptSpec { string interpreter = 1; string script = 2; int32 timeout_seconds = 3; }
 message RestartServicesSpec { repeated string services = 1; }
 
+// OS / feature update control (design §10), capability="update", action=scan|install.
+message UpdateSpec {
+  string ring = 1;                 // immediate | broad | slow
+  int32  deferral_days = 2;
+  bool   include_feature_updates = 3;
+  repeated string kb_allow = 4;    // empty = all applicable
+  repeated string kb_block = 5;
+  RebootPolicy reboot = 6;
+  MaintenanceWindow window = 7;
+}
+message UpdateInfo {
+  string update_id = 1;
+  string title = 2;
+  string kb = 3;
+  int64  size_bytes = 4;
+  bool   reboot_required = 5;
+  bool   is_feature_update = 6;
+}
+message UpdateReport {
+  repeated UpdateInfo available = 1;
+  repeated UpdateInfo installed = 2;
+}
+
+// Imaging / BMR (design §11), capability="image", action=capture|trigger_bmr.
+message ImageSpec {
+  string image_id = 1;
+  string format = 2;               // ffu | wim
+  string wipe_policy = 3;          // full | os_only
+  bytes  sha256 = 4;
+  string model = 5;                // compatibility gate before wipe
+}
+message CaptureSpec {
+  string format = 1;               // ffu | wim
+  string target_drive = 2;
+  string image_id = 3;             // destination artifact id
+  string model = 4;
+}
+
 // ---- Commands ----------------------------------------------------------------
 message CommandEnvelope {
   string command_id = 1;         // ULID; idempotency key

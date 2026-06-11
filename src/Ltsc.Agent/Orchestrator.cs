@@ -23,8 +23,11 @@ public sealed class Orchestrator : IModuleContext
     public IDetectionProbe Detection { get; }
     public ISessionUi Session { get; }
     public IArtifactFetcher Artifacts { get; }
+    public IArtifactUploader Uploads { get; }
     public IInventoryCollector Inventory { get; }
     public IRemoteCommandExecutor Commands { get; }
+    public IOsUpdateManager OsUpdates { get; }
+    public IImagingEngine Imaging { get; }
     public LocalStore Store { get; }
 
     public Orchestrator(
@@ -35,8 +38,11 @@ public sealed class Orchestrator : IModuleContext
         IDetectionProbe detection,
         ISessionUi session,
         IArtifactFetcher artifacts,
+        IArtifactUploader uploads,
         IInventoryCollector inventory,
         IRemoteCommandExecutor commands,
+        IOsUpdateManager osUpdates,
+        IImagingEngine imaging,
         LocalStore store,
         ILogger<Orchestrator> log)
     {
@@ -47,8 +53,11 @@ public sealed class Orchestrator : IModuleContext
         Detection = detection;
         Session = session;
         Artifacts = artifacts;
+        Uploads = uploads;
         Inventory = inventory;
         Commands = commands;
+        OsUpdates = osUpdates;
+        Imaging = imaging;
         Store = store;
         _log = log;
         _comm.OnCommand = DispatchAsync;

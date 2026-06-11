@@ -21,6 +21,7 @@ builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<PolicyRegistry>();
 builder.Services.AddSingleton<ArtifactStore>();
 builder.Services.AddSingleton<InventoryStore>();
+builder.Services.AddSingleton<ImageRegistry>();
 builder.Services.AddSingleton<DemoCommandPusher>();
 builder.Services.AddSingleton<CommandDispatcher>();
 
@@ -74,14 +75,21 @@ app.MapGet("/api/devices/{id}/commands", (string id, InventoryStore inv) =>
 
 // Issue a remote command from the console (signed + pushed). Supported actions:
 // reboot, shutdown, collect_logs, collect (inventory), restart_services?services=a,b
-app.MapPost("/api/devices/{id}/command", (string id, string action, string? services, CommandDispatcher d) =>
+app.MapPost("/api/devices/{id}/command", (string id, string action, string? services,
+    DeviceRegistry devices, ImageRegistry images, CommandDispatcher d) =>
 {
+    var model = devices.TryGet(id, out var dev) ? dev.Facts?.Model ?? "" : "";
     var (capability, act, spec) = action switch
     {
-        "collect" => ("inventory", "collect", Google.Protobuf.ByteString.Empty),
+        "collect" => ("inventory", "collect", ByteString.Empty),
         "restart_services" => ("command", "restart_services",
             new RestartServicesSpec { Services = { (services ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries) } }.ToByteString()),
-        _ => ("command", action, Google.Protobuf.ByteString.Empty),
+        "update_scan" => ("update", "scan", new UpdateSpec { IncludeFeatureUpdates = true }.ToByteString()),
+        "update_install" => ("update", "install",
+            new UpdateSpec { Ring = "broad", Reboot = new RebootPolicy { Required = true, AllowDefer = true, MaxTotalSeconds = 86400 } }.ToByteString()),
+        "capture" => ("image", "capture", new CaptureSpec { Format = "ffu", TargetDrive = "0", ImageId = "capture", Model = model }.ToByteString()),
+        "trigger_bmr" => ("image", "trigger_bmr", images.ForModel(model).ToByteString()),
+        _ => ("command", action, ByteString.Empty),
     };
     var (sent, commandId) = d.Dispatch(id, capability, act, spec);
     return sent ? Results.Ok(new { commandId, action }) : Results.Conflict(new { error = "device offline" });

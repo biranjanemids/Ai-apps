@@ -17,8 +17,11 @@ public interface IModuleContext
     IDetectionProbe Detection { get; }
     ISessionUi Session { get; }
     IArtifactFetcher Artifacts { get; }
+    IArtifactUploader Uploads { get; }
     IInventoryCollector Inventory { get; }
     IRemoteCommandExecutor Commands { get; }
+    IOsUpdateManager OsUpdates { get; }
+    IImagingEngine Imaging { get; }
     LocalStore Store { get; }
 
     // State is a free string (e.g. an InstallState name, or a config profile id)

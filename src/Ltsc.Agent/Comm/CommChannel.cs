@@ -22,7 +22,7 @@ namespace Ltsc.Agent.Comm;
 /// Windows production hardware the key belongs in TPM/CNG (design §6) — this
 /// file-based storage is the cross-platform fallback.
 /// </summary>
-public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher
+public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher, IArtifactUploader
 {
     private readonly string _serverAddress;
     private readonly LocalStore _store;
@@ -184,6 +184,37 @@ public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher
 
         _log.LogInformation("Artifact {Id} downloaded and verified ({Bytes} bytes)", artifactId, new FileInfo(path).Length);
         return path;
+    }
+
+    /// <summary>Uploads a local file via the chunked Transfer service (design §5, §11).</summary>
+    public async Task<string> UploadAsync(string path, CancellationToken ct)
+    {
+        var client = new Transfer.TransferClient(Rpc);
+        using var call = client.Upload(cancellationToken: ct);
+        var transferId = Guid.NewGuid().ToString("n");
+        await using (var file = File.OpenRead(path))
+        {
+            var buffer = new byte[64 * 1024];
+            long offset = 0;
+            int read;
+            while ((read = await file.ReadAsync(buffer, ct)) > 0)
+            {
+                var slice = buffer.AsSpan(0, read).ToArray();
+                await call.RequestStream.WriteAsync(new Chunk
+                {
+                    TransferId = transferId,
+                    Offset = offset,
+                    Data = ByteString.CopyFrom(slice),
+                    Sha256 = ByteString.CopyFrom(SHA256.HashData(slice)),
+                    Last = file.Position >= file.Length,
+                }, ct);
+                offset += read;
+            }
+        }
+        await call.RequestStream.CompleteAsync();
+        var result = await call.ResponseAsync;
+        _log.LogInformation("Uploaded {Path} ({Bytes} bytes) as {Id}", path, result.TotalBytes, result.ArtifactId);
+        return result.ArtifactId;
     }
 
     /// <summary>

@@ -80,9 +80,17 @@ Expected, on the server log:
   real data) at startup and on demand; viewable at `/api/devices/{id}/inventory`.
 - **Remote commands** (`CommandModule`) — `reboot`, `shutdown`, `restart_services`,
   `run_script`, `collect_logs`, `wake` (WoL). Power actions are gated behind
-  `LTSC_ALLOW_POWER=1` so demo/CI hosts are safe. Issue them from the console:
-  `POST /api/devices/{id}/command?action=...` (signed + pushed); results at
-  `/api/devices/{id}/commands`.
+  `LTSC_ALLOW_POWER=1` so demo/CI hosts are safe.
+- **OS update** (`UpdateModule`) — scan / install with ring, KB allow/block,
+  feature-update gating, UWF-bracketed install, and reboot deferral (WUA COM on
+  Windows; cross-platform simulated otherwise).
+- **Imaging / BMR** (`ImageModule`) — disk **capture** (FFU/WIM) + upload, and
+  **trigger_bmr** state machine (compat gate → Pulling verified download →
+  Applying → Sealing → Rejoining → Done). DISM/WinPE on Windows; simulated otherwise.
+
+Issue any of these from the console: `POST /api/devices/{id}/command?action=...`
+(`reboot|shutdown|collect|collect_logs|restart_services|update_scan|update_install|capture|trigger_bmr`)
+— signed + pushed; results at `/api/devices/{id}/commands`.
 
 See [`docs/COMPETITIVE-ANALYSIS.md`](docs/COMPETITIVE-ANALYSIS.md) for the feature
 parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intune.
@@ -113,6 +121,8 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
   belongs in TPM/CNG. CA key belongs in an HSM. No revocation (CRL/OCSP) yet.
 - **Scale** — SQLite/single-node by design here; PostgreSQL + Redis + NATS for
   multi-node (design §12). Policy authoring is code-seeded, no editor UI.
-- **Capabilities not yet built** — real installer execution/detection on
-  Windows, OS update (WUA), remote commands/shadow, imaging/BMR, inventory,
-  agent MSI packaging/code-signing/self-update, RBAC + audit.
+- **Capabilities still open** — real Windows installer execution/detection,
+  remote shadow, USB imaging media builder + WinPE RecoveryAgent, agent MSI
+  packaging/code-signing/self-update, RBAC + audit. (App deploy, config/kiosk,
+  inventory, remote commands, OS update, and network BMR are built — logic
+  tested with stubs, pending Windows-hardware validation.)

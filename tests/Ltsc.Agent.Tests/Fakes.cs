@@ -87,8 +87,11 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     public IDetectionProbe Detection { get; }
     public ISessionUi Session { get; }
     public IArtifactFetcher Artifacts { get; }
+    public IArtifactUploader Uploads { get; }
     public IInventoryCollector Inventory { get; }
     public IRemoteCommandExecutor Commands { get; }
+    public IOsUpdateManager OsUpdates { get; }
+    public IImagingEngine Imaging { get; }
     public LocalStore Store { get; }
 
     public List<(string CommandId, string State, int Pct, string Detail)> Progress { get; } = new();
@@ -98,15 +101,19 @@ public sealed class RecordingContext : IModuleContext, IDisposable
 
     public RecordingContext(IWriteFilterGuard uwf, IInstallerRunner installer, IDetectionProbe detection,
         ISessionUi session, IArtifactFetcher? artifacts = null,
-        IInventoryCollector? inventory = null, IRemoteCommandExecutor? commands = null)
+        IInventoryCollector? inventory = null, IRemoteCommandExecutor? commands = null,
+        IOsUpdateManager? osUpdates = null, IImagingEngine? imaging = null, IArtifactUploader? uploads = null)
     {
         Uwf = uwf;
         Installer = installer;
         Detection = detection;
         Session = session;
         Artifacts = artifacts ?? new FakeArtifactFetcher();
+        Uploads = uploads ?? new FakeArtifactUploader();
         Inventory = inventory ?? new DefaultInventoryCollector();
         Commands = commands ?? new FakeCommandExecutor();
+        OsUpdates = osUpdates ?? new FakeOsUpdateManager();
+        Imaging = imaging ?? new FakeImagingEngine();
         // Each context gets its own private in-memory store.
         Store = new LocalStore($"file:{Guid.NewGuid():n}?mode=memory&cache=shared");
     }
@@ -156,6 +163,47 @@ public sealed class FakeCommandExecutor : IRemoteCommandExecutor
     { Calls.Add("collect_logs"); return Task.FromResult(new ExecResult(0, "/tmp/logs")); }
     public Task<ExecResult> WakeAsync(string macAddress, CancellationToken ct)
     { Calls.Add($"wake:{macAddress}"); return Task.FromResult(new ExecResult(0, "sent")); }
+}
+
+/// <summary>OS update manager with scriptable scan results.</summary>
+public sealed class FakeOsUpdateManager : IOsUpdateManager
+{
+    public List<UpdateInfo> Available { get; set; } = new()
+    {
+        new UpdateInfo { UpdateId = "u1", Title = "CU", Kb = "KB1", RebootRequired = true },
+        new UpdateInfo { UpdateId = "u2", Title = "Defs", Kb = "KB2", RebootRequired = false },
+    };
+    public int InstalledCount { get; private set; }
+
+    public Task<IReadOnlyList<UpdateInfo>> ScanAsync(bool includeFeatureUpdates, CancellationToken ct)
+        => Task.FromResult<IReadOnlyList<UpdateInfo>>(Available);
+
+    public Task<UpdateInstallResult> InstallAsync(IReadOnlyList<UpdateInfo> updates, CancellationToken ct)
+    {
+        InstalledCount = updates.Count;
+        return Task.FromResult(new UpdateInstallResult(updates.Count, updates.Any(u => u.RebootRequired), $"installed {updates.Count}"));
+    }
+}
+
+/// <summary>Imaging engine recording capture/apply, with a configurable model.</summary>
+public sealed class FakeImagingEngine : IImagingEngine
+{
+    public string Model { get; set; } = "GenericThinClient";
+    public bool ApplyCalled { get; private set; }
+    public bool CaptureCalled { get; private set; }
+
+    public Task<string> CaptureAsync(string format, string targetDrive, CancellationToken ct)
+    { CaptureCalled = true; return Task.FromResult($"/tmp/capture.{format}"); }
+
+    public Task<bool> ApplyAsync(string imagePath, string format, string wipePolicy, CancellationToken ct)
+    { ApplyCalled = true; return Task.FromResult(true); }
+}
+
+public sealed class FakeArtifactUploader : IArtifactUploader
+{
+    public List<string> Uploaded { get; } = new();
+    public Task<string> UploadAsync(string path, CancellationToken ct)
+    { Uploaded.Add(path); return Task.FromResult("uploaded-artifact-id"); }
 }
 
 /// <summary>Config setting applier with scriptable drift / failure, recording applies.</summary>
