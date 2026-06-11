@@ -7,7 +7,7 @@ services:
       context: ..
       dockerfile: src/Ltsc.Server/Dockerfile
     ports:
-      - "8080:8080"   # gRPC (h2c) for the local demo; terminate mTLS here in prod
+      - "8443:8443"   # gRPC over mTLS; CA + server certs minted into server-state/
 
   # --- Production backing services (not yet wired into the scaffold) ---
   # postgres:

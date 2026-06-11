@@ -4,9 +4,9 @@ using Ltsc.Mgmt.V1;
 namespace Ltsc.Server.Registry;
 
 /// <summary>
-/// In-memory device + group state. The design (§12.3) backs this with
-/// PostgreSQL; this scaffold keeps it in-process so the loop runs with no
-/// external dependencies. Swap for an EF Core repository later.
+/// Device + group state, write-through persisted to <see cref="ServerStore"/>
+/// (SQLite) so the fleet survives a server restart. The design (§12.3) swaps
+/// the storage layer for PostgreSQL in multi-node deployments.
 /// </summary>
 public sealed class DeviceRegistry
 {
@@ -22,8 +22,17 @@ public sealed class DeviceRegistry
     }
 
     private readonly ConcurrentDictionary<string, DeviceRecord> _devices = new();
+    private readonly ServerStore? _store;
 
-    public DeviceRecord Enroll(DeviceFacts facts, string groupId)
+    public DeviceRegistry(ServerStore? store = null)
+    {
+        _store = store;
+        if (store is not null)
+            foreach (var rec in store.LoadDevices())
+                _devices[rec.DeviceId] = rec;
+    }
+
+    public DeviceRecord Enroll(DeviceFacts facts, string groupId, string certThumbprint = "")
     {
         // Stable device id derived from hardware uuid so re-enroll is idempotent.
         var id = string.IsNullOrWhiteSpace(facts.HardwareUuid)
@@ -32,6 +41,7 @@ public sealed class DeviceRegistry
 
         var record = new DeviceRecord(id, groupId, facts, DateTimeOffset.UtcNow);
         _devices[id] = record;
+        _store?.UpsertDevice(record, certThumbprint);
         return record;
     }
 
@@ -44,6 +54,7 @@ public sealed class DeviceRegistry
         {
             rec.LastSeen = DateTimeOffset.UtcNow;
             update(rec);
+            _store?.UpsertDevice(rec);
         }
     }
 

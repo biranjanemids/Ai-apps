@@ -11,3 +11,7 @@ obj/
 # Tooling
 .vs/
 .idea/
+
+# Server PKI + durable state (demo single-node)
+server-state/
+*.pfx

@@ -16,6 +16,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly DeviceRegistry _devices;
     private readonly PolicyRegistry _policies;
     private readonly DemoCommandPusher _demo;
+    private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
     public DeviceLinkService(
@@ -23,12 +24,14 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         DeviceRegistry devices,
         PolicyRegistry policies,
         DemoCommandPusher demo,
+        Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
         _connections = connections;
         _devices = devices;
         _policies = policies;
         _demo = demo;
+        _ca = ca;
         _log = log;
     }
 
@@ -37,8 +40,10 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         IServerStreamWriter<ServerMessage> responseStream,
         ServerCallContext context)
     {
-        // The first message establishes the device id (in production this comes
-        // from the validated client certificate, not the payload).
+        DeviceAuth.RequireDeviceCertificate(context, _ca);
+
+        // The first message establishes the device id. The transport identity is
+        // already proven by the validated client certificate above.
         if (!await requestStream.MoveNext(context.CancellationToken))
             return;
 

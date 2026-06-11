@@ -16,6 +16,7 @@ public interface IModuleContext
     IInstallerRunner Installer { get; }
     IDetectionProbe Detection { get; }
     ISessionUi Session { get; }
+    IArtifactFetcher Artifacts { get; }
     LocalStore Store { get; }
 
     // State is a free string (e.g. an InstallState name, or a config profile id)

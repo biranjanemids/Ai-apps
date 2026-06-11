@@ -1,6 +1,11 @@
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading.Channels;
+using Google.Protobuf;
 using Grpc.Core;
 using Grpc.Net.Client;
+using Ltsc.Agent.Platform;
 using Ltsc.Agent.Storage;
 using Ltsc.Mgmt.V1;
 using Microsoft.Extensions.Logging;
@@ -8,53 +13,127 @@ using Microsoft.Extensions.Logging;
 namespace Ltsc.Agent.Comm;
 
 /// <summary>
-/// gRPC link to the MgmtServer (design §4.2, §5): enrollment, the long-lived
-/// DeviceLink bidi stream, an outbox for agent->server messages, and dispatch of
-/// inbound commands. Production uses mTLS with the device certificate; this
-/// scaffold uses h2c + a session token in metadata.
+/// gRPC link to the MgmtServer (design §4.2, §5, §6): CSR-based enrollment that
+/// yields a CA-signed device certificate, an mTLS channel that presents it and
+/// pins the CA for server validation, the long-lived DeviceLink stream with an
+/// offline outbox, and verified artifact downloads.
+///
+/// Identity storage: the device key+cert persist as PFX in LocalStore. On
+/// Windows production hardware the key belongs in TPM/CNG (design §6) — this
+/// file-based storage is the cross-platform fallback.
 /// </summary>
-public sealed class CommChannel : IAsyncDisposable
+public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher
 {
-    private readonly GrpcChannel _channel;
+    private readonly string _serverAddress;
     private readonly LocalStore _store;
     private readonly ILogger<CommChannel> _log;
     private readonly Channel<AgentMessage> _outbox =
         Channel.CreateUnbounded<AgentMessage>(new UnboundedChannelOptions { SingleReader = true });
 
+    private GrpcChannel? _channel;
+    private X509Certificate2? _clientCert;
+
     public string DeviceId { get; private set; } = "";
+    public X509Certificate2? CaCertificate { get; private set; }
     public Func<CommandEnvelope, Task>? OnCommand { get; set; }
     public Func<string, Task>? OnSyncPolicy { get; set; }   // arg = server's expected policy version
 
     public CommChannel(string serverAddress, LocalStore store, ILogger<CommChannel> log)
     {
+        _serverAddress = serverAddress;
         _store = store;
         _log = log;
-        // AppContext switch enables h2c (cleartext HTTP/2) for the local demo.
-        AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
-        _channel = GrpcChannel.ForAddress(serverAddress);
+        LoadIdentity();
+    }
+
+    private void LoadIdentity()
+    {
+        DeviceId = _store.GetIdentity("device_id") ?? "";
+        var pfx = _store.GetIdentity("device_pfx");
+        if (pfx is not null)
+            _clientCert = new X509Certificate2(Convert.FromBase64String(pfx), (string?)null,
+                X509KeyStorageFlags.Exportable | X509KeyStorageFlags.EphemeralKeySet);
+        var caDer = _store.GetIdentity("ca_cert");
+        if (caDer is not null)
+            CaCertificate = new X509Certificate2(Convert.FromBase64String(caDer));
+    }
+
+    /// <summary>
+    /// (Re)builds the channel for the current identity. Before enrollment there
+    /// is no client cert and server trust is TOFU; after enrollment the device
+    /// cert is presented and the server must chain to the pinned CA.
+    /// </summary>
+    private GrpcChannel BuildChannel()
+    {
+        var ssl = new SslClientAuthenticationOptions
+        {
+            RemoteCertificateValidationCallback = (_, cert, _, _) =>
+            {
+                if (CaCertificate is null) return true; // bootstrap TOFU (enrollment only)
+                if (cert is null) return false;
+                using var chain = new X509Chain();
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                chain.ChainPolicy.CustomTrustStore.Add(CaCertificate);
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                return chain.Build(new X509Certificate2(cert));
+            },
+        };
+        if (_clientCert is not null)
+            ssl.ClientCertificates = new X509Certificate2Collection(_clientCert);
+
+        var handler = new SocketsHttpHandler
+        {
+            SslOptions = ssl,
+            KeepAlivePingDelay = TimeSpan.FromSeconds(30),
+            KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+        };
+        return GrpcChannel.ForAddress(_serverAddress, new GrpcChannelOptions { HttpHandler = handler });
+    }
+
+    private GrpcChannel Rpc => _channel ??= BuildChannel();
+
+    private void ResetChannel()
+    {
+        _channel?.Dispose();
+        _channel = null;
     }
 
     public async Task EnsureEnrolledAsync(string enrollmentToken, DeviceFacts facts, CancellationToken ct)
     {
-        DeviceId = _store.GetIdentity("device_id") ?? "";
-        if (!string.IsNullOrEmpty(DeviceId))
+        if (!string.IsNullOrEmpty(DeviceId) && _clientCert is not null)
         {
-            _log.LogInformation("Already enrolled as {DeviceId}", DeviceId);
+            _log.LogInformation("Already enrolled as {DeviceId} (cert {Thumb}, expires {NotAfter:u})",
+                DeviceId, _clientCert.Thumbprint, _clientCert.NotAfter);
             return;
         }
 
-        var client = new Enrollment.EnrollmentClient(_channel);
+        // Fresh keypair + PKCS#10 CSR; the CA signs it into our device cert.
+        using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var req = new CertificateRequest($"CN={facts.HardwareUuid}", key, HashAlgorithmName.SHA256);
+        var csr = req.CreateSigningRequest();
+
+        var client = new Enrollment.EnrollmentClient(Rpc);
         var resp = await client.EnrollAsync(new EnrollRequest
         {
             EnrollmentToken = enrollmentToken,
+            Csr = ByteString.CopyFrom(csr),
             Facts = facts,
         }, cancellationToken: ct);
+
+        using var pub = new X509Certificate2(resp.DeviceCertificate.ToByteArray());
+        using var withKey = pub.CopyWithPrivateKey(key);
+        var pfx = withKey.Export(X509ContentType.Pfx);
 
         DeviceId = resp.DeviceId;
         _store.SetIdentity("device_id", resp.DeviceId);
         _store.SetIdentity("group_id", resp.GroupId);
-        _store.SetIdentity("session_token", resp.SessionToken);
-        _log.LogInformation("Enrolled as {DeviceId} in {Group}", resp.DeviceId, resp.GroupId);
+        _store.SetIdentity("device_pfx", Convert.ToBase64String(pfx));
+        _store.SetIdentity("ca_cert", Convert.ToBase64String(resp.CaChain.ToByteArray()));
+        LoadIdentity();
+        ResetChannel(); // reconnect WITH the client certificate
+
+        _log.LogInformation("Enrolled as {DeviceId} in {Group}; device cert valid to {NotAfter:u}, CA pinned",
+            resp.DeviceId, resp.GroupId, resp.NotAfter.ToDateTimeOffset());
     }
 
     /// <summary>Enqueue a message for the server (buffered when offline).</summary>
@@ -63,9 +142,48 @@ public sealed class CommChannel : IAsyncDisposable
     /// <summary>Pull the effective desired-state policy snapshot for this device (design §7).</summary>
     public async Task<PolicySnapshot> PullPolicyAsync(CancellationToken ct)
     {
-        var client = new PolicyService.PolicyServiceClient(_channel);
-        var metadata = new Metadata { { "x-session-token", _store.GetIdentity("session_token") ?? "" } };
-        return await client.GetPolicyAsync(new GetPolicyRequest { DeviceId = DeviceId }, metadata, cancellationToken: ct);
+        var client = new PolicyService.PolicyServiceClient(Rpc);
+        return await client.GetPolicyAsync(new GetPolicyRequest { DeviceId = DeviceId }, cancellationToken: ct);
+    }
+
+    /// <summary>
+    /// Downloads an artifact via the chunked Transfer service, verifying each
+    /// chunk hash and the whole-artifact SHA-256 before handing the path to the
+    /// caller (design §5, §8.6). Throws InvalidDataException on any mismatch.
+    /// </summary>
+    public async Task<string> FetchAsync(string artifactId, byte[] expectedSha256, CancellationToken ct)
+    {
+        var dir = Path.Combine(AppContext.BaseDirectory, "artifacts");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, artifactId);
+
+        var client = new Transfer.TransferClient(Rpc);
+        using var call = client.Download(new DownloadRequest { ArtifactId = artifactId, Offset = 0 }, cancellationToken: ct);
+
+        await using (var file = File.Create(path))
+        {
+            await foreach (var chunk in call.ResponseStream.ReadAllAsync(ct))
+            {
+                var data = chunk.Data.ToByteArray();
+                if (!SHA256.HashData(data).AsSpan().SequenceEqual(chunk.Sha256.ToByteArray()))
+                    throw new InvalidDataException($"artifact {artifactId}: chunk hash mismatch at offset {chunk.Offset}");
+                await file.WriteAsync(data, ct);
+            }
+        }
+
+        if (expectedSha256.Length > 0)
+        {
+            await using var verify = File.OpenRead(path);
+            var actual = await SHA256.HashDataAsync(verify, ct);
+            if (!actual.AsSpan().SequenceEqual(expectedSha256))
+            {
+                File.Delete(path);
+                throw new InvalidDataException($"artifact {artifactId}: SHA-256 mismatch; refusing to install");
+            }
+        }
+
+        _log.LogInformation("Artifact {Id} downloaded and verified ({Bytes} bytes)", artifactId, new FileInfo(path).Length);
+        return path;
     }
 
     /// <summary>
@@ -74,9 +192,8 @@ public sealed class CommChannel : IAsyncDisposable
     /// </summary>
     public async Task RunStreamAsync(CancellationToken ct)
     {
-        var client = new DeviceLink.DeviceLinkClient(_channel);
-        var metadata = new Metadata { { "x-session-token", _store.GetIdentity("session_token") ?? "" } };
-        using var call = client.Connect(metadata, cancellationToken: ct);
+        var client = new DeviceLink.DeviceLinkClient(Rpc);
+        using var call = client.Connect(cancellationToken: ct);
 
         // Stops the outbound pump when the inbound stream ends, without
         // completing the shared outbox (it must survive across reconnects).
@@ -126,6 +243,6 @@ public sealed class CommChannel : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _outbox.Writer.TryComplete();
-        await _channel.ShutdownAsync();
+        if (_channel is not null) await _channel.ShutdownAsync();
     }
 }

@@ -9,11 +9,13 @@ capabilities end-to-end: the **App-deployment install state machine** (design §
 and the **config / manageability reconcile loop** (design §7/§9) —
 enroll → stream → heartbeat → command/policy → apply → status reporting.
 
-> **Build status:** builds clean with the .NET 8 SDK (`dotnet build Ltsc.sln`) and
-> the demo below has been run end-to-end on Linux — the agent enrolls, opens the
-> DeviceLink stream, receives the pushed install, and drives the full state
-> machine through to `Succeeded` (exit 3010 → `InstalledPendingReboot` →
-> `PostRebootVerify` → `Succeeded`, UWF re-enabled).
+> **Build status:** builds clean with the .NET 8 SDK, 16/16 tests pass, and the
+> demo below runs end-to-end on Linux **over mTLS**: CSR-based enrollment issues
+> a CA-signed device certificate, the agent pins the CA, commands are
+> server-signed and verified before execution, artifacts are SHA-256-verified
+> before install, config reconciles idempotently, and the fleet survives a
+> server restart (SQLite). Negative paths verified: plain HTTP refused, invalid
+> enrollment token rejected, tampered command/artifact rejected.
 
 ## Layout
 
@@ -68,14 +70,32 @@ Expected, on the server log:
   then the terminal `CommandResult`. The stub installer returns `3010`, so you see
   the `InstalledPendingReboot` interim status and the separate reboot handling.
 
-## What this scaffold deliberately stubs (next milestones)
+## Security model (implemented)
 
-- **mTLS + real CA** — enrollment issues a session token, not a signed device
-  cert yet (design §6, §13).
-- **Artifact download** — `Transfer` serves a synthetic payload; the App module
-  doesn't yet stream/verify the real installer bytes.
-- **Windows interop** — the real WMI/registry/UWF appliers compile on
-  `net8.0-windows` but are validated on real LTSC devices; the cross-platform
-  build/tests run the stubs (design §4.5, §7, §9).
-- **Persistence/scale** — registries/policy are in-process; PostgreSQL / Redis /
-  NATS / MinIO are wired in a later milestone (design §12).
+- **mTLS everywhere** — TLS-only Kestrel (:8443); enrollment is the single
+  anonymous RPC: agent submits a PKCS#10 CSR + group token, the internal CA
+  (`src/Ltsc.Server/Ca/CertAuthority.cs`) signs a 90-day device cert; every
+  other RPC requires a CA-chained client certificate (`DeviceAuth`).
+- **CA pinning** — the agent stores the CA from enrollment and validates the
+  server against it (TOFU only for the bootstrap enrollment call).
+- **Command signing** — every `CommandEnvelope` is ECDSA-signed by the CA key
+  (`src/Ltsc.Contracts/CommandSigning.cs`); the agent rejects unsigned or
+  tampered commands before dispatch.
+- **Artifact integrity** — downloads verify per-chunk and whole-file SHA-256
+  against the hash in the signed install spec; mismatch fails the install
+  closed, the installer never runs.
+- Admin console (`/console`, `/api/devices`) is read-only and unauthenticated
+  in this scaffold — put OIDC in front before any real deployment.
+
+## Honest gaps that remain before production
+
+- **Windows-device validation** — the `net8.0-windows` WMI/registry/UWF
+  appliers compile but have never executed on real LTSC hardware; the full UWF
+  disable→reboot→re-enable servicing cycle still needs wiring + a device lab.
+- **Key storage** — device private key persists as PFX in SQLite; on Windows it
+  belongs in TPM/CNG. CA key belongs in an HSM. No revocation (CRL/OCSP) yet.
+- **Scale** — SQLite/single-node by design here; PostgreSQL + Redis + NATS for
+  multi-node (design §12). Policy authoring is code-seeded, no editor UI.
+- **Capabilities not yet built** — real installer execution/detection on
+  Windows, OS update (WUA), remote commands/shadow, imaging/BMR, inventory,
+  agent MSI packaging/code-signing/self-update, RBAC + audit.

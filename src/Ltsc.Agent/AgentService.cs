@@ -101,7 +101,7 @@ public sealed class AgentService : BackgroundService
 
 public sealed class AgentOptions
 {
-    public string ServerAddress { get; set; } = "http://localhost:8080";
+    public string ServerAddress { get; set; } = "https://localhost:8443";
     public string EnrollmentToken { get; set; } = "demo-token";
     public string HardwareUuid { get; set; } = "DEMO-" + Environment.MachineName;
     public string Model { get; set; } = "GenericThinClient";

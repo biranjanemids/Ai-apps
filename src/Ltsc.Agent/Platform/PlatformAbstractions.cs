@@ -36,6 +36,16 @@ public interface IInstallerRunner
     Task<InstallerResult> RunAsync(Installer installer, string artifactPath, CancellationToken ct);
 }
 
+/// <summary>
+/// Downloads an artifact and verifies its integrity (chunk hashes + whole-file
+/// SHA-256) before returning the local path (design §5, §8.6). Implementations
+/// throw InvalidDataException on any mismatch so installs fail closed.
+/// </summary>
+public interface IArtifactFetcher
+{
+    Task<string> FetchAsync(string artifactId, byte[] expectedSha256, CancellationToken ct);
+}
+
 public sealed record InstallerResult(int ExitCode, bool RebootRequired, string StdoutTail);
 
 /// <summary>Evaluates a detection / verify rule (design §8.5).</summary>

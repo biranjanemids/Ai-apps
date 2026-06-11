@@ -22,6 +22,7 @@ public sealed class Orchestrator : IModuleContext
     public IInstallerRunner Installer { get; }
     public IDetectionProbe Detection { get; }
     public ISessionUi Session { get; }
+    public IArtifactFetcher Artifacts { get; }
     public LocalStore Store { get; }
 
     public Orchestrator(
@@ -31,6 +32,7 @@ public sealed class Orchestrator : IModuleContext
         IInstallerRunner installer,
         IDetectionProbe detection,
         ISessionUi session,
+        IArtifactFetcher artifacts,
         LocalStore store,
         ILogger<Orchestrator> log)
     {
@@ -40,6 +42,7 @@ public sealed class Orchestrator : IModuleContext
         Installer = installer;
         Detection = detection;
         Session = session;
+        Artifacts = artifacts;
         Store = store;
         _log = log;
         _comm.OnCommand = DispatchAsync;
@@ -52,12 +55,19 @@ public sealed class Orchestrator : IModuleContext
             _log.LogWarning("Command {Id} expired; skipping", cmd.CommandId);
             return;
         }
+        // Reject unsigned/tampered commands: a compromised transport must not be
+        // able to inject work (design §13). Verified against the pinned CA.
+        if (_comm.CaCertificate is null || !CommandSigning.Verify(cmd, _comm.CaCertificate))
+        {
+            _log.LogError("Command {Id} REJECTED: missing or invalid signature", cmd.CommandId);
+            await ReportEventAsync("command.signature_rejected", "error", $"{{\"id\":\"{cmd.CommandId}\"}}");
+            return;
+        }
         if (!_modules.TryGetValue(cmd.Capability, out var module))
         {
             _log.LogWarning("No module for capability {Cap}", cmd.Capability);
             return;
         }
-        // Production verifies cmd.Signature before executing (design §13).
         try { await module.ApplyAsync(cmd, this, CancellationToken.None); }
         catch (Exception ex) { _log.LogError(ex, "Command {Id} failed", cmd.CommandId); }
     }

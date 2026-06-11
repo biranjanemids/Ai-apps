@@ -12,11 +12,19 @@ namespace Ltsc.Server.Services;
 public sealed class DemoCommandPusher
 {
     private readonly ConnectionRegistry _connections;
+    private readonly Ca.CertAuthority _ca;
+    private readonly ArtifactStore _artifacts;
     private readonly ILogger<DemoCommandPusher> _log;
 
-    public DemoCommandPusher(ConnectionRegistry connections, ILogger<DemoCommandPusher> log)
+    public DemoCommandPusher(
+        ConnectionRegistry connections,
+        Ca.CertAuthority ca,
+        ArtifactStore artifacts,
+        ILogger<DemoCommandPusher> log)
     {
         _connections = connections;
+        _ca = ca;
+        _artifacts = artifacts;
         _log = log;
     }
 
@@ -35,6 +43,9 @@ public sealed class DemoCommandPusher
                 {
                     Type = "msi",
                     ArtifactId = "artifact-lineapp-2.4.0",
+                    // Real hash of the artifact bytes Transfer serves — the agent
+                    // verifies this before running the installer (design §8.6).
+                    Sha256 = ByteString.CopyFrom(_artifacts.GetSha256("artifact-lineapp-2.4.0")),
                     InstallCmd = "msiexec /i lineapp.msi /qn",
                     UninstallCmd = "msiexec /x {GUID} /qn",
                     ValidExitCodes = { 0, 1641, 3010 },
@@ -67,6 +78,8 @@ public sealed class DemoCommandPusher
                 Spec = spec.ToByteString(),
                 NotAfterUnix = DateTimeOffset.UtcNow.AddHours(24).ToUnixTimeSeconds(),
             };
+            // Server-sign so the agent can reject injected/tampered commands (§13).
+            cmd.Signature = ByteString.CopyFrom(_ca.SignCommandPayload(key => CommandSigning.Sign(cmd, key)));
 
             if (_connections.Send(deviceId, new ServerMessage { Command = cmd }))
                 _log.LogInformation("Pushed demo install {Cmd} to {DeviceId}", cmd.CommandId, deviceId);

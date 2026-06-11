@@ -12,17 +12,21 @@ public sealed class PolicyService : Ltsc.Mgmt.V1.PolicyService.PolicyServiceBase
 {
     private readonly DeviceRegistry _devices;
     private readonly PolicyRegistry _policies;
+    private readonly Ca.CertAuthority _ca;
     private readonly ILogger<PolicyService> _log;
 
-    public PolicyService(DeviceRegistry devices, PolicyRegistry policies, ILogger<PolicyService> log)
+    public PolicyService(DeviceRegistry devices, PolicyRegistry policies, Ca.CertAuthority ca, ILogger<PolicyService> log)
     {
         _devices = devices;
         _policies = policies;
+        _ca = ca;
         _log = log;
     }
 
     public override Task<PolicySnapshot> GetPolicy(GetPolicyRequest request, ServerCallContext context)
     {
+        DeviceAuth.RequireDeviceCertificate(context, _ca);
+
         var group = _devices.TryGet(request.DeviceId, out var dev) ? dev.GroupId : "group-default";
         var snap = _policies.ForGroup(group);
         _log.LogInformation("GetPolicy {Device} group={Group} version={Version} ({Profiles} profiles)",

@@ -64,6 +64,21 @@ public sealed class FakeSession : ISessionUi
     public Task<bool> PromptRebootAsync(DateTimeOffset deadline, CancellationToken ct) => Task.FromResult(RebootProceed);
 }
 
+/// <summary>Artifact fetcher with a scriptable integrity failure.</summary>
+public sealed class FakeArtifactFetcher : IArtifactFetcher
+{
+    public bool FailIntegrity;
+    public List<string> Fetched { get; } = new();
+
+    public Task<string> FetchAsync(string artifactId, byte[] expectedSha256, CancellationToken ct)
+    {
+        if (FailIntegrity)
+            throw new InvalidDataException($"artifact {artifactId}: SHA-256 mismatch; refusing to install");
+        Fetched.Add(artifactId);
+        return Task.FromResult($"/tmp/{artifactId}");
+    }
+}
+
 /// <summary>IModuleContext that records everything the module reports.</summary>
 public sealed class RecordingContext : IModuleContext, IDisposable
 {
@@ -71,18 +86,21 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     public IInstallerRunner Installer { get; }
     public IDetectionProbe Detection { get; }
     public ISessionUi Session { get; }
+    public IArtifactFetcher Artifacts { get; }
     public LocalStore Store { get; }
 
     public List<(string CommandId, string State, int Pct, string Detail)> Progress { get; } = new();
     public List<CommandResult> Results { get; } = new();
     public List<(string Type, string Severity, string Json)> Events { get; } = new();
 
-    public RecordingContext(IWriteFilterGuard uwf, IInstallerRunner installer, IDetectionProbe detection, ISessionUi session)
+    public RecordingContext(IWriteFilterGuard uwf, IInstallerRunner installer, IDetectionProbe detection,
+        ISessionUi session, IArtifactFetcher? artifacts = null)
     {
         Uwf = uwf;
         Installer = installer;
         Detection = detection;
         Session = session;
+        Artifacts = artifacts ?? new FakeArtifactFetcher();
         // Each context gets its own private in-memory store.
         Store = new LocalStore($"file:{Guid.NewGuid():n}?mode=memory&cache=shared");
     }

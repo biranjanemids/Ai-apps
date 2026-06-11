@@ -45,11 +45,13 @@ else
 builder.Services.AddSingleton<IManagementModule, AppModule>();
 builder.Services.AddSingleton<IManagementModule, ConfigModule>();
 
-// Comm + orchestrator.
+// Comm + orchestrator. CommChannel is also the artifact fetcher (verified
+// downloads over the same mTLS channel).
 builder.Services.AddSingleton(sp => new CommChannel(
     options.ServerAddress,
     sp.GetRequiredService<LocalStore>(),
     sp.GetRequiredService<ILogger<CommChannel>>()));
+builder.Services.AddSingleton<IArtifactFetcher>(sp => sp.GetRequiredService<CommChannel>());
 builder.Services.AddSingleton<Orchestrator>();
 
 builder.Services.AddHostedService<AgentService>();

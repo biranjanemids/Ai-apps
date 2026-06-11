@@ -10,5 +10,5 @@ RUN dotnet publish src/Ltsc.Server/Ltsc.Server.csproj -c Release -o /app
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app .
-EXPOSE 8080
+EXPOSE 8443
 ENTRYPOINT ["dotnet", "Ltsc.Server.dll"]

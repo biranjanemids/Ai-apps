@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <PackageReference Include="Grpc.AspNetCore" Version="2.63.0" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.7" />
   </ItemGroup>
 
   <ItemGroup>

@@ -100,13 +100,29 @@ public sealed class AppModule : IManagementModule
             await ctx.ReportEventAsync("install.servicing", "info",
                 $"{{\"strategy\":\"{plan.Strategy}\",\"reboot\":{plan.RebootRequired.ToString().ToLower()}}}");
 
-            // ---- 5. Download artifact (§8.4; verify hash+sig in production) ----
+            // ---- 5. Download + verify artifact (§8.4, §8.6) -------------------
             await Transition(job, ctx, InstallState.Downloading, 40, $"artifact {spec.Installer.ArtifactId}");
-            // (Scaffold: Transfer.Download wiring lives in CommChannel; omitted here.)
+            var artifactPath = "(none)";
+            if (!string.IsNullOrEmpty(spec.Installer.ArtifactId))
+            {
+                try
+                {
+                    artifactPath = await ctx.Artifacts.FetchAsync(
+                        spec.Installer.ArtifactId, spec.Installer.Sha256.ToByteArray(), ct);
+                }
+                catch (InvalidDataException ex)
+                {
+                    // Integrity failure: never run unverified bytes.
+                    await ctx.ReportEventAsync("artifact.integrity_failed", "error",
+                        $"{{\"artifact\":\"{spec.Installer.ArtifactId}\"}}");
+                    await Fail(job, ctx, plan, exit: -1, configResults, ex.Message);
+                    return;
+                }
+            }
 
             // ---- 6. Install + map exit code (§8.4) ----------------------------
             await Transition(job, ctx, InstallState.Installing, 60, spec.Installer.InstallCmd);
-            var run = await ctx.Installer.RunAsync(spec.Installer, artifactPath: "(staged)", ct);
+            var run = await ctx.Installer.RunAsync(spec.Installer, artifactPath, ct);
             var valid = spec.Installer.ValidExitCodes.Count == 0 || spec.Installer.ValidExitCodes.Contains(run.ExitCode);
             if (!valid)
             {
