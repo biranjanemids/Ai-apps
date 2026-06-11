@@ -37,8 +37,8 @@ provide." It is a living document — status reflects what is actually in the re
 | Remote shadow / remote assist | ✅ | ✅ | ✅ | ✅ | 🟡 | 🟩 |
 | OS / firmware update control (WUA) | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (scan/install/ring/defer/reboot ✅; WUA COM device-validated ❌) |
 | Imaging / BMR (USB + network) | ✅ | ✅ | ✅ | 🟡 | ❌ | 🟡 (capture+BMR state machine ✅; DISM/WinPE device-validated ❌) |
-| Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (read-only + command actions) |
-| RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | 🟩 |
+| Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (devices/inventory/commands/policy-author/audit; basic HTML, no rich SPA) |
+| RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (token roles Viewer/Operator/Admin + persisted audit log) |
 | Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (events ✅, rules ❌) |
 | Multi-tenant / HA scale | ✅ | 🟡 | ✅ | ✅ | ✅ | 🟩 (single-node; Postgres/Redis/NATS designed) |
 | OEM-agnostic (mixed fleets) | ❌ | ❌ | 🟡 | ✅ | ✅ | ✅ (by design) |

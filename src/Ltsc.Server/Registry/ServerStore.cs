@@ -32,8 +32,77 @@ public sealed class ServerStore : IDisposable
                 policy_version TEXT NOT NULL DEFAULT '',
                 reboot_pending INTEGER NOT NULL DEFAULT 0
             );
+            CREATE TABLE IF NOT EXISTS audit (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_utc     TEXT NOT NULL,
+                actor      TEXT NOT NULL,
+                action     TEXT NOT NULL,
+                target     TEXT NOT NULL DEFAULT '',
+                detail     TEXT NOT NULL DEFAULT ''
+            );
+            CREATE TABLE IF NOT EXISTS policies (
+                group_id   TEXT PRIMARY KEY,
+                json       TEXT NOT NULL
+            );
         """;
         cmd.ExecuteNonQuery();
+    }
+
+    // ---- audit -------------------------------------------------------------
+    public void AddAudit(string actor, string action, string target, string detail)
+    {
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO audit(ts_utc, actor, action, target, detail) VALUES($ts,$a,$act,$t,$d)";
+            cmd.Parameters.AddWithValue("$ts", DateTimeOffset.UtcNow.ToString("o"));
+            cmd.Parameters.AddWithValue("$a", actor);
+            cmd.Parameters.AddWithValue("$act", action);
+            cmd.Parameters.AddWithValue("$t", target);
+            cmd.Parameters.AddWithValue("$d", detail);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyList<(string Ts, string Actor, string Action, string Target, string Detail)> LoadAudit(int limit = 200)
+    {
+        var rows = new List<(string, string, string, string, string)>();
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT ts_utc, actor, action, target, detail FROM audit ORDER BY id DESC LIMIT $n";
+            cmd.Parameters.AddWithValue("$n", limit);
+            using var r = cmd.ExecuteReader();
+            while (r.Read())
+                rows.Add((r.GetString(0), r.GetString(1), r.GetString(2), r.GetString(3), r.GetString(4)));
+        }
+        return rows;
+    }
+
+    // ---- authored policy ---------------------------------------------------
+    public void UpsertPolicy(string groupId, string json)
+    {
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "INSERT INTO policies(group_id, json) VALUES($g,$j) ON CONFLICT(group_id) DO UPDATE SET json=$j";
+            cmd.Parameters.AddWithValue("$g", groupId);
+            cmd.Parameters.AddWithValue("$j", json);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyDictionary<string, string> LoadPolicies()
+    {
+        var map = new Dictionary<string, string>();
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT group_id, json FROM policies";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) map[r.GetString(0)] = r.GetString(1);
+        }
+        return map;
     }
 
     public void UpsertDevice(DeviceRegistry.DeviceRecord r, string certThumbprint = "")

@@ -109,8 +109,14 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
 - **Artifact integrity** — downloads verify per-chunk and whole-file SHA-256
   against the hash in the signed install spec; mismatch fails the install
   closed, the installer never runs.
-- Admin console (`/console`, `/api/devices`) is read-only and unauthenticated
-  in this scaffold — put OIDC in front before any real deployment.
+- **RBAC** — bearer-token roles (Viewer reads, Operator issues commands, Admin
+  authors policy + reads audit), enforced on every console API (`AdminAuth`).
+  Tokens configurable via `Ltsc:AdminTokens`; production fronts this with OIDC.
+- **Audit log** — every enrollment, command dispatch, and policy change is
+  persisted (`/api/audit`, Admin-only) and survives restarts.
+- **Authored policy** — Admins GET/POST a group's `PolicySnapshot` JSON at
+  `/api/groups/{group}/policy`; saving re-versions it and pushes `SyncPolicy` to
+  online devices in the group, which re-reconcile.
 
 ## Honest gaps that remain before production
 
