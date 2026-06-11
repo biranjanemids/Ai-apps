@@ -43,6 +43,10 @@ public sealed class AgentService : BackgroundService
         _comm.OnSyncPolicy = _ => ReconcileFromServerAsync(ct);
         await ReconcileFromServerAsync(ct);
 
+        // Report a full inventory snapshot at startup (design §10).
+        try { await _orchestrator.ReportInventoryAsync(); }
+        catch (Exception ex) { _log.LogWarning(ex, "Initial inventory failed"); }
+
         _ = Task.Run(() => HeartbeatLoop(ct), ct);
 
         // Reconnect with exponential backoff + jitter (design §4.4).

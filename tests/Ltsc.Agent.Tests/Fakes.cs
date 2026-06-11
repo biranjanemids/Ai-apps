@@ -87,20 +87,26 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     public IDetectionProbe Detection { get; }
     public ISessionUi Session { get; }
     public IArtifactFetcher Artifacts { get; }
+    public IInventoryCollector Inventory { get; }
+    public IRemoteCommandExecutor Commands { get; }
     public LocalStore Store { get; }
 
     public List<(string CommandId, string State, int Pct, string Detail)> Progress { get; } = new();
     public List<CommandResult> Results { get; } = new();
     public List<(string Type, string Severity, string Json)> Events { get; } = new();
+    public List<InventoryReport> Inventories { get; } = new();
 
     public RecordingContext(IWriteFilterGuard uwf, IInstallerRunner installer, IDetectionProbe detection,
-        ISessionUi session, IArtifactFetcher? artifacts = null)
+        ISessionUi session, IArtifactFetcher? artifacts = null,
+        IInventoryCollector? inventory = null, IRemoteCommandExecutor? commands = null)
     {
         Uwf = uwf;
         Installer = installer;
         Detection = detection;
         Session = session;
         Artifacts = artifacts ?? new FakeArtifactFetcher();
+        Inventory = inventory ?? new DefaultInventoryCollector();
+        Commands = commands ?? new FakeCommandExecutor();
         // Each context gets its own private in-memory store.
         Store = new LocalStore($"file:{Guid.NewGuid():n}?mode=memory&cache=shared");
     }
@@ -123,7 +129,33 @@ public sealed class RecordingContext : IModuleContext, IDisposable
         return Task.CompletedTask;
     }
 
+    public Task ReportInventoryAsync(InventoryReport report)
+    {
+        Inventories.Add(report);
+        return Task.CompletedTask;
+    }
+
     public void Dispose() => Store.Dispose();
+}
+
+/// <summary>Remote command executor that records calls and returns scripted results.</summary>
+public sealed class FakeCommandExecutor : IRemoteCommandExecutor
+{
+    public List<string> Calls { get; } = new();
+    public ExecResult ScriptResult = new(0, "ok");
+
+    public Task<ExecResult> RunScriptAsync(string interpreter, string script, int timeoutSeconds, CancellationToken ct)
+    { Calls.Add($"run_script:{interpreter}"); return Task.FromResult(ScriptResult); }
+    public Task<ExecResult> RestartServicesAsync(IReadOnlyList<string> services, CancellationToken ct)
+    { Calls.Add($"restart_services:{string.Join(',', services)}"); return Task.FromResult(new ExecResult(0, "restarted")); }
+    public Task<ExecResult> RebootAsync(int delaySeconds, CancellationToken ct)
+    { Calls.Add("reboot"); return Task.FromResult(new ExecResult(0, "reboot")); }
+    public Task<ExecResult> ShutdownAsync(int delaySeconds, CancellationToken ct)
+    { Calls.Add("shutdown"); return Task.FromResult(new ExecResult(0, "shutdown")); }
+    public Task<ExecResult> CollectLogsAsync(CancellationToken ct)
+    { Calls.Add("collect_logs"); return Task.FromResult(new ExecResult(0, "/tmp/logs")); }
+    public Task<ExecResult> WakeAsync(string macAddress, CancellationToken ct)
+    { Calls.Add($"wake:{macAddress}"); return Task.FromResult(new ExecResult(0, "sent")); }
 }
 
 /// <summary>Config setting applier with scriptable drift / failure, recording applies.</summary>

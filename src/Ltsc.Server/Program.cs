@@ -1,3 +1,5 @@
+using Google.Protobuf;
+using Ltsc.Mgmt.V1;
 using Ltsc.Server.Ca;
 using Ltsc.Server.Registry;
 using Ltsc.Server.Services;
@@ -18,7 +20,9 @@ builder.Services.AddSingleton(sp => new DeviceRegistry(sp.GetRequiredService<Ser
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<PolicyRegistry>();
 builder.Services.AddSingleton<ArtifactStore>();
+builder.Services.AddSingleton<InventoryStore>();
 builder.Services.AddSingleton<DemoCommandPusher>();
+builder.Services.AddSingleton<CommandDispatcher>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
@@ -44,7 +48,7 @@ var app = builder.Build();
 app.MapGrpcService<EnrollmentService>();
 app.MapGrpcService<DeviceLinkService>();
 app.MapGrpcService<TransferService>();
-app.MapGrpcService<PolicyService>();
+app.MapGrpcService<Ltsc.Server.Services.PolicyService>();
 
 // ---- Minimal admin console (read-only; design §12 grows this into the BFF/SPA) ----
 app.MapGet("/api/devices", (DeviceRegistry devices, ConnectionRegistry connections, PolicyRegistry policies) =>
@@ -61,6 +65,27 @@ app.MapGet("/api/devices", (DeviceRegistry devices, ConnectionRegistry connectio
         LastSeen = d.LastSeen,
         d.RebootPending,
     })));
+
+app.MapGet("/api/devices/{id}/inventory", (string id, InventoryStore inv) =>
+    inv.GetInventory(id) is { } r ? Results.Json(r) : Results.NotFound());
+
+app.MapGet("/api/devices/{id}/commands", (string id, InventoryStore inv) =>
+    Results.Json(inv.GetResults(id).Select(r => new { r.CommandId, r.Status, r.ExitCode, r.StdoutTail })));
+
+// Issue a remote command from the console (signed + pushed). Supported actions:
+// reboot, shutdown, collect_logs, collect (inventory), restart_services?services=a,b
+app.MapPost("/api/devices/{id}/command", (string id, string action, string? services, CommandDispatcher d) =>
+{
+    var (capability, act, spec) = action switch
+    {
+        "collect" => ("inventory", "collect", Google.Protobuf.ByteString.Empty),
+        "restart_services" => ("command", "restart_services",
+            new RestartServicesSpec { Services = { (services ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries) } }.ToByteString()),
+        _ => ("command", action, Google.Protobuf.ByteString.Empty),
+    };
+    var (sent, commandId) = d.Dispatch(id, capability, act, spec);
+    return sent ? Results.Ok(new { commandId, action }) : Results.Conflict(new { error = "device offline" });
+});
 
 app.MapGet("/console", () => Results.Content("""
 <!doctype html><meta charset="utf-8"><title>LTSC Fleet</title>

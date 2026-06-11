@@ -23,6 +23,8 @@ public sealed class Orchestrator : IModuleContext
     public IDetectionProbe Detection { get; }
     public ISessionUi Session { get; }
     public IArtifactFetcher Artifacts { get; }
+    public IInventoryCollector Inventory { get; }
+    public IRemoteCommandExecutor Commands { get; }
     public LocalStore Store { get; }
 
     public Orchestrator(
@@ -33,6 +35,8 @@ public sealed class Orchestrator : IModuleContext
         IDetectionProbe detection,
         ISessionUi session,
         IArtifactFetcher artifacts,
+        IInventoryCollector inventory,
+        IRemoteCommandExecutor commands,
         LocalStore store,
         ILogger<Orchestrator> log)
     {
@@ -43,10 +47,15 @@ public sealed class Orchestrator : IModuleContext
         Detection = detection;
         Session = session;
         Artifacts = artifacts;
+        Inventory = inventory;
+        Commands = commands;
         Store = store;
         _log = log;
         _comm.OnCommand = DispatchAsync;
     }
+
+    /// <summary>Collect and report a full inventory snapshot (startup + on demand).</summary>
+    public Task ReportInventoryAsync() => ReportInventoryAsync(Inventory.Collect(Uwf.IsEnabled()));
 
     public async Task DispatchAsync(CommandEnvelope cmd)
     {
@@ -104,4 +113,7 @@ public sealed class Orchestrator : IModuleContext
         {
             Event = new Event { Type = type, Severity = severity, PayloadJson = payloadJson },
         }).AsTask();
+
+    public Task ReportInventoryAsync(InventoryReport report) =>
+        _comm.SendAsync(new AgentMessage { InventoryReport = report }).AsTask();
 }

@@ -26,6 +26,10 @@ builder.Services.AddSingleton<IInstallerRunner, StubInstallerRunner>();
 builder.Services.AddSingleton<IDetectionProbe, StubDetectionProbe>();
 builder.Services.AddSingleton<ISessionUi, StubSessionUi>();
 
+// Inventory + remote commands are genuinely cross-platform (OS-aware at runtime).
+builder.Services.AddSingleton<IInventoryCollector, DefaultInventoryCollector>();
+builder.Services.AddSingleton<IRemoteCommandExecutor, DefaultRemoteCommandExecutor>();
+
 // Write filter + config setting appliers: real Windows implementations when
 // running on Windows (net8.0-windows build), cross-platform stubs otherwise so
 // the agent builds, tests, and demos on Linux/CI (design §A4).
@@ -44,6 +48,8 @@ else
 // Capability modules.
 builder.Services.AddSingleton<IManagementModule, AppModule>();
 builder.Services.AddSingleton<IManagementModule, ConfigModule>();
+builder.Services.AddSingleton<IManagementModule, InventoryModule>();
+builder.Services.AddSingleton<IManagementModule, CommandModule>();
 
 // Comm + orchestrator. CommChannel is also the artifact fetcher (verified
 // downloads over the same mTLS channel).

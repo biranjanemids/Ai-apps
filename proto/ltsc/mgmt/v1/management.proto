@@ -63,6 +63,7 @@ message AgentMessage {
     Event          event     = 5;
     InventoryDelta inventory = 6;
     StreamAck      ack       = 7;
+    InventoryReport inventory_report = 8;
   }
 }
 
@@ -105,6 +106,27 @@ message Event {
 }
 
 message InventoryDelta { string payload_json = 1; }
+
+// Hardware + software asset inventory (design §10 telemetry).
+message InventoryReport {
+  string hostname = 1;
+  string os_build = 2;
+  string arch = 3;
+  int32  cpu_count = 4;
+  int64  total_memory_bytes = 5;
+  int64  free_disk_bytes = 6;
+  int64  total_disk_bytes = 7;
+  int64  uptime_seconds = 8;
+  string agent_version = 9;
+  bool   uwf_enabled = 10;
+  repeated InstalledApp apps = 11;
+  google.protobuf.Timestamp collected_at = 12;
+}
+message InstalledApp { string name = 1; string version = 2; }
+
+// Specs carried in CommandEnvelope.spec for capability="command" (design §10).
+message ScriptSpec { string interpreter = 1; string script = 2; int32 timeout_seconds = 3; }
+message RestartServicesSpec { repeated string services = 1; }
 
 // ---- Commands ----------------------------------------------------------------
 message CommandEnvelope {

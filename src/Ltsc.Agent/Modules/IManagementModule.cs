@@ -17,6 +17,8 @@ public interface IModuleContext
     IDetectionProbe Detection { get; }
     ISessionUi Session { get; }
     IArtifactFetcher Artifacts { get; }
+    IInventoryCollector Inventory { get; }
+    IRemoteCommandExecutor Commands { get; }
     LocalStore Store { get; }
 
     // State is a free string (e.g. an InstallState name, or a config profile id)
@@ -24,6 +26,7 @@ public interface IModuleContext
     Task ReportProgressAsync(string commandId, string state, int percent, string detail);
     Task ReportResultAsync(CommandResult result);
     Task ReportEventAsync(string type, string severity, string payloadJson);
+    Task ReportInventoryAsync(InventoryReport report);
 }
 
 /// <summary>

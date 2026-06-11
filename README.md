@@ -70,6 +70,23 @@ Expected, on the server log:
   then the terminal `CommandResult`. The stub installer returns `3010`, so you see
   the `InstalledPendingReboot` interim status and the separate reboot handling.
 
+## Capabilities (implemented)
+
+- **App deployment** (`AppModule`) — scheduling, user deferral, reboot policy,
+  UWF-bracketed install, verified artifact download, config-verify, status.
+- **Config / manageability** (`ConfigModule`) — desired-state reconcile of
+  registry, UWF, kiosk, network, power, time, certs, AppLocker, keyboard filter.
+- **Inventory** (`InventoryModule`) — hardware + OS asset report (cross-platform,
+  real data) at startup and on demand; viewable at `/api/devices/{id}/inventory`.
+- **Remote commands** (`CommandModule`) — `reboot`, `shutdown`, `restart_services`,
+  `run_script`, `collect_logs`, `wake` (WoL). Power actions are gated behind
+  `LTSC_ALLOW_POWER=1` so demo/CI hosts are safe. Issue them from the console:
+  `POST /api/devices/{id}/command?action=...` (signed + pushed); results at
+  `/api/devices/{id}/commands`.
+
+See [`docs/COMPETITIVE-ANALYSIS.md`](docs/COMPETITIVE-ANALYSIS.md) for the feature
+parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intune.
+
 ## Security model (implemented)
 
 - **mTLS everywhere** — TLS-only Kestrel (:8443); enrollment is the single

@@ -16,6 +16,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly DeviceRegistry _devices;
     private readonly PolicyRegistry _policies;
     private readonly DemoCommandPusher _demo;
+    private readonly InventoryStore _inventory;
     private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
@@ -24,6 +25,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         DeviceRegistry devices,
         PolicyRegistry policies,
         DemoCommandPusher demo,
+        InventoryStore inventory,
         Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
@@ -31,6 +33,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         _devices = devices;
         _policies = policies;
         _demo = demo;
+        _inventory = inventory;
         _ca = ca;
         _log = log;
     }
@@ -113,9 +116,18 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                 break;
 
             case AgentMessage.PayloadOneofCase.Result:
+                _inventory.AddResult(deviceId, msg.Result);
                 _log.LogInformation("[{DeviceId}] {Cmd} RESULT status={Status} exit={Exit} reboot={Reboot} uwf_reenabled={Uwf}",
                     deviceId, msg.Result.CommandId, msg.Result.Status,
                     msg.Result.ExitCode, msg.Result.RebootState, msg.Result.UwfReenabled);
+                break;
+
+            case AgentMessage.PayloadOneofCase.InventoryReport:
+                _inventory.SetInventory(deviceId, msg.InventoryReport);
+                _log.LogInformation("[{DeviceId}] INVENTORY host={Host} os={Os} cpu={Cpu} mem={Mem}MB apps={Apps}",
+                    deviceId, msg.InventoryReport.Hostname, msg.InventoryReport.OsBuild,
+                    msg.InventoryReport.CpuCount, msg.InventoryReport.TotalMemoryBytes / (1024 * 1024),
+                    msg.InventoryReport.Apps.Count);
                 break;
 
             case AgentMessage.PayloadOneofCase.Event:
