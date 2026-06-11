@@ -1,6 +1,6 @@
 # Ai-apps — Windows LTSC remote management agent + server
 
-A WMS / Wyse-Device-Agent-class system for managing Windows IoT Enterprise LTSC
+A devicemanagment system for managing Windows IoT Enterprise LTSC
 thin clients from a central server. See the full low-level design in
 [`docs/windows-ltsc-agent-design.md`](docs/windows-ltsc-agent-design.md).
 
