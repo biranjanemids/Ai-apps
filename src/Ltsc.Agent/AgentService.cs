@@ -38,6 +38,11 @@ public sealed class AgentService : BackgroundService
         await _comm.EnsureEnrolledAsync(_options.EnrollmentToken, facts, ct);
         await _orchestrator.ResumeJobsAsync();
 
+        // Reconcile config when the server signals drift (SyncPolicy), and once
+        // at startup so the device converges without waiting for a push (§7).
+        _comm.OnSyncPolicy = _ => ReconcileFromServerAsync(ct);
+        await ReconcileFromServerAsync(ct);
+
         _ = Task.Run(() => HeartbeatLoop(ct), ct);
 
         // Reconnect with exponential backoff + jitter (design §4.4).
@@ -62,6 +67,19 @@ public sealed class AgentService : BackgroundService
         }
     }
 
+    private async Task ReconcileFromServerAsync(CancellationToken ct)
+    {
+        try
+        {
+            var snapshot = await _comm.PullPolicyAsync(ct);
+            await _orchestrator.ReconcilePolicyAsync(snapshot);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "Policy reconcile failed");
+        }
+    }
+
     private async Task HeartbeatLoop(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -71,7 +89,8 @@ public sealed class AgentService : BackgroundService
                 Heartbeat = new Heartbeat
                 {
                     AgentVersion = "0.1.0",
-                    PolicyVersion = "0",
+                    // Report the applied policy hash so the server can detect drift.
+                    PolicyVersion = _orchestrator.Store.GetIdentity("policy_version") ?? "0",
                     Health = new Health { UwfEnabled = _orchestrator.Uwf.IsEnabled() },
                 },
             });

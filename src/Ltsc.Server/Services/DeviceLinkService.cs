@@ -14,17 +14,20 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
 {
     private readonly ConnectionRegistry _connections;
     private readonly DeviceRegistry _devices;
+    private readonly PolicyRegistry _policies;
     private readonly DemoCommandPusher _demo;
     private readonly ILogger<DeviceLinkService> _log;
 
     public DeviceLinkService(
         ConnectionRegistry connections,
         DeviceRegistry devices,
+        PolicyRegistry policies,
         DemoCommandPusher demo,
         ILogger<DeviceLinkService> log)
     {
         _connections = connections;
         _devices = devices;
+        _policies = policies;
         _demo = demo;
         _log = log;
     }
@@ -60,6 +63,9 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                     await responseStream.WriteAsync(msg);
             }, context.CancellationToken);
 
+            // Tell the device to (re)reconcile its config policy.
+            PushSyncPolicy(deviceId);
+
             // Queue a demo install once the device is online.
             _demo.ScheduleDemoInstall(deviceId);
 
@@ -87,8 +93,12 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                     r.PolicyVersion = msg.Heartbeat.PolicyVersion;
                     r.RebootPending = msg.Heartbeat.Health?.RebootPending ?? false;
                 });
-                _log.LogDebug("Heartbeat from {DeviceId} (uwf={Uwf})",
-                    deviceId, msg.Heartbeat.Health?.UwfEnabled);
+                _log.LogDebug("Heartbeat from {DeviceId} (uwf={Uwf}, policy={Policy})",
+                    deviceId, msg.Heartbeat.Health?.UwfEnabled, msg.Heartbeat.PolicyVersion);
+                // Drift detection: nudge the device to reconcile if its applied
+                // policy version doesn't match the effective one (design §7).
+                if (msg.Heartbeat.PolicyVersion != ExpectedVersion(deviceId))
+                    PushSyncPolicy(deviceId);
                 break;
 
             case AgentMessage.PayloadOneofCase.Progress:
@@ -109,4 +119,16 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                 break;
         }
     }
+
+    private string ExpectedVersion(string deviceId)
+    {
+        var group = _devices.TryGet(deviceId, out var dev) ? dev.GroupId : "group-default";
+        return _policies.ForGroup(group).ContentHash;
+    }
+
+    private void PushSyncPolicy(string deviceId) =>
+        _connections.Send(deviceId, new ServerMessage
+        {
+            Sync = new SyncPolicy { ExpectedPolicyVersion = ExpectedVersion(deviceId) },
+        });
 }

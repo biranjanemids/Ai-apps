@@ -248,3 +248,86 @@ message UwfPolicy {
   string strategy = 1;           // hybrid | always_disable | commit_only
   repeated string committable_paths = 2; // paths safe to CommitFile live
 }
+
+// =============================================================================
+// Configuration / manageability settings (design §7, §9).
+//
+// The server computes the effective desired state per device as a PolicySnapshot
+// of typed profiles. Delivery: the server pushes ServerMessage.SyncPolicy when a
+// device's heartbeat policy_version differs from expected; the agent then pulls
+// the snapshot via PolicyService.GetPolicy and reconciles (apply only drift).
+// =============================================================================
+service PolicyService {
+  rpc GetPolicy(GetPolicyRequest) returns (PolicySnapshot);
+}
+
+message GetPolicyRequest { string device_id = 1; }
+
+message PolicySnapshot {
+  string version = 1;            // monotonic version
+  string content_hash = 2;       // hash the agent reports back once applied
+  repeated ConfigProfile profiles = 3;
+}
+
+message ConfigProfile {
+  string profile_id = 1;
+  oneof body {
+    RegistryProfile       registry  = 2;
+    UwfProfile2           uwf       = 3;
+    KioskProfile          kiosk     = 4;
+    NetworkProfile        network   = 5;
+    PowerProfile          power     = 6;
+    TimeProfile           time      = 7;
+    CertProfile           certs     = 8;
+    AppLockerProfile      applocker = 9;
+    KeyboardFilterProfile keyfilter = 10;
+  }
+}
+
+message RegistryProfile { repeated RegValue values = 1; }
+message RegValue {
+  string hive = 1;               // HKLM | HKCU
+  string path = 2;
+  string name = 3;
+  string type = 4;               // dword | qword | sz | expand_sz | multi_sz | binary
+  string data = 5;               // string form; appliers parse per type
+  bool   delete = 6;             // delete the value instead of writing
+}
+
+// Manageability-profile UWF settings (distinct from the per-install app UwfPolicy).
+message UwfProfile2 {
+  bool   enabled = 1;
+  repeated string file_exclusions = 2;
+  repeated string reg_exclusions = 3;
+  int64  overlay_warn_bytes = 4;
+}
+
+message KioskProfile {
+  string mode = 1;               // shell_launcher | assigned_access_single | assigned_access_multi
+  string shell_exe = 2;          // for shell_launcher
+  string auto_logon_user = 3;
+  string assigned_access_xml = 4;// AssignedAccess CSP configuration XML
+}
+
+message NetworkProfile { repeated WlanProfile wifi = 1; }
+message WlanProfile {
+  string ssid = 1;
+  string auth = 2;               // open | wpa2psk | wpa3 | enterprise
+  string profile_xml = 3;        // Native WiFi profile XML (secrets encrypted in transit)
+}
+
+message PowerProfile { string plan_guid = 1; int32 sleep_minutes = 2; }
+message TimeProfile  { string ntp_server = 1; string timezone = 2; }
+
+message CertProfile { repeated CertEntry certs = 1; }
+message CertEntry {
+  string store = 1;              // Root | CA | My
+  string base64_der = 2;
+}
+
+message AppLockerProfile { string policy_xml = 1; }
+
+message KeyboardFilterProfile {
+  repeated string blocked_keys = 1; // e.g. "Ctrl+Alt+Del", "Win+R"
+  bool disable_breakout = 2;
+}

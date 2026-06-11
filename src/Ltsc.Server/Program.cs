@@ -12,6 +12,7 @@ builder.Services.AddSingleton<DeviceRegistry>();
 builder.Services.AddSingleton<ConnectionRegistry>();
 builder.Services.AddSingleton<DevCertAuthority>();
 builder.Services.AddSingleton<DemoCommandPusher>();
+builder.Services.AddSingleton<PolicyRegistry>();
 
 // Listen on HTTP/2 cleartext for local demo. Production terminates mTLS here
 // (TLS 1.3, client device certificate) — see design §13.
@@ -25,6 +26,7 @@ var app = builder.Build();
 app.MapGrpcService<EnrollmentService>();
 app.MapGrpcService<DeviceLinkService>();
 app.MapGrpcService<TransferService>();
-app.MapGet("/", () => "Ltsc MgmtServer — gRPC on h2c :8080 (Enrollment, DeviceLink, Transfer)");
+app.MapGrpcService<PolicyService>();
+app.MapGet("/", () => "Ltsc MgmtServer — gRPC on h2c :8080 (Enrollment, DeviceLink, Transfer, Policy)");
 
 app.Run();

@@ -23,6 +23,7 @@ public sealed class CommChannel : IAsyncDisposable
 
     public string DeviceId { get; private set; } = "";
     public Func<CommandEnvelope, Task>? OnCommand { get; set; }
+    public Func<string, Task>? OnSyncPolicy { get; set; }   // arg = server's expected policy version
 
     public CommChannel(string serverAddress, LocalStore store, ILogger<CommChannel> log)
     {
@@ -58,6 +59,14 @@ public sealed class CommChannel : IAsyncDisposable
 
     /// <summary>Enqueue a message for the server (buffered when offline).</summary>
     public ValueTask SendAsync(AgentMessage msg) => _outbox.Writer.WriteAsync(msg);
+
+    /// <summary>Pull the effective desired-state policy snapshot for this device (design §7).</summary>
+    public async Task<PolicySnapshot> PullPolicyAsync(CancellationToken ct)
+    {
+        var client = new PolicyService.PolicyServiceClient(_channel);
+        var metadata = new Metadata { { "x-session-token", _store.GetIdentity("session_token") ?? "" } };
+        return await client.GetPolicyAsync(new GetPolicyRequest { DeviceId = DeviceId }, metadata, cancellationToken: ct);
+    }
 
     /// <summary>
     /// Open the bidi stream and pump both directions until cancelled/faulted.
@@ -100,6 +109,9 @@ public sealed class CommChannel : IAsyncDisposable
                         break;
                     case ServerMessage.PayloadOneofCase.Command:
                         if (OnCommand is not null) _ = OnCommand(server.Command);
+                        break;
+                    case ServerMessage.PayloadOneofCase.Sync:
+                        if (OnSyncPolicy is not null) _ = OnSyncPolicy(server.Sync.ExpectedPolicyVersion);
                         break;
                 }
             }

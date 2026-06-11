@@ -25,3 +25,18 @@ jobs:
 
       - name: Test
         run: dotnet test Ltsc.sln -c Release --no-build --verbosity normal
+
+  # Compiles the real Windows interop (net8.0-windows: WMI/registry appliers,
+  # UWF guard). Informational — it can't run on the cross-platform legs and the
+  # interop is validated on real LTSC devices, so it doesn't gate the PR.
+  windows-interop-build:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build agent (net8.0-windows)
+        run: dotnet build src/Ltsc.Agent/Ltsc.Agent.csproj -c Release -f net8.0-windows

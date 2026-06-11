@@ -37,6 +37,9 @@ public sealed class AppModule : IManagementModule
         return RunAsync(job, ctx, ct);
     }
 
+    // App deployment is command-driven, not policy-driven.
+    public Task ReconcileAsync(PolicySnapshot policy, IModuleContext ctx, CancellationToken ct) => Task.CompletedTask;
+
     private async Task RunAsync(InstallJob job, IModuleContext ctx, CancellationToken ct)
     {
         var spec = InstallSpec.Parser.ParseFrom(job.Spec);
@@ -271,7 +274,7 @@ public sealed class AppModule : IManagementModule
         job.State = state;
         job.LastDetail = detail;
         ctx.Store.SaveJob(job);
-        await ctx.ReportProgressAsync(job.CommandId, state, pct, detail);
+        await ctx.ReportProgressAsync(job.CommandId, state.ToString(), pct, detail);
     }
 
     private async Task Succeed(InstallJob job, IModuleContext ctx, int exit, string rebootState,

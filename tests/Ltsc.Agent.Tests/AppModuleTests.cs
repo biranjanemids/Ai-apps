@@ -59,7 +59,7 @@ public class AppModuleTests
 
         Assert.Equal(0, inst.CallCount);                                   // never ran the installer
         Assert.Equal(0, uwf.EnterCount);                                   // never entered servicing
-        Assert.Contains(ctx.Progress, p => p.State == InstallState.AlreadyInstalled);
+        Assert.Contains(ctx.Progress, p => p.State == nameof(InstallState.AlreadyInstalled));
         Assert.Equal("Succeeded", ctx.Results.Single().Status);
     }
 
@@ -84,8 +84,8 @@ public class AppModuleTests
                 Assert.Equal("rebooted", r.RebootState);
                 Assert.True(r.UwfReenabled);
             });
-        Assert.Contains(ctx.Progress, p => p.State == InstallState.PendingReboot);
-        Assert.Contains(ctx.Progress, p => p.State == InstallState.PostRebootVerify);
+        Assert.Contains(ctx.Progress, p => p.State == nameof(InstallState.PendingReboot));
+        Assert.Contains(ctx.Progress, p => p.State == nameof(InstallState.PostRebootVerify));
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public class AppModuleTests
         Assert.Equal(1, inst.CallCount);
         Assert.True(uwf.RollbackCalled);                                   // UWF state restored
         Assert.Equal("RolledBack", ctx.Results.Single().Status);
-        Assert.DoesNotContain(ctx.Progress, p => p.State == InstallState.Succeeded);
+        Assert.DoesNotContain(ctx.Progress, p => p.State == nameof(InstallState.Succeeded));
         Assert.Contains(ctx.Results.Single().ConfigResults, c => c.TaskId == "t1" && !c.Verified);
     }
 
@@ -159,7 +159,7 @@ public class AppModuleTests
         await NewModule().ApplyAsync(Cmd(spec), ctx, default);
 
         Assert.Equal(0, inst.CallCount);                                   // nothing installed yet
-        Assert.Equal(InstallState.AwaitingUserDefer, ctx.Progress[^1].State);
+        Assert.Equal(nameof(InstallState.AwaitingUserDefer), ctx.Progress[^1].State);
         Assert.Contains(ctx.Events, e => e.Type == "install.deferred");
 
         // Deferral budget persisted for the next eligibility tick.

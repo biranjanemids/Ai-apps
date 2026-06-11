@@ -73,7 +73,7 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     public ISessionUi Session { get; }
     public LocalStore Store { get; }
 
-    public List<(string CommandId, InstallState State, int Pct, string Detail)> Progress { get; } = new();
+    public List<(string CommandId, string State, int Pct, string Detail)> Progress { get; } = new();
     public List<CommandResult> Results { get; } = new();
     public List<(string Type, string Severity, string Json)> Events { get; } = new();
 
@@ -87,7 +87,7 @@ public sealed class RecordingContext : IModuleContext, IDisposable
         Store = new LocalStore($"file:{Guid.NewGuid():n}?mode=memory&cache=shared");
     }
 
-    public Task ReportProgressAsync(string commandId, InstallState state, int percent, string detail)
+    public Task ReportProgressAsync(string commandId, string state, int percent, string detail)
     {
         Progress.Add((commandId, state, percent, detail));
         return Task.CompletedTask;
@@ -106,4 +106,30 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     }
 
     public void Dispose() => Store.Dispose();
+}
+
+/// <summary>Config setting applier with scriptable drift / failure, recording applies.</summary>
+public sealed class FakeApplier : ISettingApplier
+{
+    public ConfigProfile.BodyOneofCase Kind { get; }
+    public bool RequiresPersistence { get; }
+    public bool InDesiredState;     // controls drift detection
+    public bool FailOnApply;
+    public int ApplyCount { get; private set; }
+
+    public FakeApplier(ConfigProfile.BodyOneofCase kind, bool persist = false)
+    {
+        Kind = kind;
+        RequiresPersistence = persist;
+    }
+
+    public bool IsInDesiredState(ConfigProfile profile) => InDesiredState;
+
+    public ReconcileResult Apply(ConfigProfile profile)
+    {
+        ApplyCount++;
+        if (FailOnApply) return ReconcileResult.Failed(profile.ProfileId, "boom");
+        InDesiredState = true;      // converged after applying
+        return ReconcileResult.AppliedOk(profile.ProfileId, "ok");
+    }
 }

@@ -1,15 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk.Worker">
 
   <!--
-    Agent host. Targets net8.0 so the core (comm, orchestrator, install state
-    machine) builds and runs cross-platform for local demos/tests. The real
-    Windows interop (UWF/WMI, installers) lives behind interfaces in Platform/
-    with stub implementations selected at runtime when not on Windows.
-    For a production Windows build, add the Microsoft.Windows.Compatibility
-    package and a net8.0-windows TFM, and register the Win32/WMI implementations.
+    Agent host. Builds net8.0 everywhere (comm, orchestrator, install state
+    machine, config reconcile) so it runs and is tested cross-platform / in CI.
+    On Windows it ALSO builds net8.0-windows, which pulls in the real WMI/registry
+    interop under Platform/Windows/. Linux never sees that TFM (kept off the
+    TargetFrameworks list unless building on Windows), so Linux CI stays green;
+    a windows-latest CI leg compiles the interop.
   -->
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- Linux/macOS: single net8.0 target so `dotnet run` needs no -f and CI/tests
+         stay simple. Windows: also build net8.0-windows for the real interop. -->
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">net8.0</TargetFramework>
+    <TargetFrameworks Condition="'$(OS)' == 'Windows_NT'">net8.0;net8.0-windows</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>Ltsc.Agent</RootNamespace>
@@ -20,6 +23,14 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="8.0.1" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.7" />
     <PackageReference Include="Grpc.Net.Client" Version="2.63.0" />
+  </ItemGroup>
+
+  <!-- Real Windows interop: only compiled / referenced for the Windows TFM. -->
+  <ItemGroup Condition="'$(TargetFramework)' != 'net8.0-windows'">
+    <Compile Remove="Platform\Windows\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0-windows'">
+    <PackageReference Include="System.Management" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

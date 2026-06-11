@@ -72,11 +72,18 @@ public sealed class Orchestrator : IModuleContext
         }
     }
 
+    /// <summary>Drive every module to the desired state in a policy snapshot (design §7).</summary>
+    public async Task ReconcilePolicyAsync(PolicySnapshot snapshot)
+    {
+        foreach (var module in _modules.Values)
+            await module.ReconcileAsync(snapshot, this, CancellationToken.None);
+    }
+
     // ---- IModuleContext reporting hooks ----
-    public Task ReportProgressAsync(string commandId, InstallState state, int percent, string detail) =>
+    public Task ReportProgressAsync(string commandId, string state, int percent, string detail) =>
         _comm.SendAsync(new AgentMessage
         {
-            Progress = new Progress { CommandId = commandId, State = state.ToString(), Percent = percent, Detail = detail },
+            Progress = new Progress { CommandId = commandId, State = state, Percent = percent, Detail = detail },
         }).AsTask();
 
     public Task ReportResultAsync(CommandResult result) =>

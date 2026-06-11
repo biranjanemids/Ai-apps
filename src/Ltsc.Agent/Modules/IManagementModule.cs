@@ -18,7 +18,9 @@ public interface IModuleContext
     ISessionUi Session { get; }
     LocalStore Store { get; }
 
-    Task ReportProgressAsync(string commandId, InstallState state, int percent, string detail);
+    // State is a free string (e.g. an InstallState name, or a config profile id)
+    // so any capability can report progress, not just app installs.
+    Task ReportProgressAsync(string commandId, string state, int percent, string detail);
     Task ReportResultAsync(CommandResult result);
     Task ReportEventAsync(string type, string severity, string payloadJson);
 }
@@ -35,4 +37,10 @@ public interface IManagementModule
 
     /// <summary>Resume an in-flight job recovered from LocalStore after a restart.</summary>
     Task ResumeAsync(InstallJob job, IModuleContext ctx, CancellationToken ct);
+
+    /// <summary>
+    /// Bring the device to the desired state described by a policy snapshot
+    /// (design §7). Modules that aren't policy-driven implement this as a no-op.
+    /// </summary>
+    Task ReconcileAsync(PolicySnapshot policy, IModuleContext ctx, CancellationToken ct);
 }
