@@ -144,39 +144,15 @@ app.MapGet("/api/devices/{id}/shadow", (string id, ShadowStore shadow, AdminAuth
         : shadow.Get(id) is { } s ? Results.Json(new { s.SessionId, s.Width, s.Height, s.Mime, s.LastSeq, s.Frames, s.StartedUtc, s.Active })
         : Results.NotFound());
 
-app.MapGet("/console", () => Results.Content("""
-<!doctype html><meta charset="utf-8"><title>LTSC Fleet</title>
-<style>body{font-family:system-ui;margin:2rem}table{border-collapse:collapse;width:100%}
-td,th{border:1px solid #ccc;padding:.4rem .6rem;text-align:left}th{background:#f5f5f5}
-.on{color:#0a0}.off{color:#a00}.ok{color:#0a0}.drift{color:#c60}
-input,button{padding:.3rem}</style>
-<h1>LTSC Fleet</h1>
-<p>API token: <input id="tok" value="viewer-token" size="20">
-(viewer-token / operator-token / admin-token)
-<button onclick="cmd('reboot')">Reboot</button>
-<button onclick="cmd('collect')">Collect inventory</button>
-<button onclick="cmd('update_install')">Update</button>
-<button onclick="cmd('trigger_bmr')">BMR</button> (acts on selected row)</p>
-<table id="t"><tr><th>Sel</th><th>Device</th><th>Group</th><th>Model</th>
-<th>Online</th><th>Policy</th><th>Reboot pending</th><th>Last seen</th></tr></table>
-<script>
-let sel=null;
-function hdr(){return {'Authorization':'Bearer '+document.getElementById('tok').value};}
-async function load(){const r=await fetch('/api/devices',{headers:hdr()});if(!r.ok)return;const ds=await r.json();
-const t=document.getElementById('t');t.querySelectorAll('tr:not(:first-child)').forEach(e=>e.remove());
-for(const d of ds){const tr=t.insertRow();tr.innerHTML=
-`<td><input type=radio name=sel ${d.deviceId===sel?'checked':''} onclick="sel='${d.deviceId}'"></td>`+
-`<td>${d.deviceId}</td><td>${d.groupId}</td><td>${d.model??''}</td>`+
-`<td class="${d.online?'on':'off'}">${d.online?'online':'offline'}</td>`+
-`<td class="${d.inPolicy?'ok':'drift'}">${d.inPolicy?'in policy':'drift'}</td>`+
-`<td>${d.rebootPending?'yes':'no'}</td><td>${d.lastSeen}</td>`;}}
-async function cmd(a){if(!sel){alert('select a device');return;}
-const r=await fetch(`/api/devices/${sel}/command?action=${a}`,{method:'POST',headers:hdr()});
-alert(a+': '+r.status+' '+await r.text());}
-load();setInterval(load,5000);
-</script>
-""", "text/html"));
+// Lets the SPA show the caller's role and gate actions accordingly.
+app.MapGet("/api/whoami", (AdminAuth auth, HttpContext http) =>
+{
+    var (actor, role) = auth.Resolve(http);
+    return Results.Json(new { actor, role = role.ToString() });
+});
 
-app.MapGet("/", () => "Ltsc MgmtServer — gRPC/mTLS on :8443 (Enrollment, DeviceLink, Transfer, Policy) · console at /console");
+app.MapGet("/console", () => Results.Content(Ltsc.Server.ConsoleHtml.Page, "text/html"));
+
+app.MapGet("/", () => "Ltsc MgmtServer — gRPC/mTLS on :8443 (Enrollment, DeviceLink, Transfer, Policy, Shadow) · console at /console");
 
 app.Run();

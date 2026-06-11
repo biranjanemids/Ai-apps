@@ -91,6 +91,10 @@ Expected, on the server log:
   streaming over the `Shadow` gRPC stream; session status at
   `/api/devices/{id}/shadow`, audited. Real screen capture is the Windows piece.
 
+- **Admin console SPA** (`/console`) — token login, live fleet table, per-device
+  tabs (overview / inventory / command history / shadow / policy editor / audit),
+  and role-gated action buttons. Vanilla JS served inline, no build step.
+
 Issue any of these from the console: `POST /api/devices/{id}/command?action=...`
 (`reboot|shutdown|collect|collect_logs|restart_services|update_scan|update_install|capture|trigger_bmr|shadow`)
 — signed + pushed; results at `/api/devices/{id}/commands`.

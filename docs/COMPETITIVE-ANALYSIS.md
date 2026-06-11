@@ -37,7 +37,7 @@ provide." It is a living document — status reflects what is actually in the re
 | Remote shadow / remote assist | ✅ | ✅ | ✅ | ✅ | 🟡 | 🟡 (consent + frame streaming + audit ✅; real screen capture/viewer device-validated ❌) |
 | OS / firmware update control (WUA) | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (scan/install/ring/defer/reboot ✅; WUA COM device-validated ❌) |
 | Imaging / BMR (USB + network) | ✅ | ✅ | ✅ | 🟡 | ❌ | 🟡 (capture+BMR state machine ✅; DISM/WinPE device-validated ❌) |
-| Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (devices/inventory/commands/policy-author/audit; basic HTML, no rich SPA) |
+| Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (SPA: fleet, device detail tabs, role-gated actions, policy editor, audit) |
 | RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (token roles Viewer/Operator/Admin + persisted audit log) |
 | Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (events ✅, rules ❌) |
 | Multi-tenant / HA scale | ✅ | 🟡 | ✅ | ✅ | ✅ | 🟩 (single-node; Postgres/Redis/NATS designed) |
@@ -54,8 +54,9 @@ provide." It is a living document — status reflects what is actually in the re
 1. **Windows-device validation** of UWF/kiosk/installer/inventory/**WUA**/**DISM-FFU**
    interop (needs a hardware lab — the logic exists and is tested with stubs).
 2. **Scale/HA**: PostgreSQL + Redis + NATS, multi-tenant isolation.
-3. **Console depth**: a rich SPA + app/alert-rule authoring (RBAC, audit, policy
-   authoring, and per-device actions are built; the UI is basic HTML).
+3. **Console depth**: app/alert-rule authoring (the SPA covers fleet, device
+   detail, role-gated actions, policy editing, and audit; alert rules + app
+   authoring remain).
 4. **Agent lifecycle**: signed MSI packaging, self-update, watchdog.
 5. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
 6. **Real screen capture + viewer** for shadow (session/consent/streaming/audit built).
