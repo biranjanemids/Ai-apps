@@ -69,4 +69,5 @@ public sealed class StubSessionUi : ISessionUi
     public bool HasInteractiveSession() => false;
     public Task<bool> PromptInstallAsync(string text, int snoozeRemaining, DateTimeOffset deadline, CancellationToken ct) => Task.FromResult(true);
     public Task<bool> PromptRebootAsync(DateTimeOffset deadline, CancellationToken ct) => Task.FromResult(true);
+    public Task<bool> PromptShadowConsentAsync(string requester, CancellationToken ct) => Task.FromResult(true);
 }

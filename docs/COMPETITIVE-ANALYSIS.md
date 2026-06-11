@@ -34,7 +34,7 @@ provide." It is a living document — status reflects what is actually in the re
 | Remote script execution | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Service restart (no full reboot) | ✅ | ✅ | ✅ | 🟡 | 🟡 | ✅ |
 | Log collection | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Remote shadow / remote assist | ✅ | ✅ | ✅ | ✅ | 🟡 | 🟩 |
+| Remote shadow / remote assist | ✅ | ✅ | ✅ | ✅ | 🟡 | 🟡 (consent + frame streaming + audit ✅; real screen capture/viewer device-validated ❌) |
 | OS / firmware update control (WUA) | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (scan/install/ring/defer/reboot ✅; WUA COM device-validated ❌) |
 | Imaging / BMR (USB + network) | ✅ | ✅ | ✅ | 🟡 | ❌ | 🟡 (capture+BMR state machine ✅; DISM/WinPE device-validated ❌) |
 | Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (devices/inventory/commands/policy-author/audit; basic HTML, no rich SPA) |
@@ -53,11 +53,12 @@ provide." It is a living document — status reflects what is actually in the re
 ## Honest gaps vs. incumbents (priority order)
 1. **Windows-device validation** of UWF/kiosk/installer/inventory/**WUA**/**DISM-FFU**
    interop (needs a hardware lab — the logic exists and is tested with stubs).
-2. **Console depth**: policy/app authoring UI, RBAC, audit, alert rules.
-3. **Scale/HA**: PostgreSQL + Redis + NATS, multi-tenant isolation.
-4. **Remote shadow** (framebuffer streaming + consent).
-5. **Agent lifecycle**: signed MSI packaging, self-update, watchdog.
-6. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
+2. **Scale/HA**: PostgreSQL + Redis + NATS, multi-tenant isolation.
+3. **Console depth**: a rich SPA + app/alert-rule authoring (RBAC, audit, policy
+   authoring, and per-device actions are built; the UI is basic HTML).
+4. **Agent lifecycle**: signed MSI packaging, self-update, watchdog.
+5. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
+6. **Real screen capture + viewer** for shadow (session/consent/streaming/audit built).
 
 These are tracked here and in `docs/windows-ltsc-agent-design.md` (§10–§13). Each
 PR that closes one updates the matrix above.

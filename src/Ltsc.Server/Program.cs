@@ -25,6 +25,7 @@ builder.Services.AddSingleton<ImageRegistry>();
 builder.Services.AddSingleton<DemoCommandPusher>();
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<AdminAuth>();
+builder.Services.AddSingleton<ShadowStore>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
@@ -51,6 +52,7 @@ app.MapGrpcService<EnrollmentService>();
 app.MapGrpcService<DeviceLinkService>();
 app.MapGrpcService<TransferService>();
 app.MapGrpcService<Ltsc.Server.Services.PolicyService>();
+app.MapGrpcService<ShadowService>();
 
 // ---- Minimal admin console (read-only; design §12 grows this into the BFF/SPA) ----
 app.MapGet("/api/devices", (DeviceRegistry devices, ConnectionRegistry connections, PolicyRegistry policies, AdminAuth auth, HttpContext http) =>
@@ -95,6 +97,7 @@ app.MapPost("/api/devices/{id}/command", (string id, string action, string? serv
             new UpdateSpec { Ring = "broad", Reboot = new RebootPolicy { Required = true, AllowDefer = true, MaxTotalSeconds = 86400 } }.ToByteString()),
         "capture" => ("image", "capture", new CaptureSpec { Format = "ffu", TargetDrive = "0", ImageId = "capture", Model = model }.ToByteString()),
         "trigger_bmr" => ("image", "trigger_bmr", images.ForModel(model).ToByteString()),
+        "shadow" => ("shadow", "start", ByteString.Empty),
         _ => ("command", action, ByteString.Empty),
     };
     var (sent, commandId) = d.Dispatch(id, capability, act, spec);
@@ -135,6 +138,11 @@ app.MapPost("/api/groups/{group}/policy", async (string group, PolicyRegistry po
 app.MapGet("/api/audit", (ServerStore store, AdminAuth auth, HttpContext http) =>
     auth.Require(http, Role.Admin) is null ? Results.Unauthorized()
         : Results.Json(store.LoadAudit().Select(a => new { a.Ts, a.Actor, a.Action, a.Target, a.Detail })));
+
+app.MapGet("/api/devices/{id}/shadow", (string id, ShadowStore shadow, AdminAuth auth, HttpContext http) =>
+    auth.Require(http, Role.Viewer) is null ? Results.Unauthorized()
+        : shadow.Get(id) is { } s ? Results.Json(new { s.SessionId, s.Width, s.Height, s.Mime, s.LastSeq, s.Frames, s.StartedUtc, s.Active })
+        : Results.NotFound());
 
 app.MapGet("/console", () => Results.Content("""
 <!doctype html><meta charset="utf-8"><title>LTSC Fleet</title>

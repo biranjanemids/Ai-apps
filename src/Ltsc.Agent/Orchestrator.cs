@@ -28,6 +28,8 @@ public sealed class Orchestrator : IModuleContext
     public IRemoteCommandExecutor Commands { get; }
     public IOsUpdateManager OsUpdates { get; }
     public IImagingEngine Imaging { get; }
+    public IScreenCapturer Screen { get; }
+    public IShadowUplink Shadow { get; }
     public LocalStore Store { get; }
 
     public Orchestrator(
@@ -43,6 +45,8 @@ public sealed class Orchestrator : IModuleContext
         IRemoteCommandExecutor commands,
         IOsUpdateManager osUpdates,
         IImagingEngine imaging,
+        IScreenCapturer screen,
+        IShadowUplink shadow,
         LocalStore store,
         ILogger<Orchestrator> log)
     {
@@ -58,6 +62,8 @@ public sealed class Orchestrator : IModuleContext
         Commands = commands;
         OsUpdates = osUpdates;
         Imaging = imaging;
+        Screen = screen;
+        Shadow = shadow;
         Store = store;
         _log = log;
         _comm.OnCommand = DispatchAsync;

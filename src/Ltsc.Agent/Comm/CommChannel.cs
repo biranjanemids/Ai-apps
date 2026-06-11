@@ -22,7 +22,7 @@ namespace Ltsc.Agent.Comm;
 /// Windows production hardware the key belongs in TPM/CNG (design §6) — this
 /// file-based storage is the cross-platform fallback.
 /// </summary>
-public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher, IArtifactUploader
+public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher, IArtifactUploader, IShadowUplink
 {
     private readonly string _serverAddress;
     private readonly LocalStore _store;
@@ -215,6 +215,50 @@ public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher, IArtifactU
         var result = await call.ResponseAsync;
         _log.LogInformation("Uploaded {Path} ({Bytes} bytes) as {Id}", path, result.TotalBytes, result.ArtifactId);
         return result.ArtifactId;
+    }
+
+    /// <summary>Streams captured frames over the Shadow service until budget/stop (design §10).</summary>
+    public async Task<int> RunAsync(IScreenCapturer capturer, string sessionId, int maxFrames, int fps, CancellationToken ct)
+    {
+        var client = new Shadow.ShadowClient(Rpc);
+        using var call = client.Stream(cancellationToken: ct);
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        // Watch for a server stop control.
+        var watcher = Task.Run(async () =>
+        {
+            try
+            {
+                await foreach (var c in call.ResponseStream.ReadAllAsync(stop.Token))
+                    if (c.Stop) { stop.Cancel(); break; }
+            }
+            catch (OperationCanceledException) { }
+        }, stop.Token);
+
+        var sent = 0;
+        var delay = TimeSpan.FromMilliseconds(1000.0 / Math.Max(fps, 1));
+        for (var seq = 0; seq < maxFrames && !stop.IsCancellationRequested; seq++)
+        {
+            var f = capturer.Capture(seq);
+            await call.RequestStream.WriteAsync(new ShadowFrame
+            {
+                DeviceId = DeviceId,
+                SessionId = sessionId,
+                Seq = seq,
+                Width = f.Width,
+                Height = f.Height,
+                Mime = f.Mime,
+                Data = ByteString.CopyFrom(f.Data),
+                Last = seq == maxFrames - 1,
+            }, ct);
+            sent++;
+            try { await Task.Delay(delay, stop.Token); } catch (OperationCanceledException) { break; }
+        }
+        await call.RequestStream.CompleteAsync();
+        stop.Cancel();
+        await watcher;
+        _log.LogInformation("Shadow session {Session} sent {Frames} frame(s)", sessionId, sent);
+        return sent;
     }
 
     /// <summary>

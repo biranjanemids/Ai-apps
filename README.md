@@ -87,9 +87,12 @@ Expected, on the server log:
 - **Imaging / BMR** (`ImageModule`) — disk **capture** (FFU/WIM) + upload, and
   **trigger_bmr** state machine (compat gate → Pulling verified download →
   Applying → Sealing → Rejoining → Done). DISM/WinPE on Windows; simulated otherwise.
+- **Remote shadow** (`ShadowModule`) — **on-device consent** gate, then frame
+  streaming over the `Shadow` gRPC stream; session status at
+  `/api/devices/{id}/shadow`, audited. Real screen capture is the Windows piece.
 
 Issue any of these from the console: `POST /api/devices/{id}/command?action=...`
-(`reboot|shutdown|collect|collect_logs|restart_services|update_scan|update_install|capture|trigger_bmr`)
+(`reboot|shutdown|collect|collect_logs|restart_services|update_scan|update_install|capture|trigger_bmr|shadow`)
 — signed + pushed; results at `/api/devices/{id}/commands`.
 
 See [`docs/COMPETITIVE-ANALYSIS.md`](docs/COMPETITIVE-ANALYSIS.md) for the feature

@@ -22,6 +22,8 @@ public interface IModuleContext
     IRemoteCommandExecutor Commands { get; }
     IOsUpdateManager OsUpdates { get; }
     IImagingEngine Imaging { get; }
+    IScreenCapturer Screen { get; }
+    IShadowUplink Shadow { get; }
     LocalStore Store { get; }
 
     // State is a free string (e.g. an InstallState name, or a config profile id)

@@ -59,9 +59,12 @@ public sealed class FakeSession : ISessionUi
     public bool InstallProceed = true;
     public bool RebootProceed = true;
 
+    public bool ShadowConsent = true;
+
     public bool HasInteractiveSession() => Interactive;
     public Task<bool> PromptInstallAsync(string text, int snoozeRemaining, DateTimeOffset deadline, CancellationToken ct) => Task.FromResult(InstallProceed);
     public Task<bool> PromptRebootAsync(DateTimeOffset deadline, CancellationToken ct) => Task.FromResult(RebootProceed);
+    public Task<bool> PromptShadowConsentAsync(string requester, CancellationToken ct) => Task.FromResult(ShadowConsent);
 }
 
 /// <summary>Artifact fetcher with a scriptable integrity failure.</summary>
@@ -92,6 +95,8 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     public IRemoteCommandExecutor Commands { get; }
     public IOsUpdateManager OsUpdates { get; }
     public IImagingEngine Imaging { get; }
+    public IScreenCapturer Screen { get; }
+    public IShadowUplink Shadow { get; }
     public LocalStore Store { get; }
 
     public List<(string CommandId, string State, int Pct, string Detail)> Progress { get; } = new();
@@ -102,7 +107,8 @@ public sealed class RecordingContext : IModuleContext, IDisposable
     public RecordingContext(IWriteFilterGuard uwf, IInstallerRunner installer, IDetectionProbe detection,
         ISessionUi session, IArtifactFetcher? artifacts = null,
         IInventoryCollector? inventory = null, IRemoteCommandExecutor? commands = null,
-        IOsUpdateManager? osUpdates = null, IImagingEngine? imaging = null, IArtifactUploader? uploads = null)
+        IOsUpdateManager? osUpdates = null, IImagingEngine? imaging = null, IArtifactUploader? uploads = null,
+        IScreenCapturer? screen = null, IShadowUplink? shadow = null)
     {
         Uwf = uwf;
         Installer = installer;
@@ -114,6 +120,8 @@ public sealed class RecordingContext : IModuleContext, IDisposable
         Commands = commands ?? new FakeCommandExecutor();
         OsUpdates = osUpdates ?? new FakeOsUpdateManager();
         Imaging = imaging ?? new FakeImagingEngine();
+        Screen = screen ?? new DefaultScreenCapturer();
+        Shadow = shadow ?? new FakeShadowUplink();
         // Each context gets its own private in-memory store.
         Store = new LocalStore($"file:{Guid.NewGuid():n}?mode=memory&cache=shared");
     }
@@ -204,6 +212,13 @@ public sealed class FakeArtifactUploader : IArtifactUploader
     public List<string> Uploaded { get; } = new();
     public Task<string> UploadAsync(string path, CancellationToken ct)
     { Uploaded.Add(path); return Task.FromResult("uploaded-artifact-id"); }
+}
+
+public sealed class FakeShadowUplink : IShadowUplink
+{
+    public int Calls { get; private set; }
+    public Task<int> RunAsync(IScreenCapturer capturer, string sessionId, int maxFrames, int fps, CancellationToken ct)
+    { Calls++; return Task.FromResult(maxFrames); }
 }
 
 /// <summary>Config setting applier with scriptable drift / failure, recording applies.</summary>

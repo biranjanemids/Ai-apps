@@ -69,4 +69,7 @@ public interface ISessionUi
     bool HasInteractiveSession();
     Task<bool> PromptInstallAsync(string text, int snoozeRemaining, DateTimeOffset deadline, CancellationToken ct);
     Task<bool> PromptRebootAsync(DateTimeOffset deadline, CancellationToken ct);
+
+    /// <summary>On-device consent for a remote shadow session (design §10). Returns true to allow.</summary>
+    Task<bool> PromptShadowConsentAsync(string requester, CancellationToken ct);
 }
