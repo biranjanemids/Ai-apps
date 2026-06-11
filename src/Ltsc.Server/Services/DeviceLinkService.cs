@@ -17,6 +17,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly PolicyRegistry _policies;
     private readonly DemoCommandPusher _demo;
     private readonly InventoryStore _inventory;
+    private readonly DeviceRouter _router;
+    private readonly IPresence _presence;
     private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
@@ -26,6 +28,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         PolicyRegistry policies,
         DemoCommandPusher demo,
         InventoryStore inventory,
+        DeviceRouter router,
+        IPresence presence,
         Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
@@ -34,6 +38,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         _policies = policies;
         _demo = demo;
         _inventory = inventory;
+        _router = router;
+        _presence = presence;
         _ca = ca;
         _log = log;
     }
@@ -55,6 +61,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "missing device_id"));
 
         var outbound = _connections.Connect(deviceId);
+        _presence.Online(deviceId);   // publish presence (shared in Redis for multi-node)
         _log.LogInformation("Device {DeviceId} connected", deviceId);
 
         try
@@ -86,6 +93,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         }
         finally
         {
+            _presence.Offline(deviceId);
             _connections.Disconnect(deviceId);
             _log.LogInformation("Device {DeviceId} disconnected", deviceId);
         }
@@ -144,7 +152,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     }
 
     private void PushSyncPolicy(string deviceId) =>
-        _connections.Send(deviceId, new ServerMessage
+        _router.Send(deviceId, new ServerMessage
         {
             Sync = new SyncPolicy { ExpectedPolicyVersion = ExpectedVersion(deviceId) },
         });

@@ -24,11 +24,11 @@ public sealed class ShadowStore
 public sealed class ShadowService : Shadow.ShadowBase
 {
     private readonly ShadowStore _store;
-    private readonly ServerStore _audit;
+    private readonly IServerStore _audit;
     private readonly CertAuthority _ca;
     private readonly ILogger<ShadowService> _log;
 
-    public ShadowService(ShadowStore store, ServerStore audit, CertAuthority ca, ILogger<ShadowService> log)
+    public ShadowService(ShadowStore store, IServerStore audit, CertAuthority ca, ILogger<ShadowService> log)
     {
         _store = store;
         _audit = audit;

@@ -12,13 +12,13 @@ namespace Ltsc.Server.Services;
 /// </summary>
 public sealed class CommandDispatcher
 {
-    private readonly ConnectionRegistry _connections;
+    private readonly DeviceRouter _router;
     private readonly CertAuthority _ca;
     private readonly ILogger<CommandDispatcher> _log;
 
-    public CommandDispatcher(ConnectionRegistry connections, CertAuthority ca, ILogger<CommandDispatcher> log)
+    public CommandDispatcher(DeviceRouter router, CertAuthority ca, ILogger<CommandDispatcher> log)
     {
-        _connections = connections;
+        _router = router;
         _ca = ca;
         _log = log;
     }
@@ -35,7 +35,7 @@ public sealed class CommandDispatcher
         };
         cmd.Signature = ByteString.CopyFrom(_ca.SignCommandPayload(key => CommandSigning.Sign(cmd, key)));
 
-        var sent = _connections.Send(deviceId, new ServerMessage { Command = cmd });
+        var sent = _router.Send(deviceId, new ServerMessage { Command = cmd });
         _log.LogInformation("Dispatch {Cap}/{Action} to {Device}: {Sent}", capability, action, deviceId, sent ? "sent" : "offline");
         return (sent, cmd.CommandId);
     }

@@ -13,9 +13,9 @@ namespace Ltsc.Server.Registry;
 public sealed class PolicyRegistry
 {
     private readonly ConcurrentDictionary<string, PolicySnapshot> _byGroup = new();
-    private readonly ServerStore? _store;
+    private readonly IServerStore? _store;
 
-    public PolicyRegistry(ServerStore? store = null)
+    public PolicyRegistry(IServerStore? store = null)
     {
         _store = store;
         if (store is not null)

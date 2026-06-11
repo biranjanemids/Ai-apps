@@ -18,10 +18,10 @@ public sealed class EnrollmentService : Enrollment.EnrollmentBase
 {
     private readonly CertAuthority _ca;
     private readonly DeviceRegistry _devices;
-    private readonly Registry.ServerStore _store;
+    private readonly Registry.IServerStore _store;
     private readonly ILogger<EnrollmentService> _log;
 
-    public EnrollmentService(CertAuthority ca, DeviceRegistry devices, Registry.ServerStore store, ILogger<EnrollmentService> log)
+    public EnrollmentService(CertAuthority ca, DeviceRegistry devices, Registry.IServerStore store, ILogger<EnrollmentService> log)
     {
         _ca = ca;
         _devices = devices;

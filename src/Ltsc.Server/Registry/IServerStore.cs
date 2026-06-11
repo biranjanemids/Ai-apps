@@ -1,0 +1,19 @@
+namespace Ltsc.Server.Registry;
+
+/// <summary>
+/// Durable server state (design §12.3). Implemented by SQLite (single-node) and
+/// PostgreSQL (multi-node shared state). Selected by config: a Ltsc:Postgres
+/// connection string switches the whole fleet/audit/policy state to Postgres so
+/// multiple server nodes share it.
+/// </summary>
+public interface IServerStore
+{
+    void UpsertDevice(DeviceRegistry.DeviceRecord r, string certThumbprint = "");
+    IReadOnlyList<DeviceRegistry.DeviceRecord> LoadDevices();
+
+    void AddAudit(string actor, string action, string target, string detail);
+    IReadOnlyList<(string Ts, string Actor, string Action, string Target, string Detail)> LoadAudit(int limit = 200);
+
+    void UpsertPolicy(string groupId, string json);
+    IReadOnlyDictionary<string, string> LoadPolicies();
+}

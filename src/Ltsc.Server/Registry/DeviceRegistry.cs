@@ -22,9 +22,9 @@ public sealed class DeviceRegistry
     }
 
     private readonly ConcurrentDictionary<string, DeviceRecord> _devices = new();
-    private readonly ServerStore? _store;
+    private readonly IServerStore? _store;
 
-    public DeviceRegistry(ServerStore? store = null)
+    public DeviceRegistry(IServerStore? store = null)
     {
         _store = store;
         if (store is not null)

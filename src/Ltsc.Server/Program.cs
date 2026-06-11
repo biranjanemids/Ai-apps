@@ -12,12 +12,28 @@ builder.Services.AddGrpc();
 var stateDir = builder.Configuration["Ltsc:StateDir"] ?? "server-state";
 var ca = new CertAuthority(stateDir);
 
-// Control-plane services. SQLite-durable on a single node; the design (§12)
-// swaps storage for PostgreSQL/Redis/NATS for multi-node scale.
 builder.Services.AddSingleton(ca);
-builder.Services.AddSingleton(new ServerStore(Path.Combine(stateDir, "server.db")));
-builder.Services.AddSingleton(sp => new DeviceRegistry(sp.GetRequiredService<ServerStore>()));
+
+// Durable state: PostgreSQL when Ltsc:Postgres is set (multi-node shared state),
+// else SQLite (single-node). Same IServerStore contract either way (design §12.3).
+var pg = builder.Configuration["Ltsc:Postgres"];
+if (!string.IsNullOrWhiteSpace(pg))
+    builder.Services.AddSingleton<IServerStore>(new PostgresServerStore(pg));
+else
+    builder.Services.AddSingleton<IServerStore>(new SqliteServerStore(Path.Combine(stateDir, "server.db")));
+
+builder.Services.AddSingleton(sp => new DeviceRegistry(sp.GetRequiredService<IServerStore>()));
 builder.Services.AddSingleton<ConnectionRegistry>();
+
+// Presence + cross-node command routing: Redis when Ltsc:Redis is set (any node
+// can reach any device), else in-process. NATS is an interchangeable bus (§12.2).
+var redis = builder.Configuration["Ltsc:Redis"];
+if (!string.IsNullOrWhiteSpace(redis))
+    builder.Services.AddSingleton<IPresence>(sp => new RedisPresence(redis, sp.GetRequiredService<ConnectionRegistry>()));
+else
+    builder.Services.AddSingleton<IPresence, InProcessPresence>();
+builder.Services.AddSingleton<DeviceRouter>();
+
 builder.Services.AddSingleton<PolicyRegistry>();
 builder.Services.AddSingleton<ArtifactStore>();
 builder.Services.AddSingleton<InventoryStore>();
@@ -55,7 +71,7 @@ app.MapGrpcService<Ltsc.Server.Services.PolicyService>();
 app.MapGrpcService<ShadowService>();
 
 // ---- Minimal admin console (read-only; design §12 grows this into the BFF/SPA) ----
-app.MapGet("/api/devices", (DeviceRegistry devices, ConnectionRegistry connections, PolicyRegistry policies, AdminAuth auth, HttpContext http) =>
+app.MapGet("/api/devices", (DeviceRegistry devices, DeviceRouter router, PolicyRegistry policies, AdminAuth auth, HttpContext http) =>
     auth.Require(http, Role.Viewer) is null ? Results.Unauthorized() :
     Results.Json(devices.All().Select(d => new
     {
@@ -66,7 +82,7 @@ app.MapGet("/api/devices", (DeviceRegistry devices, ConnectionRegistry connectio
         d.PolicyVersion,
         ExpectedPolicy = policies.ForGroup(d.GroupId).ContentHash,
         InPolicy = d.PolicyVersion == policies.ForGroup(d.GroupId).ContentHash,
-        Online = connections.IsOnline(d.DeviceId),
+        Online = router.IsOnline(d.DeviceId),
         LastSeen = d.LastSeen,
         d.RebootPending,
     })));
@@ -81,7 +97,7 @@ app.MapGet("/api/devices/{id}/commands", (string id, InventoryStore inv, AdminAu
 
 // Issue a remote command from the console (Operator+). Signed + pushed + audited.
 app.MapPost("/api/devices/{id}/command", (string id, string action, string? services,
-    DeviceRegistry devices, ImageRegistry images, CommandDispatcher d, AdminAuth auth, ServerStore store, HttpContext http) =>
+    DeviceRegistry devices, ImageRegistry images, CommandDispatcher d, AdminAuth auth, IServerStore store, HttpContext http) =>
 {
     var actor = auth.Require(http, Role.Operator);
     if (actor is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
@@ -111,7 +127,7 @@ app.MapGet("/api/groups/{group}/policy", (string group, PolicyRegistry policies,
         : Results.Text(Google.Protobuf.JsonFormatter.Default.Format(policies.ForGroup(group)), "application/json"));
 
 app.MapPost("/api/groups/{group}/policy", async (string group, PolicyRegistry policies, DeviceRegistry devices,
-    ConnectionRegistry connections, AdminAuth auth, ServerStore store, HttpContext http) =>
+    DeviceRouter router, AdminAuth auth, IServerStore store, HttpContext http) =>
 {
     var actor = auth.Require(http, Role.Admin);
     if (actor is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
@@ -127,15 +143,15 @@ app.MapPost("/api/groups/{group}/policy", async (string group, PolicyRegistry po
 
     // Push SyncPolicy to online devices in the group so they re-reconcile (design §7).
     var nudged = 0;
-    foreach (var dev in devices.All().Where(x => x.GroupId == group && connections.IsOnline(x.DeviceId)))
+    foreach (var dev in devices.All().Where(x => x.GroupId == group && router.IsOnline(x.DeviceId)))
     {
-        connections.Send(dev.DeviceId, new ServerMessage { Sync = new SyncPolicy { ExpectedPolicyVersion = snap.ContentHash } });
+        router.Send(dev.DeviceId, new ServerMessage { Sync = new SyncPolicy { ExpectedPolicyVersion = snap.ContentHash } });
         nudged++;
     }
     return Results.Ok(new { snap.Version, snap.ContentHash, profiles = snap.Profiles.Count, nudged });
 });
 
-app.MapGet("/api/audit", (ServerStore store, AdminAuth auth, HttpContext http) =>
+app.MapGet("/api/audit", (IServerStore store, AdminAuth auth, HttpContext http) =>
     auth.Require(http, Role.Admin) is null ? Results.Unauthorized()
         : Results.Json(store.LoadAudit().Select(a => new { a.Ts, a.Actor, a.Action, a.Target, a.Detail })));
 

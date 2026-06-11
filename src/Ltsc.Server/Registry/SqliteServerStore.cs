@@ -8,12 +8,12 @@ namespace Ltsc.Server.Registry;
 /// PostgreSQL design tables so swapping in EF Core + Postgres for multi-node
 /// is a storage change, not a model change.
 /// </summary>
-public sealed class ServerStore : IDisposable
+public sealed class SqliteServerStore : IServerStore, IDisposable
 {
     private readonly SqliteConnection _conn;
     private readonly object _lock = new();
 
-    public ServerStore(string path)
+    public SqliteServerStore(string path)
     {
         _conn = new SqliteConnection($"Data Source={path}");
         _conn.Open();

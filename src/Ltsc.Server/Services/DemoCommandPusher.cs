@@ -11,18 +11,18 @@ namespace Ltsc.Server.Services;
 /// </summary>
 public sealed class DemoCommandPusher
 {
-    private readonly ConnectionRegistry _connections;
+    private readonly DeviceRouter _router;
     private readonly Ca.CertAuthority _ca;
     private readonly ArtifactStore _artifacts;
     private readonly ILogger<DemoCommandPusher> _log;
 
     public DemoCommandPusher(
-        ConnectionRegistry connections,
+        DeviceRouter router,
         Ca.CertAuthority ca,
         ArtifactStore artifacts,
         ILogger<DemoCommandPusher> log)
     {
-        _connections = connections;
+        _router = router;
         _ca = ca;
         _artifacts = artifacts;
         _log = log;
@@ -81,7 +81,7 @@ public sealed class DemoCommandPusher
             // Server-sign so the agent can reject injected/tampered commands (§13).
             cmd.Signature = ByteString.CopyFrom(_ca.SignCommandPayload(key => CommandSigning.Sign(cmd, key)));
 
-            if (_connections.Send(deviceId, new ServerMessage { Command = cmd }))
+            if (_router.Send(deviceId, new ServerMessage { Command = cmd }))
                 _log.LogInformation("Pushed demo install {Cmd} to {DeviceId}", cmd.CommandId, deviceId);
         });
     }

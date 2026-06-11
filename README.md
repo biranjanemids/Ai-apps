@@ -132,8 +132,10 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
   disable→reboot→re-enable servicing cycle still needs wiring + a device lab.
 - **Key storage** — device private key persists as PFX in SQLite; on Windows it
   belongs in TPM/CNG. CA key belongs in an HSM. No revocation (CRL/OCSP) yet.
-- **Scale** — SQLite/single-node by design here; PostgreSQL + Redis + NATS for
-  multi-node (design §12). Policy authoring is code-seeded, no editor UI.
+- **Scale** — set `Ltsc:Postgres` for shared durable state (multi-node) and
+  `Ltsc:Redis` for fleet-wide presence + cross-node command routing; unset both
+  for single-node SQLite + in-process routing. Multi-tenant isolation and true
+  multi-replica deployment testing remain (design §12).
 - **Capabilities still open** — real Windows installer execution/detection,
   remote shadow, USB imaging media builder + WinPE RecoveryAgent, agent MSI
   packaging/code-signing/self-update, RBAC + audit. (App deploy, config/kiosk,
