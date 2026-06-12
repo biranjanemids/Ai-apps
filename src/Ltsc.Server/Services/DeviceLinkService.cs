@@ -19,6 +19,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly InventoryStore _inventory;
     private readonly DeviceRouter _router;
     private readonly IPresence _presence;
+    private readonly AgentRelease _release;
     private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
@@ -30,6 +31,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         InventoryStore inventory,
         DeviceRouter router,
         IPresence presence,
+        AgentRelease release,
         Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
@@ -40,6 +42,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         _inventory = inventory;
         _router = router;
         _presence = presence;
+        _release = release;
         _ca = ca;
         _log = log;
     }
@@ -68,7 +71,14 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         {
             await responseStream.WriteAsync(new ServerMessage
             {
-                Hello = new ServerHello { HeartbeatIntervalSeconds = 30 },
+                Hello = new ServerHello
+                {
+                    HeartbeatIntervalSeconds = 30,
+                    LatestAgentVersion = _release.Version,
+                    AgentArtifactId = _release.ArtifactId,
+                    AgentSha256 = _release.Sha256,
+                    UpdateMandatory = _release.Mandatory,
+                },
             });
 
             // Pump outbound server messages on a background task.

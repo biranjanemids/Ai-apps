@@ -91,6 +91,11 @@ Expected, on the server log:
   streaming over the `Shadow` gRPC stream; session status at
   `/api/devices/{id}/shadow`, audited. Real screen capture is the Windows piece.
 
+- **Agent self-update** — the server advertises the latest agent version in
+  `ServerHello` (`Ltsc:AgentRelease:Version`); a device on an older version
+  downloads the package (hash-verified) and applies it (`msiexec` on Windows).
+  Packaging: `deploy/packaging/build-agent-package.sh` (win-x64 payload) + WiX
+  `agent.wxs` for the signed MSI.
 - **Admin console SPA** (`/console`) — token login, live fleet table, per-device
   tabs (overview / inventory / command history / shadow / policy editor / audit),
   and role-gated action buttons. Vanilla JS served inline, no build step.

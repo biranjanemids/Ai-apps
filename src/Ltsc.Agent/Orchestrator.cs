@@ -30,7 +30,10 @@ public sealed class Orchestrator : IModuleContext
     public IImagingEngine Imaging { get; }
     public IScreenCapturer Screen { get; }
     public IShadowUplink Shadow { get; }
+    public IAgentUpdater Updater { get; }
     public LocalStore Store { get; }
+
+    public const string AgentVersion = "0.1.0";
 
     public Orchestrator(
         CommChannel comm,
@@ -47,6 +50,7 @@ public sealed class Orchestrator : IModuleContext
         IImagingEngine imaging,
         IScreenCapturer screen,
         IShadowUplink shadow,
+        IAgentUpdater updater,
         LocalStore store,
         ILogger<Orchestrator> log)
     {
@@ -64,10 +68,38 @@ public sealed class Orchestrator : IModuleContext
         Imaging = imaging;
         Screen = screen;
         Shadow = shadow;
+        Updater = updater;
         Store = store;
         _log = log;
         _comm.OnCommand = DispatchAsync;
     }
+
+    /// <summary>
+    /// Self-update if the server advertises a newer agent version: verified
+    /// download (hash) then apply via the platform updater (design — agent lifecycle).
+    /// </summary>
+    public async Task SelfUpdateAsync(string version, string artifactId, byte[] sha256)
+    {
+        if (!IsNewer(version, AgentVersion))
+            return;
+        try
+        {
+            _log.LogInformation("Server advertises agent {New} (current {Cur}); self-updating", version, AgentVersion);
+            await ReportEventAsync("agent.self_update.start", "info", $"{{\"from\":\"{AgentVersion}\",\"to\":\"{version}\"}}");
+            var path = await Artifacts.FetchAsync(artifactId, sha256, CancellationToken.None);
+            var ok = await Updater.ApplyAsync(path, version, CancellationToken.None);
+            await ReportEventAsync(ok ? "agent.self_update.applied" : "agent.self_update.failed",
+                ok ? "info" : "error", $"{{\"version\":\"{version}\"}}");
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Self-update to {Version} failed", version);
+            await ReportEventAsync("agent.self_update.failed", "error", $"{{\"version\":\"{version}\",\"error\":\"{ex.Message}\"}}");
+        }
+    }
+
+    private static bool IsNewer(string candidate, string current) =>
+        Version.TryParse(candidate, out var c) && Version.TryParse(current, out var cur) && c > cur;
 
     /// <summary>Collect and report a full inventory snapshot (startup + on demand).</summary>
     public Task ReportInventoryAsync() => ReportInventoryAsync(Inventory.Collect(Uwf.IsEnabled()));

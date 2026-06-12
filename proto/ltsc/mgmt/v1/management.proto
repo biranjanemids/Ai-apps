@@ -78,6 +78,12 @@ message ServerMessage {
 
 message ServerHello {
   int32 heartbeat_interval_seconds = 1;
+  // Latest agent release the server advertises; the agent self-updates if newer
+  // (design §A4 agent lifecycle). Empty = no update advertised.
+  string latest_agent_version = 2;
+  string agent_artifact_id = 3;
+  bytes  agent_sha256 = 4;
+  bool   update_mandatory = 5;
 }
 
 message Heartbeat {

@@ -58,7 +58,8 @@ provide." It is a living document — status reflects what is actually in the re
 3. **Console depth**: app/alert-rule authoring (the SPA covers fleet, device
    detail, role-gated actions, policy editing, and audit; alert rules + app
    authoring remain).
-4. **Agent lifecycle**: signed MSI packaging, self-update, watchdog.
+4. **Signed MSI build + Authenticode** (self-update + WiX authoring + win-x64
+   packaging are built; building/signing the .msi needs a Windows CI agent + cert).
 5. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
 6. **Real screen capture + viewer** for shadow (session/consent/streaming/audit built).
 

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  WiX v4 authoring for the LTSC agent MSI (agent lifecycle).
+  Installs the published agent (build-agent-package.sh output) to Program Files,
+  registers it as the "LtscAgent" Windows service (LocalSystem, auto-start) with
+  crash recovery, and supports clean upgrade/uninstall. Build on Windows:
+
+    dotnet publish ... -r win-x64 -o publish\   (or run build-agent-package.sh)
+    wix build agent.wxs -d PublishDir=publish -o LtscAgent.msi
+    signtool sign /fd SHA256 /a LtscAgent.msi    (code-signing — required for fleets)
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="LTSC Management Agent" Manufacturer="Ltsc"
+           Version="0.2.0.0" UpgradeCode="9F1C2E64-7C7B-4E0E-9B7F-1A2B3C4D5E6F"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of the LTSC agent is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="LtscAgent" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="AgentFiles" Directory="INSTALLFOLDER">
+      <!-- Publish output is harvested at build time; the service host is the exe. -->
+      <Component Id="AgentExe" Guid="*">
+        <File Id="LtscAgentExe" Source="$(var.PublishDir)\Ltsc.Agent.exe" KeyPath="yes" />
+        <ServiceInstall Id="LtscAgentSvc" Name="LtscAgent" DisplayName="LTSC Management Agent"
+                        Description="Manages this Windows IoT LTSC device from the LTSC server."
+                        Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" />
+        <ServiceControl Id="LtscAgentSvcCtl" Name="LtscAgent" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+        <!-- Restart the service on crash (1st/2nd/subsequent), reset window 1 day. -->
+        <util:ServiceConfig xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+                            FirstFailureActionType="restart" SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart" RestartServiceDelayInSeconds="30"
+                            ResetPeriodInDays="1" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main">
+      <ComponentGroupRef Id="AgentFiles" />
+    </Feature>
+  </Package>
+</Wix>

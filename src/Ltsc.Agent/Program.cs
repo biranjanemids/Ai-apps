@@ -32,6 +32,7 @@ builder.Services.AddSingleton<IRemoteCommandExecutor, DefaultRemoteCommandExecut
 builder.Services.AddSingleton<IOsUpdateManager, DefaultOsUpdateManager>();
 builder.Services.AddSingleton<IImagingEngine, DefaultImagingEngine>();
 builder.Services.AddSingleton<IScreenCapturer, DefaultScreenCapturer>();
+builder.Services.AddSingleton<IAgentUpdater, DefaultAgentUpdater>();
 
 // Write filter + config setting appliers: real Windows implementations when
 // running on Windows (net8.0-windows build), cross-platform stubs otherwise so

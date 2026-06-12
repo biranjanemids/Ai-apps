@@ -41,6 +41,8 @@ public sealed class AgentService : BackgroundService
         // Reconcile config when the server signals drift (SyncPolicy), and once
         // at startup so the device converges without waiting for a push (§7).
         _comm.OnSyncPolicy = _ => ReconcileFromServerAsync(ct);
+        // Auto self-update when the server's ServerHello advertises a newer agent.
+        _comm.OnAgentRelease = (version, artifactId, sha256) => _orchestrator.SelfUpdateAsync(version, artifactId, sha256);
         await ReconcileFromServerAsync(ct);
 
         // Report a full inventory snapshot at startup (design §10).

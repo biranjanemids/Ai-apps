@@ -37,6 +37,7 @@ public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher, IArtifactU
     public X509Certificate2? CaCertificate { get; private set; }
     public Func<CommandEnvelope, Task>? OnCommand { get; set; }
     public Func<string, Task>? OnSyncPolicy { get; set; }   // arg = server's expected policy version
+    public Func<string, string, byte[], Task>? OnAgentRelease { get; set; } // version, artifactId, sha256
 
     public CommChannel(string serverAddress, LocalStore store, ILogger<CommChannel> log)
     {
@@ -298,6 +299,8 @@ public sealed class CommChannel : IAsyncDisposable, IArtifactFetcher, IArtifactU
                 {
                     case ServerMessage.PayloadOneofCase.Hello:
                         _log.LogInformation("ServerHello: heartbeat every {N}s", server.Hello.HeartbeatIntervalSeconds);
+                        if (OnAgentRelease is not null && !string.IsNullOrEmpty(server.Hello.LatestAgentVersion))
+                            _ = OnAgentRelease(server.Hello.LatestAgentVersion, server.Hello.AgentArtifactId, server.Hello.AgentSha256.ToByteArray());
                         break;
                     case ServerMessage.PayloadOneofCase.Command:
                         if (OnCommand is not null) _ = OnCommand(server.Command);

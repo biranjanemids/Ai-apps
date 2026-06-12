@@ -42,6 +42,7 @@ builder.Services.AddSingleton<DemoCommandPusher>();
 builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<AdminAuth>();
 builder.Services.AddSingleton<ShadowStore>();
+builder.Services.AddSingleton<AgentRelease>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
