@@ -18,3 +18,6 @@ server-state/
 
 # Build artifacts (agent packages)
 artifacts/
+
+# Redis dump (from local testing)
+dump.rdb
