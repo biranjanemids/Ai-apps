@@ -6,43 +6,47 @@ using Ltsc.Mgmt.V1;
 namespace Ltsc.Server.Registry;
 
 /// <summary>
-/// Effective per-group policy (design §7/§12), now authored at runtime via the
-/// console and persisted to <see cref="ServerStore"/>. Setting a group's policy
-/// bumps its version and content hash so devices detect drift and re-reconcile.
+/// Effective per-(tenant, group) policy (design §7/§12). Multi-tenant: every
+/// snapshot is keyed by tenant so one tenant's policy never resolves for another.
+/// Authored at runtime via the console and persisted to <see cref="IServerStore"/>;
+/// setting a group's policy bumps its version + content hash so devices detect
+/// drift and re-reconcile.
 /// </summary>
 public sealed class PolicyRegistry
 {
-    private readonly ConcurrentDictionary<string, PolicySnapshot> _byGroup = new();
+    private readonly ConcurrentDictionary<string, PolicySnapshot> _byKey = new(); // key: tenant/group
     private readonly IServerStore? _store;
+
+    private static string Key(string tenant, string group) => $"{tenant}/{group}";
 
     public PolicyRegistry(IServerStore? store = null)
     {
         _store = store;
         if (store is not null)
-            foreach (var (group, json) in store.LoadPolicies())
-                _byGroup[group] = JsonParser.Default.Parse<PolicySnapshot>(json);
+            foreach (var (tenant, group, json) in store.LoadPolicies())
+                _byKey[Key(tenant, group)] = JsonParser.Default.Parse<PolicySnapshot>(json);
 
-        _byGroup.GetOrAdd("group-default", _ => BuildDemo());
+        // Seed a demo policy per demo tenant so the reconcile loop is observable.
+        _byKey.GetOrAdd(Key("tenant-a", "group-default"), _ => BuildDemo("Contoso"));
+        _byKey.GetOrAdd(Key("tenant-b", "group-default"), _ => BuildDemo("Acme"));
     }
 
-    public PolicySnapshot ForGroup(string groupId) =>
-        _byGroup.TryGetValue(groupId, out var s) ? s : new PolicySnapshot { Version = "0", ContentHash = "0" };
+    public PolicySnapshot ForGroup(string tenant, string group) =>
+        _byKey.TryGetValue(Key(tenant, group), out var s) ? s : new PolicySnapshot { Version = "0", ContentHash = "0" };
 
-    public IEnumerable<string> Groups => _byGroup.Keys;
-
-    /// <summary>Author a group's policy: re-version, re-hash, persist. Returns the new snapshot.</summary>
-    public PolicySnapshot SetGroupPolicy(string groupId, PolicySnapshot snapshot)
+    /// <summary>Author a (tenant, group) policy: re-version, re-hash, persist.</summary>
+    public PolicySnapshot SetGroupPolicy(string tenant, string group, PolicySnapshot snapshot)
     {
         var next = snapshot.Clone();
-        var prevVersion = _byGroup.TryGetValue(groupId, out var prev) && int.TryParse(prev.Version, out var v) ? v : 0;
+        var prevVersion = _byKey.TryGetValue(Key(tenant, group), out var prev) && int.TryParse(prev.Version, out var v) ? v : 0;
         next.Version = (prevVersion + 1).ToString();
         next.ContentHash = Hash(next);
-        _byGroup[groupId] = next;
-        _store?.UpsertPolicy(groupId, JsonFormatter.Default.Format(next));
+        _byKey[Key(tenant, group)] = next;
+        _store?.UpsertPolicy(tenant, group, JsonFormatter.Default.Format(next));
         return next;
     }
 
-    private static PolicySnapshot BuildDemo()
+    private static PolicySnapshot BuildDemo(string brand)
     {
         var snap = new PolicySnapshot { Version = "1" };
         snap.Profiles.Add(new ConfigProfile
@@ -50,7 +54,7 @@ public sealed class PolicyRegistry
             ProfileId = "reg-baseline",
             Registry = new RegistryProfile
             {
-                Values = { new RegValue { Hive = "HKLM", Path = @"Software\Contoso\Kiosk", Name = "Brand", Type = "sz", Data = "Contoso" } },
+                Values = { new RegValue { Hive = "HKLM", Path = @"Software\Contoso\Kiosk", Name = "Brand", Type = "sz", Data = brand } },
             },
         });
         snap.Profiles.Add(new ConfigProfile

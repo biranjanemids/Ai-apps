@@ -27,10 +27,11 @@ public sealed class PolicyService : Ltsc.Mgmt.V1.PolicyService.PolicyServiceBase
     {
         DeviceAuth.RequireDeviceCertificate(context, _ca);
 
-        var group = _devices.TryGet(request.DeviceId, out var dev) ? dev.GroupId : "group-default";
-        var snap = _policies.ForGroup(group);
-        _log.LogInformation("GetPolicy {Device} group={Group} version={Version} ({Profiles} profiles)",
-            request.DeviceId, group, snap.Version, snap.Profiles.Count);
+        if (!_devices.TryGet(request.DeviceId, out var dev))
+            return Task.FromResult(new PolicySnapshot { Version = "0", ContentHash = "0" });
+        var snap = _policies.ForGroup(dev.TenantId, dev.GroupId);
+        _log.LogInformation("GetPolicy {Device} tenant={Tenant} group={Group} version={Version} ({Profiles} profiles)",
+            request.DeviceId, dev.TenantId, dev.GroupId, snap.Version, snap.Profiles.Count);
         return Task.FromResult(snap);
     }
 }

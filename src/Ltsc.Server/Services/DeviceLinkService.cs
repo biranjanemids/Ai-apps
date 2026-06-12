@@ -147,8 +147,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
 
     private string ExpectedVersion(string deviceId)
     {
-        var group = _devices.TryGet(deviceId, out var dev) ? dev.GroupId : "group-default";
-        return _policies.ForGroup(group).ContentHash;
+        if (!_devices.TryGet(deviceId, out var dev)) return "0";
+        return _policies.ForGroup(dev.TenantId, dev.GroupId).ContentHash;
     }
 
     private void PushSyncPolicy(string deviceId) =>

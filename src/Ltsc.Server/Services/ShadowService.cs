@@ -25,13 +25,15 @@ public sealed class ShadowService : Shadow.ShadowBase
 {
     private readonly ShadowStore _store;
     private readonly IServerStore _audit;
+    private readonly DeviceRegistry _devices;
     private readonly CertAuthority _ca;
     private readonly ILogger<ShadowService> _log;
 
-    public ShadowService(ShadowStore store, IServerStore audit, CertAuthority ca, ILogger<ShadowService> log)
+    public ShadowService(ShadowStore store, IServerStore audit, DeviceRegistry devices, CertAuthority ca, ILogger<ShadowService> log)
     {
         _store = store;
         _audit = audit;
+        _devices = devices;
         _ca = ca;
         _log = log;
     }
@@ -57,7 +59,8 @@ public sealed class ShadowService : Shadow.ShadowBase
         if (device.Length > 0)
         {
             _store.Update(device, _store.Get(device)! with { Active = false });
-            _audit.AddAudit($"device:{device}", "shadow:session", device, $"session {session}, {frames} frame(s)");
+            var tenant = _devices.TryGet(device, out var rec) ? rec.TenantId : "default";
+            _audit.AddAudit(tenant, $"device:{device}", "shadow:session", device, $"session {session}, {frames} frame(s)");
             _log.LogInformation("[{Device}] shadow session {Session} ended: {Frames} frame(s)", device, session, frames);
         }
     }

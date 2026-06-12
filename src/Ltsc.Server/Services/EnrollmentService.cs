@@ -31,7 +31,7 @@ public sealed class EnrollmentService : Enrollment.EnrollmentBase
 
     public override Task<EnrollResponse> Enroll(EnrollRequest request, ServerCallContext context)
     {
-        if (!_ca.TryResolveGroup(request.EnrollmentToken, out var groupId))
+        if (!_ca.TryResolveToken(request.EnrollmentToken, out var tenantId, out var groupId))
             throw new RpcException(new Status(StatusCode.PermissionDenied, "invalid enrollment token"));
         if (request.Csr.IsEmpty)
             throw new RpcException(new Status(StatusCode.InvalidArgument, "missing CSR"));
@@ -48,10 +48,10 @@ public sealed class EnrollmentService : Enrollment.EnrollmentBase
             throw new RpcException(new Status(StatusCode.InvalidArgument, "malformed CSR"));
         }
 
-        var device = _devices.Enroll(request.Facts, groupId, deviceCert.Thumbprint);
-        _store.AddAudit($"device:{device.DeviceId}", "enroll", device.DeviceId, $"group {groupId}, cert {deviceCert.Thumbprint}");
-        _log.LogInformation("Enrolled device {DeviceId} (model={Model}) into {Group}, cert {Thumb} valid to {NotAfter:u}",
-            device.DeviceId, request.Facts?.Model, groupId, deviceCert.Thumbprint, notAfter);
+        var device = _devices.Enroll(request.Facts, tenantId, groupId, deviceCert.Thumbprint);
+        _store.AddAudit(tenantId, $"device:{device.DeviceId}", "enroll", device.DeviceId, $"tenant {tenantId}, group {groupId}, cert {deviceCert.Thumbprint}");
+        _log.LogInformation("Enrolled device {DeviceId} (model={Model}) into {Tenant}/{Group}, cert {Thumb} valid to {NotAfter:u}",
+            device.DeviceId, request.Facts?.Model, tenantId, groupId, deviceCert.Thumbprint, notAfter);
 
         return Task.FromResult(new EnrollResponse
         {

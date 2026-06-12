@@ -11,9 +11,9 @@ public interface IServerStore
     void UpsertDevice(DeviceRegistry.DeviceRecord r, string certThumbprint = "");
     IReadOnlyList<DeviceRegistry.DeviceRecord> LoadDevices();
 
-    void AddAudit(string actor, string action, string target, string detail);
-    IReadOnlyList<(string Ts, string Actor, string Action, string Target, string Detail)> LoadAudit(int limit = 200);
+    void AddAudit(string tenantId, string actor, string action, string target, string detail);
+    IReadOnlyList<(string Ts, string Actor, string Action, string Target, string Detail)> LoadAudit(string tenantId, int limit = 200);
 
-    void UpsertPolicy(string groupId, string json);
-    IReadOnlyDictionary<string, string> LoadPolicies();
+    void UpsertPolicy(string tenantId, string groupId, string json);
+    IReadOnlyList<(string Tenant, string Group, string Json)> LoadPolicies();
 }

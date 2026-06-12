@@ -17,10 +17,12 @@ namespace Ltsc.Server.Ca;
 /// </summary>
 public sealed class CertAuthority
 {
-    private static readonly Dictionary<string, string> KnownTokens = new()
+    // Enrollment token -> (tenant, group). Demo tenants: tenant-a and tenant-b.
+    private static readonly Dictionary<string, (string tenant, string group)> KnownTokens = new()
     {
-        ["demo-token"] = "group-default",
-        ["kiosk-token"] = "group-kiosk",
+        ["demo-token"] = ("tenant-a", "group-default"),
+        ["kiosk-token"] = ("tenant-a", "group-kiosk"),
+        ["acme-token"] = ("tenant-b", "group-default"),
     };
 
     public X509Certificate2 CaCertificate { get; }
@@ -59,8 +61,16 @@ public sealed class CertAuthority
         }
     }
 
-    public bool TryResolveGroup(string enrollmentToken, out string groupId) =>
-        KnownTokens.TryGetValue(enrollmentToken, out groupId!);
+    public bool TryResolveToken(string enrollmentToken, out string tenantId, out string groupId)
+    {
+        if (KnownTokens.TryGetValue(enrollmentToken, out var v))
+        {
+            (tenantId, groupId) = v;
+            return true;
+        }
+        tenantId = groupId = "";
+        return false;
+    }
 
     /// <summary>Signs a device CSR into a 90-day client-auth certificate.</summary>
     public X509Certificate2 SignDeviceCsr(byte[] csrDer, out DateTimeOffset notAfter)

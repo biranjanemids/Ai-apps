@@ -16,6 +16,7 @@ public sealed class DeviceRegistry
         DeviceFacts Facts,
         DateTimeOffset EnrolledAt)
     {
+        public string TenantId { get; init; } = "default";
         public DateTimeOffset LastSeen { get; set; } = DateTimeOffset.UtcNow;
         public string PolicyVersion { get; set; } = "";
         public bool RebootPending { get; set; }
@@ -32,14 +33,14 @@ public sealed class DeviceRegistry
                 _devices[rec.DeviceId] = rec;
     }
 
-    public DeviceRecord Enroll(DeviceFacts facts, string groupId, string certThumbprint = "")
+    public DeviceRecord Enroll(DeviceFacts facts, string tenantId, string groupId, string certThumbprint = "")
     {
         // Stable device id derived from hardware uuid so re-enroll is idempotent.
         var id = string.IsNullOrWhiteSpace(facts.HardwareUuid)
             ? Guid.NewGuid().ToString("n")
             : facts.HardwareUuid;
 
-        var record = new DeviceRecord(id, groupId, facts, DateTimeOffset.UtcNow);
+        var record = new DeviceRecord(id, groupId, facts, DateTimeOffset.UtcNow) { TenantId = tenantId };
         _devices[id] = record;
         _store?.UpsertDevice(record, certThumbprint);
         return record;
@@ -59,4 +60,8 @@ public sealed class DeviceRegistry
     }
 
     public IReadOnlyCollection<DeviceRecord> All() => _devices.Values.ToArray();
+
+    /// <summary>Devices belonging to one tenant (multi-tenant isolation, design §12).</summary>
+    public IReadOnlyCollection<DeviceRecord> ForTenant(string tenantId) =>
+        _devices.Values.Where(d => d.TenantId == tenantId).ToArray();
 }
