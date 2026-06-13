@@ -9,7 +9,8 @@
     wix build agent.wxs -d PublishDir=publish -o LtscAgent.msi
     signtool sign /fd SHA256 /a LtscAgent.msi    (code-signing — required for fleets)
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="LTSC Management Agent" Manufacturer="Ltsc"
            Version="0.2.0.0" UpgradeCode="9F1C2E64-7C7B-4E0E-9B7F-1A2B3C4D5E6F"
            Scope="perMachine">
@@ -30,8 +31,7 @@
                         Type="ownProcess" Start="auto" ErrorControl="normal" Account="LocalSystem" />
         <ServiceControl Id="LtscAgentSvcCtl" Name="LtscAgent" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
         <!-- Restart the service on crash (1st/2nd/subsequent), reset window 1 day. -->
-        <util:ServiceConfig xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
-                            FirstFailureActionType="restart" SecondFailureActionType="restart"
+        <util:ServiceConfig FirstFailureActionType="restart" SecondFailureActionType="restart"
                             ThirdFailureActionType="restart" RestartServiceDelayInSeconds="30"
                             ResetPeriodInDays="1" />
       </Component>

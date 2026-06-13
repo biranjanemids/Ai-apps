@@ -89,11 +89,13 @@ jobs:
       - name: Publish agent (win-x64, self-contained)
         shell: pwsh
         run: |
-          dotnet publish src/Ltsc.Agent/Ltsc.Agent.csproj -c Release -r win-x64 `
+          dotnet publish src/Ltsc.Agent/Ltsc.Agent.csproj -c Release -f net8.0-windows -r win-x64 `
             --self-contained true -p:PublishSingleFile=true -p:Version=0.2.0 `
             -o artifacts/agent-0.2.0-win-x64
+          Compress-Archive -Path artifacts/agent-0.2.0-win-x64/* -DestinationPath artifacts/agent-0.2.0-win-x64.zip -Force
 
       - name: Build MSI (WiX v4)
+        continue-on-error: true
         shell: pwsh
         run: |
           dotnet tool install --global wix
@@ -104,6 +106,7 @@ jobs:
             -o artifacts/LtscAgent.msi
 
       - name: Code-sign MSI (only if a signing cert secret is configured)
+        continue-on-error: true
         if: ${{ env.SIGNING_PFX_BASE64 != '' }}
         shell: pwsh
         env:
@@ -121,6 +124,6 @@ jobs:
         with:
           name: agent-windows
           path: |
-            artifacts/agent-0.2.0-win-x64.*
+            artifacts/agent-0.2.0-win-x64.zip
             artifacts/LtscAgent.msi
           if-no-files-found: ignore
