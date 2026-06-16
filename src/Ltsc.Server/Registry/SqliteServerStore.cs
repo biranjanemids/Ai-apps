@@ -48,6 +48,7 @@ public sealed class SqliteServerStore : IServerStore, IDisposable
                 json       TEXT NOT NULL,
                 PRIMARY KEY (tenant_id, group_id)
             );
+            CREATE TABLE IF NOT EXISTS revoked_certs (thumbprint TEXT PRIMARY KEY);
         """;
         cmd.ExecuteNonQuery();
     }
@@ -148,7 +149,7 @@ public sealed class SqliteServerStore : IServerStore, IDisposable
         lock (_lock)
         {
             using var cmd = _conn.CreateCommand();
-            cmd.CommandText = "SELECT device_id, tenant_id, group_id, model, os_build, arch, agent_version, enrolled_utc, last_seen_utc, policy_version, reboot_pending FROM devices";
+            cmd.CommandText = "SELECT device_id, tenant_id, group_id, model, os_build, arch, agent_version, enrolled_utc, last_seen_utc, policy_version, reboot_pending, cert_thumbprint FROM devices";
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
@@ -168,11 +169,36 @@ public sealed class SqliteServerStore : IServerStore, IDisposable
                     LastSeen = DateTimeOffset.Parse(r.GetString(8)),
                     PolicyVersion = r.GetString(9),
                     RebootPending = r.GetInt32(10) == 1,
+                    CertThumbprint = r.IsDBNull(11) ? "" : r.GetString(11),
                 };
                 result.Add(rec);
             }
         }
         return result;
+    }
+
+    public void RevokeCert(string thumbprint)
+    {
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "INSERT OR IGNORE INTO revoked_certs(thumbprint) VALUES($t)";
+            cmd.Parameters.AddWithValue("$t", thumbprint);
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    public IReadOnlyCollection<string> LoadRevokedCerts()
+    {
+        var set = new List<string>();
+        lock (_lock)
+        {
+            using var cmd = _conn.CreateCommand();
+            cmd.CommandText = "SELECT thumbprint FROM revoked_certs";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) set.Add(r.GetString(0));
+        }
+        return set;
     }
 
     public void Dispose() => _conn.Dispose();

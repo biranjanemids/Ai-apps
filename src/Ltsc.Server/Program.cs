@@ -10,19 +10,20 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 
 var stateDir = builder.Configuration["Ltsc:StateDir"] ?? "server-state";
-var ca = new CertAuthority(stateDir);
-
-builder.Services.AddSingleton(ca);
 
 // Durable state: PostgreSQL when Ltsc:Postgres is set (multi-node shared state),
 // else SQLite (single-node). Same IServerStore contract either way (design §12.3).
 var pg = builder.Configuration["Ltsc:Postgres"];
-if (!string.IsNullOrWhiteSpace(pg))
-    builder.Services.AddSingleton<IServerStore>(new PostgresServerStore(pg));
-else
-    builder.Services.AddSingleton<IServerStore>(new SqliteServerStore(Path.Combine(stateDir, "server.db")));
+IServerStore store = string.IsNullOrWhiteSpace(pg)
+    ? new SqliteServerStore(Path.Combine(stateDir, "server.db"))
+    : new PostgresServerStore(pg);
 
-builder.Services.AddSingleton(sp => new DeviceRegistry(sp.GetRequiredService<IServerStore>()));
+// CA shares the store so the certificate revocation list survives restarts (§13).
+var ca = new CertAuthority(stateDir, store);
+
+builder.Services.AddSingleton(store);
+builder.Services.AddSingleton(ca);
+builder.Services.AddSingleton(new DeviceRegistry(store));
 builder.Services.AddSingleton<ConnectionRegistry>();
 
 // Presence + cross-node command routing: Redis when Ltsc:Redis is set (any node
@@ -43,6 +44,7 @@ builder.Services.AddSingleton<CommandDispatcher>();
 builder.Services.AddSingleton<AdminAuth>();
 builder.Services.AddSingleton<ShadowStore>();
 builder.Services.AddSingleton<AgentRelease>();
+builder.Services.AddSingleton<AlertStore>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
@@ -180,6 +182,32 @@ app.MapGet("/api/audit", (IServerStore store, AdminAuth auth, HttpContext http) 
     var who = auth.Require(http, Role.Admin);
     if (who is null) return Results.Unauthorized();
     return Results.Json(store.LoadAudit(who.Value.tenant).Select(a => new { a.Ts, a.Actor, a.Action, a.Target, a.Detail }));
+});
+
+// Revoke a device's certificate (Admin, tenant-scoped). The device is locked out
+// on its next mTLS call; revocation persists in the CRL (design §13).
+app.MapPost("/api/devices/{id}/revoke", (string id, DeviceRegistry devices, CertAuthority ca,
+    AdminAuth auth, IServerStore store, AlertStore alerts, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+    if (!devices.TryGet(id, out var dev) || dev.TenantId != tenant) return Results.NotFound();
+    if (string.IsNullOrEmpty(dev.CertThumbprint)) return Results.BadRequest(new { error = "no certificate on record" });
+
+    ca.Revoke(dev.CertThumbprint);
+    store.AddAudit(tenant, actor, "device:revoke", id, $"cert {dev.CertThumbprint}");
+    alerts.Add(new Alert(tenant, id, "warn", "device.revoked", $"certificate {dev.CertThumbprint} revoked by {actor}", DateTimeOffset.UtcNow));
+    return Results.Ok(new { id, revoked = dev.CertThumbprint });
+});
+
+// Alert feed (Viewer, tenant-scoped).
+app.MapGet("/api/alerts", (AlertStore alerts, AdminAuth auth, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Viewer);
+    if (who is null) return Results.Unauthorized();
+    return Results.Json(alerts.ForTenant(who.Value.tenant)
+        .Select(a => new { a.Ts, a.DeviceId, a.Severity, a.Type, a.Detail }));
 });
 
 app.MapGet("/api/devices/{id}/shadow", (string id, DeviceRegistry devices, ShadowStore shadow, AdminAuth auth, HttpContext http) =>

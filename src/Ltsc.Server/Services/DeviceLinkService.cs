@@ -20,6 +20,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly DeviceRouter _router;
     private readonly IPresence _presence;
     private readonly AgentRelease _release;
+    private readonly AlertStore _alerts;
     private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
@@ -32,6 +33,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         DeviceRouter router,
         IPresence presence,
         AgentRelease release,
+        AlertStore alerts,
         Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
@@ -43,6 +45,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         _router = router;
         _presence = presence;
         _release = release;
+        _alerts = alerts;
         _ca = ca;
         _log = log;
     }
@@ -109,6 +112,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         }
     }
 
+    private string TenantOf(string deviceId) => _devices.TryGet(deviceId, out var d) ? d.TenantId : "default";
+
     private void HandleAgentMessage(string deviceId, AgentMessage msg)
     {
         switch (msg.PayloadCase)
@@ -121,6 +126,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                 });
                 _log.LogDebug("Heartbeat from {DeviceId} (uwf={Uwf}, policy={Policy})",
                     deviceId, msg.Heartbeat.Health?.UwfEnabled, msg.Heartbeat.PolicyVersion);
+                if (AlertRules.FromHeartbeat(TenantOf(deviceId), deviceId, msg.Heartbeat.Health) is { } ha) _alerts.Add(ha);
                 // Drift detection: nudge the device to reconcile if its applied
                 // policy version doesn't match the effective one (design §7).
                 if (msg.Heartbeat.PolicyVersion != ExpectedVersion(deviceId))
@@ -135,6 +141,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
 
             case AgentMessage.PayloadOneofCase.Result:
                 _inventory.AddResult(deviceId, msg.Result);
+                if (AlertRules.FromResult(TenantOf(deviceId), deviceId, msg.Result) is { } ra) _alerts.Add(ra);
                 _log.LogInformation("[{DeviceId}] {Cmd} RESULT status={Status} exit={Exit} reboot={Reboot} uwf_reenabled={Uwf}",
                     deviceId, msg.Result.CommandId, msg.Result.Status,
                     msg.Result.ExitCode, msg.Result.RebootState, msg.Result.UwfReenabled);
@@ -149,6 +156,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                 break;
 
             case AgentMessage.PayloadOneofCase.Event:
+                if (AlertRules.FromEvent(TenantOf(deviceId), deviceId, msg.Event) is { } ea) _alerts.Add(ea);
                 _log.LogInformation("[{DeviceId}] EVENT {Type}/{Sev}: {Payload}",
                     deviceId, msg.Event.Type, msg.Event.Severity, msg.Event.PayloadJson);
                 break;

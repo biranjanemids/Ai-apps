@@ -39,7 +39,7 @@ provide." It is a living document — status reflects what is actually in the re
 | Imaging / BMR (USB + network) | ✅ | ✅ | ✅ | 🟡 | ❌ | 🟡 (capture+BMR state machine ✅; DISM/WinPE device-validated ❌) |
 | Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (SPA: fleet, device detail tabs, role-gated actions, policy editor, audit) |
 | RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (token roles Viewer/Operator/Admin + persisted audit log) |
-| Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | 🟡 (events ✅, rules ❌) |
+| Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (rule engine: overlay-critical, command-failed, error events, revocation; tenant-scoped feed) |
 | Multi-tenant / HA scale | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ (PostgreSQL + Redis multi-node + tenant isolation across devices/policy/audit) |
 | OEM-agnostic (mixed fleets) | ❌ | ❌ | 🟡 | ✅ | ✅ | ✅ (by design) |
 | Modern typed API (gRPC) | ❌ | ❌ | 🟡 | 🟡 | ✅ | ✅ |
@@ -55,13 +55,16 @@ provide." It is a living document — status reflects what is actually in the re
    interop (needs a hardware lab — the logic exists and is tested with stubs).
 2. **True multi-replica deployment testing** (PostgreSQL shared state, Redis
    presence/routing, and tenant isolation are built + verified single-process).
-3. **Console depth**: app/alert-rule authoring (the SPA covers fleet, device
-   detail, role-gated actions, policy editing, and audit; alert rules + app
-   authoring remain).
+3. **App-package authoring UI** (the SPA covers fleet, device detail, role-gated
+   actions, policy editing, alerts, and audit; app catalog authoring remains).
 4. **Signed MSI build + Authenticode** (self-update + WiX authoring + win-x64
    packaging are built; building/signing the .msi needs a Windows CI agent + cert).
 5. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
 6. **Real screen capture + viewer** for shadow (session/consent/streaming/audit built).
+7. **TPM/CNG device-key storage** (key is file-backed; TPM needs Windows hardware).
+
+Closed since last revision: **cert revocation (CRL)**, **alert rule engine**, and
+**OIDC (JWT) console auth** are now implemented and tested.
 
 These are tracked here and in `docs/windows-ltsc-agent-design.md` (§10–§13). Each
 PR that closes one updates the matrix above.

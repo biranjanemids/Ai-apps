@@ -29,9 +29,13 @@ public sealed class CertAuthority
     public X509Certificate2 ServerCertificate { get; }
 
     private readonly ECDsa _caKey;
+    private readonly Registry.IServerStore? _store;
+    private readonly HashSet<string> _revoked;
 
-    public CertAuthority(string stateDir)
+    public CertAuthority(string stateDir, Registry.IServerStore? store = null)
     {
+        _store = store;
+        _revoked = store is null ? new() : new(store.LoadRevokedCerts(), StringComparer.OrdinalIgnoreCase);
         Directory.CreateDirectory(stateDir);
         var caPath = Path.Combine(stateDir, "ca.pfx");
         var serverPath = Path.Combine(stateDir, "server.pfx");
@@ -86,13 +90,28 @@ public sealed class CertAuthority
 
     public byte[] SignCommandPayload(Func<ECDsa, byte[]> sign) => sign(_caKey);
 
-    /// <summary>Validates a client/device certificate chains to this CA.</summary>
+    /// <summary>Revokes a device certificate by thumbprint (persisted CRL, design §13).</summary>
+    public void Revoke(string thumbprint)
+    {
+        lock (_revoked)
+        {
+            if (_revoked.Add(thumbprint)) _store?.RevokeCert(thumbprint);
+        }
+    }
+
+    public bool IsRevoked(string thumbprint)
+    {
+        lock (_revoked) return _revoked.Contains(thumbprint);
+    }
+
+    /// <summary>Validates a client/device certificate chains to this CA and is not revoked.</summary>
     public bool ValidateDeviceCertificate(X509Certificate2 cert)
     {
+        if (IsRevoked(cert.Thumbprint)) return false;   // CRL check
         using var chain = new X509Chain();
         chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
         chain.ChainPolicy.CustomTrustStore.Add(CaCertificate);
-        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // CRL/OCSP: production
+        chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck; // internal CRL above; OCSP: production
         return chain.Build(cert);
     }
 

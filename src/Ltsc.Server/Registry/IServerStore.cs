@@ -16,4 +16,9 @@ public interface IServerStore
 
     void UpsertPolicy(string tenantId, string groupId, string json);
     IReadOnlyList<(string Tenant, string Group, string Json)> LoadPolicies();
+
+    // Certificate revocation (design §13). Revoked device-cert thumbprints persist
+    // so a compromised device stays locked out across restarts.
+    void RevokeCert(string thumbprint);
+    IReadOnlyCollection<string> LoadRevokedCerts();
 }

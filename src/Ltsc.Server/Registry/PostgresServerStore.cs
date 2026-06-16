@@ -26,6 +26,7 @@ public sealed class PostgresServerStore : IServerStore
                 id BIGSERIAL PRIMARY KEY, tenant_id TEXT NOT NULL DEFAULT 'default', ts_utc TEXT NOT NULL, actor TEXT NOT NULL,
                 action TEXT NOT NULL, target TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');
             CREATE TABLE IF NOT EXISTS policies (tenant_id TEXT NOT NULL DEFAULT 'default', group_id TEXT NOT NULL, json TEXT NOT NULL, PRIMARY KEY(tenant_id, group_id));
+            CREATE TABLE IF NOT EXISTS revoked_certs (thumbprint TEXT PRIMARY KEY);
         """;
         cmd.ExecuteNonQuery();
     }
@@ -64,13 +65,13 @@ public sealed class PostgresServerStore : IServerStore
         var result = new List<DeviceRegistry.DeviceRecord>();
         using var c = Open();
         using var cmd = c.CreateCommand();
-        cmd.CommandText = "SELECT device_id, tenant_id, group_id, model, os_build, arch, agent_version, enrolled_utc, last_seen_utc, policy_version, reboot_pending FROM devices";
+        cmd.CommandText = "SELECT device_id, tenant_id, group_id, model, os_build, arch, agent_version, enrolled_utc, last_seen_utc, policy_version, reboot_pending, cert_thumbprint FROM devices";
         using var r = cmd.ExecuteReader();
         while (r.Read())
             result.Add(new DeviceRegistry.DeviceRecord(r.GetString(0), r.GetString(2),
                 new Ltsc.Mgmt.V1.DeviceFacts { HardwareUuid = r.GetString(0), Model = r.GetString(3), OsBuild = r.GetString(4), Arch = r.GetString(5), AgentVersion = r.GetString(6) },
                 DateTimeOffset.Parse(r.GetString(7)))
-            { TenantId = r.GetString(1), LastSeen = DateTimeOffset.Parse(r.GetString(8)), PolicyVersion = r.GetString(9), RebootPending = r.GetBoolean(10) });
+            { TenantId = r.GetString(1), LastSeen = DateTimeOffset.Parse(r.GetString(8)), PolicyVersion = r.GetString(9), RebootPending = r.GetBoolean(10), CertThumbprint = r.IsDBNull(11) ? "" : r.GetString(11) });
         return result;
     }
 
@@ -121,5 +122,25 @@ public sealed class PostgresServerStore : IServerStore
         using var r = cmd.ExecuteReader();
         while (r.Read()) rows.Add((r.GetString(0), r.GetString(1), r.GetString(2)));
         return rows;
+    }
+
+    public void RevokeCert(string thumbprint)
+    {
+        using var c = Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "INSERT INTO revoked_certs(thumbprint) VALUES(@t) ON CONFLICT DO NOTHING";
+        cmd.Parameters.AddWithValue("t", thumbprint);
+        cmd.ExecuteNonQuery();
+    }
+
+    public IReadOnlyCollection<string> LoadRevokedCerts()
+    {
+        var set = new List<string>();
+        using var c = Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT thumbprint FROM revoked_certs";
+        using var r = cmd.ExecuteReader();
+        while (r.Read()) set.Add(r.GetString(0));
+        return set;
     }
 }

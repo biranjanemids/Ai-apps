@@ -17,6 +17,7 @@ public sealed class DeviceRegistry
         DateTimeOffset EnrolledAt)
     {
         public string TenantId { get; init; } = "default";
+        public string CertThumbprint { get; set; } = "";
         public DateTimeOffset LastSeen { get; set; } = DateTimeOffset.UtcNow;
         public string PolicyVersion { get; set; } = "";
         public bool RebootPending { get; set; }
@@ -40,7 +41,7 @@ public sealed class DeviceRegistry
             ? Guid.NewGuid().ToString("n")
             : facts.HardwareUuid;
 
-        var record = new DeviceRecord(id, groupId, facts, DateTimeOffset.UtcNow) { TenantId = tenantId };
+        var record = new DeviceRecord(id, groupId, facts, DateTimeOffset.UtcNow) { TenantId = tenantId, CertThumbprint = certThumbprint };
         _devices[id] = record;
         _store?.UpsertDevice(record, certThumbprint);
         return record;

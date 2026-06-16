@@ -121,9 +121,15 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
 - **Artifact integrity** — downloads verify per-chunk and whole-file SHA-256
   against the hash in the signed install spec; mismatch fails the install
   closed, the installer never runs.
-- **RBAC** — bearer-token roles (Viewer reads, Operator issues commands, Admin
-  authors policy + reads audit), enforced on every console API (`AdminAuth`).
-  Tokens configurable via `Ltsc:AdminTokens`; production fronts this with OIDC.
+- **RBAC + OIDC** — bearer-token roles (Viewer/Operator/Admin) enforced on every
+  console API (`AdminAuth`); accepts static tokens (`Ltsc:AdminTokens`) **or**
+  OIDC-style HS256 JWTs (`Ltsc:Oidc:Secret`) carrying `role`/`tenant` claims.
+- **Certificate revocation (CRL)** — `POST /api/devices/{id}/revoke` (Admin) adds
+  the device cert to a persisted revocation list; the device is locked out on its
+  next mTLS call and stays out across restarts.
+- **Alerting** — a rule engine raises tenant-scoped alerts from device signals
+  (overlay-critical, command failure, error events, revocation); feed at
+  `/api/alerts` and the console **Alerts** tab.
 - **Audit log** — every enrollment, command dispatch, and policy change is
   persisted (`/api/audit`, Admin-only) and survives restarts.
 - **Authored policy** — Admins GET/POST a group's `PolicySnapshot` JSON at

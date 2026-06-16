@@ -58,6 +58,7 @@ pre{margin:0;font-size:.8rem;white-space:pre-wrap;word-break:break-word}
       <div class="tab" data-t="commands" onclick="tab(this)">Commands</div>
       <div class="tab" data-t="shadow" onclick="tab(this)">Shadow</div>
       <div class="tab" data-t="policy" onclick="tab(this)">Policy</div>
+      <div class="tab" data-t="alerts" onclick="tab(this)">Alerts</div>
       <div class="tab" data-t="audit" onclick="tab(this)">Audit</div>
     </div>
     <div id="actions" class="actions"></div>
@@ -105,6 +106,10 @@ function renderActions(){
   add('Update: scan','update_scan','Operator');add('Update: install','update_install','Operator');
   add('Capture image','capture','Operator');add('Trigger BMR','trigger_bmr','Operator');
   add('Shadow','shadow','Operator');
+  const rb=document.createElement('button');rb.textContent='Revoke cert';rb.disabled=!can('Admin');
+  rb.onclick=async()=>{if(!confirm('Revoke this device certificate?'))return;
+    const r=await api(`/api/devices/${sel}/revoke`,{method:'POST'});toast('revoke: '+r.status);};
+  a.appendChild(rb);
 }
 async function cmd(act,extra){
   let q=`/api/devices/${sel}/command?action=${act}`;if(extra&&extra.services)q+=`&services=${extra.services}`;
@@ -130,6 +135,9 @@ async function render(){
   else if(cur==='policy'){const g=(dev()||{}).groupId||'group-default';const r=await api(`/api/groups/${g}/policy`);const txt=r.ok?await r.text():'{}';
     p.innerHTML=`<p class="muted">Group <b>${g}</b> policy (Admin can edit + save)</p>
       <textarea id="pol">${txt}</textarea><div style="margin-top:.5rem"><button class="primary" ${can('Admin')?'':'disabled'} onclick="savePolicy('${g}')">Save & push</button></div>`;}
+  else if(cur==='alerts'){const r=await api('/api/alerts');const rows=r.ok?await r.json():[];
+    p.innerHTML=rows.length?'<table><thead><tr><th>Time</th><th>Device</th><th>Severity</th><th>Type</th><th>Detail</th></tr></thead><tbody>'+
+      rows.map(x=>`<tr><td>${x.ts.slice(0,19)}</td><td>${x.deviceId}</td><td>${x.severity}</td><td>${x.type}</td><td>${(x.detail||'').slice(0,80)}</td></tr>`).join('')+'</tbody></table>':'<p class="muted">no alerts</p>';}
   else if(cur==='audit'){if(!can('Admin')){p.innerHTML='<p class="muted">Admin only.</p>';return;}
     const r=await api('/api/audit');const rows=r.ok?await r.json():[];
     p.innerHTML='<table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>'+
@@ -139,7 +147,7 @@ async function savePolicy(g){
   const r=await api(`/api/groups/${g}/policy`,{method:'POST',body:$('pol').value});
   toast(`policy: ${r.status} ${await r.text()}`);loadFleet();
 }
-setInterval(()=>{if(ROLE!=='None'){loadFleet();if(['inventory','commands','shadow'].includes(cur))render();}},5000);
+setInterval(()=>{if(ROLE!=='None'){loadFleet();if(['inventory','commands','shadow','alerts'].includes(cur))render();}},5000);
 connect();
 </script></body></html>
 """;
