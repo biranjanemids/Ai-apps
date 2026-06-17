@@ -45,6 +45,7 @@ builder.Services.AddSingleton<AdminAuth>();
 builder.Services.AddSingleton<ShadowStore>();
 builder.Services.AddSingleton<AgentRelease>();
 builder.Services.AddSingleton<AlertStore>();
+builder.Services.AddSingleton<AppCatalog>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
@@ -199,6 +200,54 @@ app.MapPost("/api/devices/{id}/revoke", (string id, DeviceRegistry devices, Cert
     store.AddAudit(tenant, actor, "device:revoke", id, $"cert {dev.CertThumbprint}");
     alerts.Add(new Alert(tenant, id, "warn", "device.revoked", $"certificate {dev.CertThumbprint} revoked by {actor}", DateTimeOffset.UtcNow));
     return Results.Ok(new { id, revoked = dev.CertThumbprint });
+});
+
+// ---- App catalog: register packages + assign to groups (design §8/§12) ----
+app.MapGet("/api/apps", (AppCatalog catalog, AdminAuth auth, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Viewer);
+    if (who is null) return Results.Unauthorized();
+    return Results.Json(catalog.ForTenant(who.Value.tenant)
+        .Select(p => new { p.AppId, p.Version, installer = p.Spec.Installer?.Type }));
+});
+
+// Register/update an app package. Body = InstallSpec as protobuf-JSON.
+app.MapPost("/api/apps", async (AppCatalog catalog, AdminAuth auth, IServerStore store, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+
+    using var reader = new StreamReader(http.Request.Body);
+    InstallSpec spec;
+    try { spec = Google.Protobuf.JsonParser.Default.Parse<InstallSpec>(await reader.ReadToEndAsync()); }
+    catch (Exception ex) { return Results.BadRequest(new { error = $"invalid InstallSpec JSON: {ex.Message}" }); }
+    if (string.IsNullOrEmpty(spec.AppId)) return Results.BadRequest(new { error = "app_id required" });
+
+    catalog.Register(tenant, spec.AppId, spec.Version, spec);
+    store.AddAudit(tenant, actor, "app:register", spec.AppId, $"version {spec.Version}");
+    return Results.Ok(new { spec.AppId, spec.Version });
+});
+
+// Assign an app to a group: install on online devices now + on connect for the rest.
+app.MapPost("/api/groups/{group}/apps/{appId}", (string group, string appId, AppCatalog catalog,
+    DeviceRegistry devices, DeviceRouter router, CommandDispatcher d, AdminAuth auth, IServerStore store, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+    if (!catalog.TryGet(tenant, appId, out var pkg)) return Results.NotFound(new { error = "unknown app" });
+
+    catalog.Assign(tenant, group, appId);
+    store.AddAudit(tenant, actor, "app:assign", $"{group}/{appId}", $"version {pkg.Version}");
+
+    var dispatched = 0;
+    foreach (var dev in devices.ForTenant(tenant).Where(x => x.GroupId == group && router.IsOnline(x.DeviceId)))
+    {
+        d.Dispatch(dev.DeviceId, "app", "install", pkg.Spec.ToByteString());
+        dispatched++;
+    }
+    return Results.Ok(new { appId, group, dispatched });
 });
 
 // Alert feed (Viewer, tenant-scoped).

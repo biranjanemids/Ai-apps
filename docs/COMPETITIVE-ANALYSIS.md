@@ -55,16 +55,15 @@ provide." It is a living document — status reflects what is actually in the re
    interop (needs a hardware lab — the logic exists and is tested with stubs).
 2. **True multi-replica deployment testing** (PostgreSQL shared state, Redis
    presence/routing, and tenant isolation are built + verified single-process).
-3. **App-package authoring UI** (the SPA covers fleet, device detail, role-gated
-   actions, policy editing, alerts, and audit; app catalog authoring remains).
-4. **Signed MSI build + Authenticode** (self-update + WiX authoring + win-x64
+3. **Signed MSI build + Authenticode** (self-update + WiX authoring + win-x64
    packaging are built; building/signing the .msi needs a Windows CI agent + cert).
-5. **USB imaging media builder** + WinPE RecoveryAgent for offline BMR (network BMR built).
-6. **Real screen capture + viewer** for shadow (session/consent/streaming/audit built).
-7. **TPM/CNG device-key storage** (key is file-backed; TPM needs Windows hardware).
+4. **WinPE RecoveryAgent** for offline-USB BMR (network BMR + USB media builder built).
+5. **Real screen capture + viewer** for shadow (session/consent/streaming/audit built).
+6. **TPM/CNG device-key storage** (key is file-backed; TPM needs Windows hardware).
 
-Closed since last revision: **cert revocation (CRL)**, **alert rule engine**, and
-**OIDC (JWT) console auth** are now implemented and tested.
+Closed since last revision: **cert revocation (CRL)**, **alert rule engine**,
+**OIDC (JWT) console auth**, and **app-package authoring + assignment** (catalog,
+group assignment, on-connect dispatch, console Apps tab) are implemented and tested.
 
 These are tracked here and in `docs/windows-ltsc-agent-design.md` (§10–§13). Each
 PR that closes one updates the matrix above.

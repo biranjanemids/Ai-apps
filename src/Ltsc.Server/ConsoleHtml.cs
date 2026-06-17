@@ -58,6 +58,7 @@ pre{margin:0;font-size:.8rem;white-space:pre-wrap;word-break:break-word}
       <div class="tab" data-t="commands" onclick="tab(this)">Commands</div>
       <div class="tab" data-t="shadow" onclick="tab(this)">Shadow</div>
       <div class="tab" data-t="policy" onclick="tab(this)">Policy</div>
+      <div class="tab" data-t="apps" onclick="tab(this)">Apps</div>
       <div class="tab" data-t="alerts" onclick="tab(this)">Alerts</div>
       <div class="tab" data-t="audit" onclick="tab(this)">Audit</div>
     </div>
@@ -135,6 +136,13 @@ async function render(){
   else if(cur==='policy'){const g=(dev()||{}).groupId||'group-default';const r=await api(`/api/groups/${g}/policy`);const txt=r.ok?await r.text():'{}';
     p.innerHTML=`<p class="muted">Group <b>${g}</b> policy (Admin can edit + save)</p>
       <textarea id="pol">${txt}</textarea><div style="margin-top:.5rem"><button class="primary" ${can('Admin')?'':'disabled'} onclick="savePolicy('${g}')">Save & push</button></div>`;}
+  else if(cur==='apps'){const r=await api('/api/apps');const apps=r.ok?await r.json():[];const g=(dev()||{}).groupId||'group-default';
+    p.innerHTML='<table><thead><tr><th>App</th><th>Version</th><th>Installer</th><th></th></tr></thead><tbody>'+
+      apps.map(x=>`<tr><td>${x.appId}</td><td>${x.version}</td><td>${x.installer||''}</td>`+
+        `<td><button ${can('Admin')?'':'disabled'} onclick="assignApp('${x.appId}','${g}')">Assign to ${g}</button></td></tr>`).join('')+'</tbody></table>'+
+      (can('Admin')?`<p class="muted" style="margin-top:.6rem">Register a package (InstallSpec JSON):</p>
+        <textarea id="appspec">{"appId":"com.example.app","version":"1.0.0","installer":{"type":"msi","artifactId":"artifact-app","installCmd":"msiexec /i app.msi /qn","validExitCodes":[0,3010]}}</textarea>
+        <div style="margin-top:.4rem"><button class="primary" onclick="registerApp()">Register</button></div>`:'');}
   else if(cur==='alerts'){const r=await api('/api/alerts');const rows=r.ok?await r.json():[];
     p.innerHTML=rows.length?'<table><thead><tr><th>Time</th><th>Device</th><th>Severity</th><th>Type</th><th>Detail</th></tr></thead><tbody>'+
       rows.map(x=>`<tr><td>${x.ts.slice(0,19)}</td><td>${x.deviceId}</td><td>${x.severity}</td><td>${x.type}</td><td>${(x.detail||'').slice(0,80)}</td></tr>`).join('')+'</tbody></table>':'<p class="muted">no alerts</p>';}
@@ -143,6 +151,8 @@ async function render(){
     p.innerHTML='<table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>'+
       rows.map(a=>`<tr><td>${a.ts.slice(0,19)}</td><td>${a.actor}</td><td>${a.action}</td><td>${a.target}</td><td>${a.detail}</td></tr>`).join('')+'</tbody></table>';}
 }
+async function registerApp(){const r=await api('/api/apps',{method:'POST',body:document.getElementById('appspec').value});toast('register: '+r.status);render();}
+async function assignApp(appId,g){const r=await api(`/api/groups/${g}/apps/${appId}`,{method:'POST'});toast('assign: '+r.status+' '+await r.text());}
 async function savePolicy(g){
   const r=await api(`/api/groups/${g}/policy`,{method:'POST',body:$('pol').value});
   toast(`policy: ${r.status} ${await r.text()}`);loadFleet();

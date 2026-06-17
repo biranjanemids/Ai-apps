@@ -1,3 +1,4 @@
+using Google.Protobuf;
 using Grpc.Core;
 using Ltsc.Mgmt.V1;
 using Ltsc.Server.Registry;
@@ -24,6 +25,9 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
+    private readonly AppCatalog _catalog;
+    private readonly CommandDispatcher _dispatcher;
+
     public DeviceLinkService(
         ConnectionRegistry connections,
         DeviceRegistry devices,
@@ -34,6 +38,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         IPresence presence,
         AgentRelease release,
         AlertStore alerts,
+        AppCatalog catalog,
+        CommandDispatcher dispatcher,
         Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
@@ -46,8 +52,19 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         _presence = presence;
         _release = release;
         _alerts = alerts;
+        _catalog = catalog;
+        _dispatcher = dispatcher;
         _ca = ca;
         _log = log;
+    }
+
+    /// <summary>Offer all apps assigned to this device's group (design §8/§12).</summary>
+    private void DispatchAssignedApps(string deviceId)
+    {
+        if (!_devices.TryGet(deviceId, out var d)) return;
+        foreach (var appId in _catalog.AssignedApps(d.TenantId, d.GroupId))
+            if (_catalog.TryGet(d.TenantId, appId, out var pkg))
+                _dispatcher.Dispatch(deviceId, "app", "install", pkg.Spec.ToByteString());
     }
 
     public override async Task Connect(
@@ -91,8 +108,9 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                     await responseStream.WriteAsync(msg);
             }, context.CancellationToken);
 
-            // Tell the device to (re)reconcile its config policy.
+            // Tell the device to (re)reconcile its config policy + offer assigned apps.
             PushSyncPolicy(deviceId);
+            DispatchAssignedApps(deviceId);
 
             // Queue a demo install once the device is online.
             _demo.ScheduleDemoInstall(deviceId);

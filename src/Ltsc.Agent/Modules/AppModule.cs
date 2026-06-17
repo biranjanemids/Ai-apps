@@ -43,6 +43,10 @@ public sealed class AppModule : IManagementModule
     private async Task RunAsync(InstallJob job, IModuleContext ctx, CancellationToken ct)
     {
         var spec = InstallSpec.Parser.ParseFrom(job.Spec);
+        // Authored specs may omit optional sub-messages — default them so a minimal
+        // InstallSpec (just installer + app id) is valid.
+        var uwfPolicy = spec.Uwf ?? new UwfPolicy { Strategy = "hybrid" };
+        var reboot = spec.Reboot ?? new RebootPolicy();
         ServicingPlan? plan = null;
         var configResults = new List<ConfigResult>();
 
@@ -96,7 +100,7 @@ public sealed class AppModule : IManagementModule
             job.UwfWasEnabled = ctx.Uwf.IsEnabled();
             await Transition(job, ctx, InstallState.EnterServicing, 25, "preparing write filter");
             var touched = TouchedPaths(spec);
-            plan = ctx.Uwf.EnterServicing(spec.Uwf, touched);
+            plan = ctx.Uwf.EnterServicing(uwfPolicy, touched);
             await ctx.ReportEventAsync("install.servicing", "info",
                 $"{{\"strategy\":\"{plan.Strategy}\",\"reboot\":{plan.RebootRequired.ToString().ToLower()}}}");
 
@@ -165,13 +169,13 @@ public sealed class AppModule : IManagementModule
 
             // ---- 10. Reboot handling: separate deferral + deadline (§8.4) -----
             var rebootState = "none";
-            if (run.RebootRequired || spec.Reboot.Force)
+            if (run.RebootRequired || reboot.Force)
             {
-                if (spec.Reboot.RestartServices.Count > 0)
+                if (reboot.RestartServices.Count > 0)
                 {
                     // Restart-aware: a service bounce avoids a full OS reboot.
                     await Transition(job, ctx, InstallState.PostRebootVerify, 95,
-                        $"restarting services: {string.Join(",", spec.Reboot.RestartServices)}");
+                        $"restarting services: {string.Join(",", reboot.RestartServices)}");
                     rebootState = "service_restarted";
                 }
                 else
@@ -182,8 +186,8 @@ public sealed class AppModule : IManagementModule
                     await ctx.ReportResultAsync(Result(job.CommandId, "InstalledPendingReboot",
                         run.ExitCode, "pending", uwfReenabled, run.StdoutTail, configResults));
 
-                    var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Max(spec.Reboot.MaxTotalSeconds, 0));
-                    var rebootNow = !spec.Reboot.AllowDefer
+                    var deadline = DateTimeOffset.UtcNow.AddSeconds(Math.Max(reboot.MaxTotalSeconds, 0));
+                    var rebootNow = !reboot.AllowDefer
                         || !ctx.Session.HasInteractiveSession()
                         || await ctx.Session.PromptRebootAsync(deadline, ct);
 
