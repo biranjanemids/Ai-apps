@@ -202,6 +202,27 @@ app.MapPost("/api/devices/{id}/revoke", (string id, DeviceRegistry devices, Cert
     return Results.Ok(new { id, revoked = dev.CertThumbprint });
 });
 
+// USB imaging media manifest (design §11.2): describes the offline payload an
+// operator materializes with deploy/packaging/build-usb-media.sh (image + seed).
+app.MapPost("/api/images/{imageId}/usb", (string imageId, string? group, ImageRegistry images,
+    ArtifactStore artifacts, AdminAuth auth, IServerStore store, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+    var sha = Convert.ToHexString(artifacts.GetSha256(imageId));
+    store.AddAudit(tenant, actor, "image:usb_media", imageId, $"group {group ?? "group-default"}");
+    return Results.Json(new
+    {
+        imageId,
+        sha256 = sha,
+        format = "ffu",
+        group = group ?? "group-default",
+        seedHint = new { enrollmentToken = "<group-token>", note = "agent auto-enrolls on first boot" },
+        build = $"deploy/packaging/build-usb-media.sh {imageId} https://<server>:8443 <token> {group ?? "group-default"}",
+    });
+});
+
 // ---- App catalog: register packages + assign to groups (design §8/§12) ----
 app.MapGet("/api/apps", (AppCatalog catalog, AdminAuth auth, HttpContext http) =>
 {

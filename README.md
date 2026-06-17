@@ -145,8 +145,13 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
   belongs in TPM/CNG. CA key belongs in an HSM. No revocation (CRL/OCSP) yet.
 - **Scale** — set `Ltsc:Postgres` for shared durable state (multi-node) and
   `Ltsc:Redis` for fleet-wide presence + cross-node command routing; unset both
-  for single-node SQLite + in-process routing. Multi-tenant isolation and true
-  multi-replica deployment testing remain (design §12).
+  for single-node SQLite + in-process routing. Multi-replica deploy via the Helm
+  chart in `deploy/helm/ltsc-mgmtserver` (scale `replicaCount`); all replicas
+  share Postgres + Redis. Multi-tenant isolation is enforced across devices,
+  policy, audit, alerts, and the app catalog.
+- **USB imaging media** — `POST /api/images/{id}/usb` returns the payload manifest;
+  `deploy/packaging/build-usb-media.sh` materializes the offline USB payload
+  (FFU image + first-boot enrollment seed) for WinPE assembly (design §11.2).
 - **Capabilities still open** — real Windows installer execution/detection,
   remote shadow, USB imaging media builder + WinPE RecoveryAgent, agent MSI
   packaging/code-signing/self-update, RBAC + audit. (App deploy, config/kiosk,

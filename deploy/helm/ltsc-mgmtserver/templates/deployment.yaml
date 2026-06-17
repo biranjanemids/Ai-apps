@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mgmtserver
+  labels: { app: ltsc-mgmtserver }
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: { app: ltsc-mgmtserver }
+  template:
+    metadata:
+      labels: { app: ltsc-mgmtserver }
+    spec:
+      containers:
+        - name: mgmtserver
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - containerPort: 8443
+          env:
+            - name: Ltsc__Postgres
+              value: {{ .Values.postgres | quote }}
+            - name: Ltsc__Redis
+              value: {{ .Values.redis | quote }}
+            - name: Ltsc__AgentRelease__Version
+              value: {{ .Values.agentReleaseVersion | quote }}
+            {{- if .Values.oidcSecret }}
+            - name: Ltsc__Oidc__Secret
+              value: {{ .Values.oidcSecret | quote }}
+            {{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-mgmtserver
+spec:
+  type: {{ .Values.service.type }}
+  selector: { app: ltsc-mgmtserver }
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: 8443
+      protocol: TCP
