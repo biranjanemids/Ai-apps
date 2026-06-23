@@ -1,118 +1,83 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  Multi-Model Registry
-#  Add / remove models here — no code changes needed.
-#  provider: mock | openai | gemini | ollama | grok | openai-compatible
-# ─────────────────────────────────────────────────────────────────────────────
-
 models:
-
-  # ── Mock — always available, no API key needed (for testing / CI) ──────────
   - id: mock/echo
     provider: mock
     upstream: echo
-    description: "Mock provider — deterministic echo responses, no API key needed"
-
-  # ── OpenAI — Best code generation models ───────────────────────────────────
+    description: Mock provider — deterministic echo responses, no API key needed
   - id: gpt-4o
     provider: openai
     upstream: gpt-4o
-    description: "OpenAI GPT-4o — fast, excellent at coding"
-
+    description: OpenAI GPT-4o — fast, excellent at coding
   - id: o3-mini
     provider: openai
     upstream: o3-mini
-    description: "OpenAI o3-mini — best reasoning & complex coding tasks"
-
+    description: OpenAI o3-mini — best reasoning & complex coding tasks
   - id: o4-mini
     provider: openai
     upstream: o4-mini
-    description: "OpenAI o4-mini — fast reasoning, great for coding"
-
+    description: OpenAI o4-mini — fast reasoning, great for coding
   - id: gpt-4-turbo
     provider: openai
     upstream: gpt-4-turbo
-    description: "OpenAI GPT-4 Turbo — large context, strong coding"
-
-  # ── Google Gemini — Best code generation models ────────────────────────────
+    description: OpenAI GPT-4 Turbo — large context, strong coding
   - id: gemini-2.5-pro
     provider: gemini
     upstream: gemini-2.5-pro
-    description: "Google Gemini 2.5 Pro — top-tier coding & reasoning"
-
+    description: Google Gemini 2.5 Pro — top-tier coding & reasoning
   - id: gemini-2.0-flash
     provider: gemini
     upstream: gemini-2.0-flash
-    description: "Google Gemini 2.0 Flash — fast, capable coding model"
-
+    description: Google Gemini 2.0 Flash — fast, capable coding model
   - id: gemini-1.5-pro
     provider: gemini
     upstream: gemini-1.5-pro
-    description: "Google Gemini 1.5 Pro — 1M context, great at code"
-
-  # ── xAI Grok ───────────────────────────────────────────────────────────────
+    description: Google Gemini 1.5 Pro — 1M context, great at code
   - id: grok-3
     provider: grok
     upstream: grok-3
-    description: "xAI Grok 3 — strong reasoning & coding"
-
+    description: xAI Grok 3 — strong reasoning & coding
   - id: grok-3-mini
     provider: grok
     upstream: grok-3-mini
-    description: "xAI Grok 3 Mini — fast, efficient coding"
-
-  # ── Ollama — Best local code generation models ─────────────────────────────
-  # Run: ollama pull <model-name>
-
+    description: xAI Grok 3 Mini — fast, efficient coding
   - id: qwen2.5-coder:32b
     provider: ollama
     upstream: qwen2.5-coder:32b
-    description: "Qwen 2.5 Coder 32B — best local code model (needs ~20GB VRAM)"
-
+    description: Qwen 2.5 Coder 32B — best local code model (needs ~20GB VRAM)
   - id: qwen2.5-coder:7b
     provider: ollama
     upstream: qwen2.5-coder:7b
-    description: "Qwen 2.5 Coder 7B — fast local code model (needs ~5GB VRAM)"
-
+    description: Qwen 2.5 Coder 7B — fast local code model (needs ~5GB VRAM)
   - id: deepseek-coder-v2
     provider: ollama
     upstream: deepseek-coder-v2
-    description: "DeepSeek Coder V2 — excellent local code model"
-
+    description: DeepSeek Coder V2 — excellent local code model
   - id: codestral
     provider: ollama
     upstream: codestral
-    description: "Mistral Codestral — fast, strong local code model"
-
+    description: Mistral Codestral — fast, strong local code model
   - id: llama3.1:70b
     provider: ollama
     upstream: llama3.1:70b
-    description: "Meta Llama 3.1 70B — general purpose, great at code"
-
+    description: Meta Llama 3.1 70B — general purpose, great at code
   - id: llama3.1:8b
     provider: ollama
     upstream: llama3.1:8b
-    description: "Meta Llama 3.1 8B — lightweight, fast local model"
-
-  # ── OpenAI-Compatible Local Servers ───────────────────────────────────────
-  # Works with: LM Studio, vLLM, llama.cpp server, LocalAI, Jan, etc.
-
+    description: Meta Llama 3.1 8B — lightweight, fast local model
   - id: lmstudio/default
     provider: openai-compatible
     upstream: local-model
     base_url: http://localhost:1234/v1
     api_key: lm-studio
-    description: "LM Studio — whatever model is currently loaded"
-
+    description: LM Studio — whatever model is currently loaded
   - id: vllm/default
     provider: openai-compatible
     upstream: default
     base_url: http://localhost:8000/v1
     api_key: ""
-    description: "vLLM local inference server"
-
+    description: vLLM local inference server
   - id: llamacpp/default
     provider: openai-compatible
     upstream: default
     base_url: http://localhost:8080/v1
     api_key: ""
-    description: "llama.cpp HTTP server"
+    description: llama.cpp HTTP server

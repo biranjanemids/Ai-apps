@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Model Gateway</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bg4:#22272e;
+  --border:#30363d;--border2:#3d444d;
+  --text:#e6edf3;--text2:#8b949e;--text3:#6e7681;
+  --blue:#3b82f6;--blue2:#1d4ed8;--blue-dim:#1e3a5f;
+  --green:#22c55e;--green-dim:#14532d;
+  --red:#ef4444;--red-dim:#7f1d1d;
+  --amber:#f59e0b;--amber-dim:#78350f;
+  --purple:#a855f7;
+  --radius:8px;--radius-sm:4px;
+  --shadow:0 4px 24px rgba(0,0,0,.4);
+}
+html,body{height:100%;font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;font-size:14px;background:var(--bg);color:var(--text);line-height:1.5}
+a{color:var(--blue);text-decoration:none}
+button{cursor:pointer;font-family:inherit;font-size:13px;border:none;border-radius:var(--radius-sm);padding:6px 14px;transition:background .15s,opacity .15s}
+button:disabled{opacity:.5;cursor:not-allowed}
+input,select,textarea{font-family:inherit;font-size:13px;background:var(--bg4);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--text);padding:7px 10px;outline:none;transition:border-color .15s;width:100%}
+input:focus,select:focus,textarea:focus{border-color:var(--blue)}
+label{display:block;font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:500}
+.layout{display:flex;height:100vh;overflow:hidden}
+
+/* ── Sidebar ── */
+.sidebar{width:220px;min-width:220px;background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden}
+.sidebar-logo{padding:20px 16px 12px;border-bottom:1px solid var(--border)}
+.sidebar-logo h1{font-size:15px;font-weight:700;color:var(--text)}
+.sidebar-logo span{font-size:11px;color:var(--text3)}
+.sidebar-nav{flex:1;padding:8px 8px;overflow-y:auto}
+.nav-item{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text2);font-size:13px;font-weight:500;transition:background .15s,color .15s;margin-bottom:2px;user-select:none}
+.nav-item:hover{background:var(--bg3);color:var(--text)}
+.nav-item.active{background:var(--blue-dim);color:var(--blue)}
+.nav-item svg{width:16px;height:16px;flex-shrink:0}
+.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
+.server-status{font-size:11px;color:var(--text3);display:flex;align-items:center;gap:6px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex-shrink:0}
+.dot.red{background:var(--red)}
+
+/* ── Main content ── */
+.content{flex:1;overflow-y:auto;display:flex;flex-direction:column}
+.topbar{padding:16px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--bg2);flex-shrink:0}
+.topbar h2{font-size:16px;font-weight:600}
+.topbar-actions{display:flex;gap:8px;align-items:center}
+.page{padding:24px;flex:1}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn-primary{background:var(--blue);color:#fff}.btn-primary:hover{background:var(--blue2)}
+.btn-ghost{background:transparent;color:var(--text2);border:1px solid var(--border)}.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-danger{background:var(--red-dim);color:var(--red)}.btn-danger:hover{background:var(--red);color:#fff}
+.btn-success{background:var(--green-dim);color:var(--green)}.btn-success:hover{background:var(--green);color:#fff}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-icon{background:transparent;color:var(--text3);padding:4px 6px;border-radius:var(--radius-sm)}.btn-icon:hover{background:var(--bg4);color:var(--text)}
+
+/* ── Cards / Stats ── */
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px}
+.stat-card .label{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px}
+.stat-card .value{font-size:28px;font-weight:700;color:var(--text);line-height:1}
+.stat-card .sub{font-size:11px;color:var(--text2);margin-top:4px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:20px}
+.card-header{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-header h3{font-size:13px;font-weight:600;color:var(--text)}
+.card-body{padding:16px}
+
+/* ── Table ── */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;border-bottom:1px solid var(--border);font-weight:500;white-space:nowrap}
+td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg3)}
+td.id{font-family:ui-monospace,monospace;font-size:12px;color:var(--text)}
+td.actions{text-align:right;white-space:nowrap}
+.actions-group{display:inline-flex;gap:4px}
+
+/* ── Badges ── */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:500;white-space:nowrap}
+.badge-green{background:var(--green-dim);color:var(--green)}
+.badge-red{background:var(--red-dim);color:var(--red)}
+.badge-amber{background:var(--amber-dim);color:var(--amber)}
+.badge-blue{background:var(--blue-dim);color:var(--blue)}
+.badge-gray{background:var(--bg4);color:var(--text3)}
+.badge::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor;flex-shrink:0}
+
+/* ── Search + filter bar ── */
+.toolbar{display:flex;gap:10px;margin-bottom:16px;align-items:center;flex-wrap:wrap}
+.toolbar input{max-width:260px}
+.toolbar select{max-width:160px}
+.toolbar .spacer{flex:1}
+
+/* ── Modal ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+.overlay.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:520px;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:var(--shadow)}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.modal-header h3{font-size:15px;font-weight:600}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.form-row{margin-bottom:14px}
+.form-row:last-child{margin-bottom:0}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.hint{font-size:11px;color:var(--text3);margin-top:4px}
+
+/* ── Progress bar ── */
+.progress-wrap{background:var(--bg4);border-radius:20px;height:8px;overflow:hidden;margin:6px 0}
+.progress-bar{height:100%;background:var(--blue);border-radius:20px;transition:width .3s ease;width:0%}
+.progress-info{display:flex;justify-content:space-between;font-size:11px;color:var(--text3)}
+
+/* ── Ollama pull panel ── */
+.pull-panel{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:16px}
+.pull-input-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.pull-input-row .form-row{flex:1;margin:0;min-width:200px}
+.pull-status-log{margin-top:12px;font-family:ui-monospace,monospace;font-size:11px;color:var(--text2);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;max-height:140px;overflow-y:auto;white-space:pre-wrap}
+
+/* ── Toasts ── */
+.toast-container{position:fixed;bottom:20px;right:20px;z-index:200;display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.toast{background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 16px;font-size:13px;box-shadow:var(--shadow);display:flex;align-items:center;gap:8px;min-width:240px;animation:slideIn .2s ease}
+.toast.success{border-color:var(--green);color:var(--green)}
+.toast.error{border-color:var(--red);color:var(--red)}
+.toast.info{border-color:var(--blue);color:var(--blue)}
+@keyframes slideIn{from{transform:translateX(20px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+/* ── Empty state ── */
+.empty{text-align:center;padding:48px 24px;color:var(--text3)}
+.empty svg{opacity:.3;margin-bottom:12px}
+.empty p{font-size:13px}
+
+/* ── Provider bar chart ── */
+.provider-list{display:flex;flex-direction:column;gap:10px}
+.provider-row{display:flex;align-items:center;gap:10px;font-size:12px}
+.provider-name{width:120px;color:var(--text2);flex-shrink:0}
+.provider-bar-wrap{flex:1;background:var(--bg4);border-radius:20px;height:6px;overflow:hidden}
+.provider-bar{height:100%;background:var(--blue);border-radius:20px}
+.provider-count{width:30px;text-align:right;color:var(--text3)}
+
+/* ── Confirm dialog ── */
+.confirm-msg{font-size:13px;color:var(--text2);margin-bottom:16px}
+
+/* ── Settings inline ── */
+.settings-key-row{display:flex;gap:8px;align-items:center}
+.settings-key-row input{font-family:ui-monospace,monospace;font-size:12px}
+</style>
+</head>
+<body>
+<div class="layout">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <h1>AI Gateway</h1>
+      <span>Model Management UI</span>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-item active" data-page="dashboard" onclick="navigate('dashboard')">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 2.5A1.5 1.5 0 012.5 1h3A1.5 1.5 0 017 2.5v3A1.5 1.5 0 015.5 7h-3A1.5 1.5 0 011 5.5v-3zm8 0A1.5 1.5 0 0110.5 1h3A1.5 1.5 0 0115 2.5v3A1.5 1.5 0 0113.5 7h-3A1.5 1.5 0 019 5.5v-3zm-8 8A1.5 1.5 0 012.5 9h3A1.5 1.5 0 017 10.5v3A1.5 1.5 0 015.5 15h-3A1.5 1.5 0 011 13.5v-3zm8 0A1.5 1.5 0 0110.5 9h3A1.5 1.5 0 0115 10.5v3A1.5 1.5 0 0113.5 15h-3A1.5 1.5 0 019 13.5v-3z"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" data-page="models" onclick="navigate('models')">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a2 2 0 012 2v4H6V3a2 2 0 012-2zm3 6V3A3 3 0 005 3v4a2 2 0 00-2 2v5a2 2 0 002 2h6a2 2 0 002-2V9a2 2 0 00-2-2z"/></svg>
+        Models
+      </div>
+      <div class="nav-item" data-page="ollama" onclick="navigate('ollama')">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0a8 8 0 100 16A8 8 0 008 0zm.5 4.5v3.793l2.146 2.147a.5.5 0 01-.708.708l-2.353-2.354A.5.5 0 017.5 8.5V4.5a.5.5 0 011 0z"/></svg>
+        Ollama
+      </div>
+      <div class="nav-item" data-page="servers" onclick="navigate('servers')">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M1 2a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H2a1 1 0 01-1-1V2zm1 5a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H2a1 1 0 01-1-1V7zm0 5a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H2a1 1 0 01-1-1v-2z"/></svg>
+        Local Servers
+      </div>
+      <div class="nav-item" data-page="deploy" onclick="navigate('deploy')">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        Deploy
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="server-status" id="serverStatus">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main content -->
+  <div class="content">
+    <div class="topbar">
+      <h2 id="pageTitle">Dashboard</h2>
+      <div class="topbar-actions">
+        <div class="settings-key-row">
+          <input type="password" id="apiKeyInput" placeholder="API key (if set)" style="max-width:180px" oninput="saveApiKey(this.value)">
+        </div>
+      </div>
+    </div>
+    <div class="page" id="pageContent"></div>
+  </div>
+</div>
+
+<!-- Model Add/Edit Modal -->
+<div class="overlay" id="modelModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modalTitle">Add Model</h3>
+      <button class="btn-icon" onclick="closeModal('modelModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="modelForm" onsubmit="return false">
+        <div class="form-row">
+          <label>Model ID <span style="color:var(--text3)">(unique, used in API calls)</span></label>
+          <input id="mId" placeholder="e.g. my-llama3" required>
+        </div>
+        <div class="form-grid">
+          <div class="form-row">
+            <label>Provider</label>
+            <select id="mProvider" onchange="onProviderChange()">
+              <option value="mock">mock</option>
+              <option value="openai">openai</option>
+              <option value="gemini">gemini</option>
+              <option value="grok">grok</option>
+              <option value="ollama">ollama</option>
+              <option value="openai-compatible">openai-compatible</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>Upstream model name</label>
+            <input id="mUpstream" placeholder="e.g. llama3.1:8b" required>
+          </div>
+        </div>
+        <div class="form-row" id="mBaseUrlRow" style="display:none">
+          <label>Base URL</label>
+          <input id="mBaseUrl" placeholder="http://localhost:1234/v1">
+          <div class="hint">OpenAI-compatible endpoint URL</div>
+        </div>
+        <div class="form-row" id="mApiKeyRow" style="display:none">
+          <label>API Key <span style="color:var(--text3)">(optional)</span></label>
+          <input id="mApiKey" placeholder="sk-… or lm-studio">
+        </div>
+        <div class="form-row">
+          <label>Description <span style="color:var(--text3)">(optional)</span></label>
+          <input id="mDesc" placeholder="Short description of this model">
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('modelModal')">Cancel</button>
+      <button class="btn btn-primary" id="saveModelBtn" onclick="saveModel()">Add Model</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="overlay" id="confirmModal">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-header">
+      <h3 id="confirmTitle">Confirm</h3>
+      <button class="btn-icon" onclick="closeModal('confirmModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="confirm-msg" id="confirmMsg"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('confirmModal')">Cancel</button>
+      <button class="btn btn-danger" id="confirmOk">Delete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Local Server Modal -->
+<div class="overlay" id="serverModal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="serverModalTitle">Add Local Server</h3>
+      <button class="btn-icon" onclick="closeModal('serverModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>Display Name / Model ID</label>
+        <input id="sId" placeholder="e.g. lmstudio/my-model">
+      </div>
+      <div class="form-row">
+        <label>Base URL</label>
+        <input id="sUrl" placeholder="http://localhost:1234/v1">
+      </div>
+      <div class="form-row">
+        <label>Upstream model name</label>
+        <input id="sUpstream" placeholder="local-model">
+      </div>
+      <div class="form-row">
+        <label>API Key <span style="color:var(--text3)">(optional)</span></label>
+        <input id="sApiKey" placeholder="lm-studio">
+      </div>
+      <div class="form-row">
+        <label>Description</label>
+        <input id="sDesc" placeholder="LM Studio — Llama 3.1 8B">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('serverModal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveServer()">Add Server</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toasts -->
+<div class="toast-container" id="toastContainer"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let currentPage = 'dashboard'
+let editingModelId = null
+let confirmCallback = null
+
+// ── API key (persisted to localStorage) ───────────────────────────────────
+function getApiKey() { return localStorage.getItem('gw_api_key') || '' }
+function saveApiKey(v) { localStorage.setItem('gw_api_key', v) }
+document.getElementById('apiKeyInput').value = getApiKey()
+
+// ── Generic fetch wrapper ──────────────────────────────────────────────────
+async function api(method, path, body) {
+  const key = getApiKey()
+  const headers = { 'Content-Type': 'application/json' }
+  if (key) headers['Authorization'] = `Bearer ${key}`
+  const res = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+  if (res.status === 204) return null
+  const data = await res.json()
+  if (!res.ok) throw new Error(data?.error?.message || `HTTP ${res.status}`)
+  return data
+}
+
+// ── Toasts ─────────────────────────────────────────────────────────────────
+function toast(msg, type = 'info') {
+  const c = document.getElementById('toastContainer')
+  const t = document.createElement('div')
+  t.className = `toast ${type}`
+  t.textContent = msg
+  c.appendChild(t)
+  setTimeout(() => t.remove(), 3500)
+}
+
+// ── Router ─────────────────────────────────────────────────────────────────
+const pageTitles = { dashboard:'Dashboard', models:'Model Registry', ollama:'Ollama Manager', servers:'Local Servers', deploy:'Deploy' }
+function navigate(page) {
+  currentPage = page
+  document.getElementById('pageTitle').textContent = pageTitles[page] || page
+  document.querySelectorAll('.nav-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === page)
+  })
+  const pages = { dashboard: renderDashboard, models: renderModels, ollama: renderOllama, servers: renderServers, deploy: renderDeploy }
+  if (pages[page]) pages[page]()
+}
+
+// ── Server health ──────────────────────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const d = await api('GET', '/health')
+    document.getElementById('statusDot').className = 'dot'
+    document.getElementById('statusText').textContent = 'Server online'
+  } catch {
+    document.getElementById('statusDot').className = 'dot red'
+    document.getElementById('statusText').textContent = 'Server offline'
+  }
+}
+
+// ── Modal helpers ──────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open') }
+function closeModal(id) { document.getElementById(id).classList.remove('open') }
+function confirm(title, msg, onOk, btnLabel = 'Delete') {
+  document.getElementById('confirmTitle').textContent = title
+  document.getElementById('confirmMsg').textContent = msg
+  document.getElementById('confirmOk').textContent = btnLabel
+  confirmCallback = onOk
+  document.getElementById('confirmOk').onclick = () => { closeModal('confirmModal'); onOk() }
+  openModal('confirmModal')
+}
+
+// ── Provider-aware form fields ─────────────────────────────────────────────
+function onProviderChange() {
+  const p = document.getElementById('mProvider').value
+  document.getElementById('mBaseUrlRow').style.display = p === 'openai-compatible' ? '' : 'none'
+  document.getElementById('mApiKeyRow').style.display = (p === 'openai-compatible') ? '' : 'none'
+}
+
+// ── Badge helpers ──────────────────────────────────────────────────────────
+function statusBadge(status) {
+  if (status === 'available') return '<span class="badge badge-green">available</span>'
+  return '<span class="badge badge-red">unavailable</span>'
+}
+function providerBadge(p) {
+  const colors = { openai:'badge-blue', gemini:'badge-blue', grok:'badge-purple', ollama:'badge-amber', mock:'badge-gray', 'openai-compatible':'badge-blue' }
+  return `<span class="badge ${colors[p]||'badge-gray'}" style="--dot:transparent">${p}</span>`
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════════════════════════
+async function renderDashboard() {
+  document.getElementById('pageContent').innerHTML = '<p style="color:var(--text3)">Loading…</p>'
+  try {
+    const [adminData, v1Data] = await Promise.all([
+      api('GET', '/admin/models'),
+      api('GET', '/v1/models'),
+    ])
+    const models = adminData.models || []
+    const available = models.filter(m => m.status === 'available').length
+    const providerCounts = {}
+    models.forEach(m => { providerCounts[m.provider] = (providerCounts[m.provider]||0)+1 })
+    const maxCount = Math.max(...Object.values(providerCounts), 1)
+
+    document.getElementById('pageContent').innerHTML = `
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="label">Total Models</div>
+          <div class="value">${models.length}</div>
+          <div class="sub">configured in registry</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Available</div>
+          <div class="value" style="color:var(--green)">${available}</div>
+          <div class="sub">${models.length - available} unavailable</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Providers</div>
+          <div class="value">${Object.keys(providerCounts).length}</div>
+          <div class="sub">${Object.keys(providerCounts).join(', ')}</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">API Endpoint</div>
+          <div class="value" style="font-size:12px;margin-top:4px;font-family:monospace">:3000</div>
+          <div class="sub">OpenAI-compatible</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+        <div class="card">
+          <div class="card-header"><h3>Provider Breakdown</h3></div>
+          <div class="card-body">
+            <div class="provider-list">
+              ${Object.entries(providerCounts).map(([p, n]) => `
+                <div class="provider-row">
+                  <span class="provider-name">${p}</span>
+                  <div class="provider-bar-wrap"><div class="provider-bar" style="width:${Math.round(n/maxCount*100)}%"></div></div>
+                  <span class="provider-count">${n}</span>
+                </div>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3>Quick Actions</h3></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+            <button class="btn btn-primary" onclick="navigate('models');setTimeout(openAddModelModal,100)">
+              + Add Model to Registry
+            </button>
+            <button class="btn btn-ghost" onclick="navigate('ollama')">
+              ⬇ Pull Ollama Model
+            </button>
+            <button class="btn btn-ghost" onclick="navigate('servers');setTimeout(()=>openModal('serverModal'),100)">
+              + Add Local Server
+            </button>
+            <button class="btn btn-ghost" onclick="navigate('deploy')">
+              ▶ Deploy Wizard
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3>Recent Models</h3>
+          <button class="btn btn-ghost btn-sm" onclick="navigate('models')">View all →</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>ID</th><th>Provider</th><th>Status</th><th>Description</th></tr></thead>
+            <tbody>
+              ${models.slice(0,8).map(m => `
+                <tr>
+                  <td class="id">${m.id}</td>
+                  <td>${providerBadge(m.provider)}</td>
+                  <td>${statusBadge(m.status)}</td>
+                  <td style="color:var(--text3);max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.description||'—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `
+  } catch(e) {
+    document.getElementById('pageContent').innerHTML = `<div class="empty"><p>Failed to load: ${e.message}</p></div>`
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  MODELS — full CRUD table
+// ═══════════════════════════════════════════════════════════════════════════
+let allModels = []
+
+async function renderModels() {
+  document.getElementById('pageContent').innerHTML = '<p style="color:var(--text3)">Loading…</p>'
+  try {
+    const data = await api('GET', '/admin/models')
+    allModels = data.models || []
+    renderModelsTable(allModels)
+  } catch(e) {
+    document.getElementById('pageContent').innerHTML = `<div class="empty"><p>${e.message}</p></div>`
+  }
+}
+
+function renderModelsTable(models) {
+  const providers = [...new Set(models.map(m => m.provider))]
+  document.getElementById('pageContent').innerHTML = `
+    <div class="toolbar">
+      <input placeholder="Search models…" oninput="filterModels(this.value)" id="modelSearch">
+      <select id="providerFilter" onchange="filterModels(document.getElementById('modelSearch').value)">
+        <option value="">All providers</option>
+        ${providers.map(p => `<option value="${p}">${p}</option>`).join('')}
+      </select>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" onclick="openAddModelModal()">+ Add Model</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Model ID</th><th>Provider</th><th>Upstream</th><th>Status</th><th>Description</th><th style="text-align:right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="modelsTableBody">
+            ${modelsRows(models)}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `
+}
+
+function modelsRows(models) {
+  if (!models.length) return '<tr><td colspan="6" style="text-align:center;padding:32px;color:var(--text3)">No models found</td></tr>'
+  return models.map(m => `
+    <tr>
+      <td class="id">${escHtml(m.id)}</td>
+      <td>${providerBadge(m.provider)}</td>
+      <td style="font-family:monospace;font-size:12px">${escHtml(m.upstream)}</td>
+      <td>${statusBadge(m.status)}</td>
+      <td style="color:var(--text3);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(m.description||'')}</td>
+      <td class="actions">
+        <div class="actions-group">
+          <button class="btn btn-icon btn-sm" title="Test" onclick="testModel('${escAttr(m.id)}')">▶</button>
+          <button class="btn btn-icon btn-sm" title="Edit" onclick="openEditModelModal(${JSON.stringify(JSON.stringify(m))})">✏</button>
+          <button class="btn btn-icon btn-sm" title="Delete" style="color:var(--red)" onclick="promptDeleteModel('${escAttr(m.id)}')">🗑</button>
+        </div>
+      </td>
+    </tr>`).join('')
+}
+
+function filterModels(q) {
+  const pf = document.getElementById('providerFilter')?.value || ''
+  const filtered = allModels.filter(m => {
+    const matchQ = !q || m.id.toLowerCase().includes(q.toLowerCase()) || (m.description||'').toLowerCase().includes(q.toLowerCase())
+    const matchP = !pf || m.provider === pf
+    return matchQ && matchP
+  })
+  const body = document.getElementById('modelsTableBody')
+  if (body) body.innerHTML = modelsRows(filtered)
+}
+
+function openAddModelModal() {
+  editingModelId = null
+  document.getElementById('modalTitle').textContent = 'Add Model'
+  document.getElementById('saveModelBtn').textContent = 'Add Model'
+  document.getElementById('mId').value = ''
+  document.getElementById('mId').disabled = false
+  document.getElementById('mProvider').value = 'openai'
+  document.getElementById('mUpstream').value = ''
+  document.getElementById('mBaseUrl').value = ''
+  document.getElementById('mApiKey').value = ''
+  document.getElementById('mDesc').value = ''
+  onProviderChange()
+  openModal('modelModal')
+}
+
+function openEditModelModal(jsonStr) {
+  const m = JSON.parse(jsonStr)
+  editingModelId = m.id
+  document.getElementById('modalTitle').textContent = 'Edit Model'
+  document.getElementById('saveModelBtn').textContent = 'Save Changes'
+  document.getElementById('mId').value = m.id
+  document.getElementById('mId').disabled = true
+  document.getElementById('mProvider').value = m.provider
+  document.getElementById('mUpstream').value = m.upstream || ''
+  document.getElementById('mBaseUrl').value = m.base_url || ''
+  document.getElementById('mApiKey').value = m.api_key || ''
+  document.getElementById('mDesc').value = m.description || ''
+  onProviderChange()
+  openModal('modelModal')
+}
+
+async function saveModel() {
+  const body = {
+    id:          document.getElementById('mId').value.trim(),
+    provider:    document.getElementById('mProvider').value,
+    upstream:    document.getElementById('mUpstream').value.trim(),
+    base_url:    document.getElementById('mBaseUrl').value.trim() || undefined,
+    api_key:     document.getElementById('mApiKey').value.trim() || undefined,
+    description: document.getElementById('mDesc').value.trim() || undefined,
+  }
+  if (!body.id || !body.upstream) { toast('ID and upstream are required', 'error'); return }
+  try {
+    if (editingModelId) {
+      await api('PUT', `/admin/models/${encodeURIComponent(editingModelId)}`, body)
+      toast(`Model '${editingModelId}' updated`, 'success')
+    } else {
+      await api('POST', '/admin/models', body)
+      toast(`Model '${body.id}' added`, 'success')
+    }
+    closeModal('modelModal')
+    renderModels()
+  } catch(e) {
+    toast(e.message, 'error')
+  }
+}
+
+function promptDeleteModel(id) {
+  confirm('Delete Model', `Remove '${id}' from the registry? This also removes it from models.yaml.`, async () => {
+    try {
+      await api('DELETE', `/admin/models/${encodeURIComponent(id)}`)
+      toast(`Model '${id}' deleted`, 'success')
+      renderModels()
+    } catch(e) { toast(e.message, 'error') }
+  })
+}
+
+async function testModel(id) {
+  toast(`Testing ${id}…`, 'info')
+  try {
+    const r = await api('POST', `/admin/models/${encodeURIComponent(id)}/test`)
+    if (r.success) toast(`✓ ${id}: "${r.response}"`, 'success')
+    else toast(`✗ ${id}: ${r.error}`, 'error')
+  } catch(e) { toast(e.message, 'error') }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  OLLAMA MANAGER
+// ═══════════════════════════════════════════════════════════════════════════
+async function renderOllama() {
+  document.getElementById('pageContent').innerHTML = '<p style="color:var(--text3)">Connecting to Ollama…</p>'
+  let installed = [], running = [], ollamaOk = true
+  try {
+    const [listData, psData] = await Promise.allSettled([
+      api('GET', '/admin/ollama/models'),
+      api('GET', '/admin/ollama/ps'),
+    ])
+    if (listData.status === 'fulfilled') installed = listData.value.models || []
+    else ollamaOk = false
+    if (psData.status === 'fulfilled') running = psData.value.models || []
+  } catch {}
+
+  const registeredIds = new Set((allModels.length ? allModels : (await api('GET','/admin/models').catch(()=>({models:[]}))).models).map(m => m.upstream))
+
+  document.getElementById('pageContent').innerHTML = `
+    ${ollamaOk
+      ? `<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+           <span class="badge badge-green">Ollama connected</span>
+           <span style="color:var(--text3);font-size:12px">${installed.length} models installed, ${running.length} running</span>
+         </div>`
+      : `<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+           <span class="badge badge-red">Ollama not reachable</span>
+           <span style="color:var(--text3);font-size:12px">Start with: <code>ollama serve</code></span>
+         </div>`}
+
+    ${running.length ? `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><h3>Running Processes</h3></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Model</th><th>Size</th><th>Processor</th><th>Expires</th></tr></thead>
+        <tbody>
+          ${running.map(r => `
+            <tr>
+              <td class="id">${escHtml(r.name||r.model||'')}</td>
+              <td>${formatBytes(r.size||0)}</td>
+              <td>${r.details?.families?.[0]||'—'}</td>
+              <td>${r.expires_at ? new Date(r.expires_at).toLocaleTimeString() : '—'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+
+    <div class="card">
+      <div class="card-header">
+        <h3>Installed Models</h3>
+        <span style="color:var(--text3);font-size:12px">${installed.length} models</span>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Model</th><th>Size</th><th>Modified</th><th>Registered</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody>
+          ${installed.length ? installed.map(m => {
+            const name = m.name || m.model
+            const isReg = registeredIds.has(name)
+            return `
+            <tr>
+              <td class="id">${escHtml(name)}</td>
+              <td>${formatBytes(m.size||0)}</td>
+              <td style="color:var(--text3)">${m.modified_at ? new Date(m.modified_at).toLocaleDateString() : '—'}</td>
+              <td>${isReg ? '<span class="badge badge-green">registered</span>' : '<span class="badge badge-gray">not registered</span>'}</td>
+              <td class="actions">
+                <div class="actions-group">
+                  ${!isReg ? `<button class="btn btn-success btn-sm" onclick="registerOllamaModel('${escAttr(name)}')">Register</button>` : ''}
+                  <button class="btn btn-danger btn-sm" onclick="promptDeleteOllamaModel('${escAttr(name)}')">Delete</button>
+                </div>
+              </td>
+            </tr>`}).join('') : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text3)">No models installed. Pull one below.</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+
+    <div class="pull-panel">
+      <h3 style="font-size:13px;font-weight:600;margin-bottom:12px">Pull New Model</h3>
+      <div class="pull-input-row">
+        <div class="form-row"><label>Model name</label><input id="pullName" placeholder="e.g. llama3.1:8b or qwen2.5-coder:7b"></div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-bottom:0;width:auto;white-space:nowrap">
+          <input type="checkbox" id="pullRegister" checked style="width:auto"> Auto-register in gateway
+        </label>
+        <button class="btn btn-primary" id="pullBtn" onclick="pullModel()">Pull</button>
+      </div>
+      <div id="pullProgress" style="display:none;margin-top:12px">
+        <div class="progress-info"><span id="pullStatus">Initializing…</span><span id="pullPct"></span></div>
+        <div class="progress-wrap"><div class="progress-bar" id="pullBar"></div></div>
+        <div class="pull-status-log" id="pullLog"></div>
+      </div>
+      <div style="margin-top:10px;color:var(--text3);font-size:11px">
+        Popular: llama3.1:8b &nbsp;·&nbsp; qwen2.5-coder:7b &nbsp;·&nbsp; qwen2.5-coder:32b &nbsp;·&nbsp; deepseek-coder-v2 &nbsp;·&nbsp; codestral
+      </div>
+    </div>
+  `
+}
+
+async function pullModel() {
+  const name = document.getElementById('pullName').value.trim()
+  if (!name) { toast('Enter a model name', 'error'); return }
+  const register = document.getElementById('pullRegister').checked
+  const btn = document.getElementById('pullBtn')
+  btn.disabled = true
+  btn.textContent = 'Pulling…'
+
+  const prog = document.getElementById('pullProgress')
+  const bar  = document.getElementById('pullBar')
+  const stat = document.getElementById('pullStatus')
+  const pct  = document.getElementById('pullPct')
+  const log  = document.getElementById('pullLog')
+  prog.style.display = ''
+  log.textContent = ''
+
+  try {
+    const key = getApiKey()
+    const headers = { 'Content-Type': 'application/json' }
+    if (key) headers['Authorization'] = `Bearer ${key}`
+    const res = await fetch('/admin/ollama/pull', {
+      method: 'POST', headers,
+      body: JSON.stringify({ name, register }),
+    })
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      const lines = buf.split('\n')
+      buf = lines.pop()
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue
+        const d = JSON.parse(line.slice(6))
+        if (d.status === 'error') { toast(`Pull failed: ${d.error}`, 'error'); break }
+        if (d.status === 'success') {
+          stat.textContent = `✓ Done: ${name}`
+          bar.style.width = '100%'
+          pct.textContent = '100%'
+          toast(`Model '${name}' pulled successfully`, 'success')
+          if (register) toast(`Registered as ollama/${name.replace(/:/g,'-')}`, 'info')
+          break
+        }
+        stat.textContent = d.status || 'Downloading…'
+        if (d.total && d.completed) {
+          const p = Math.round(d.completed / d.total * 100)
+          bar.style.width = p + '%'
+          pct.textContent = p + '%'
+        }
+        log.textContent += `${d.status}${d.digest ? ' '+d.digest.slice(7,19)+'…' : ''}\n`
+        log.scrollTop = log.scrollHeight
+      }
+    }
+  } catch(e) { toast(e.message, 'error') }
+  btn.disabled = false
+  btn.textContent = 'Pull'
+}
+
+async function registerOllamaModel(name) {
+  try {
+    await api('POST', '/admin/ollama/register', { name })
+    toast(`Registered ollama/${name.replace(/:/g,'-')}`, 'success')
+    renderOllama()
+  } catch(e) { toast(e.message, 'error') }
+}
+
+function promptDeleteOllamaModel(name) {
+  confirm('Delete Model', `Delete '${name}' from Ollama? This removes the downloaded model files.`, async () => {
+    try {
+      await api('DELETE', `/admin/ollama/models/${encodeURIComponent(name)}`)
+      toast(`'${name}' deleted from Ollama`, 'success')
+      renderOllama()
+    } catch(e) { toast(e.message, 'error') }
+  }, 'Delete')
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  LOCAL SERVERS
+// ═══════════════════════════════════════════════════════════════════════════
+async function renderServers() {
+  const data = await api('GET', '/admin/models').catch(() => ({ models: [] }))
+  const servers = (data.models || []).filter(m => m.provider === 'openai-compatible')
+
+  document.getElementById('pageContent').innerHTML = `
+    <div class="toolbar">
+      <span style="color:var(--text2)">${servers.length} local server(s) configured</span>
+      <div class="spacer"></div>
+      <button class="btn btn-primary" onclick="openAddServerModal()">+ Add Server</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Model ID</th><th>Base URL</th><th>Upstream</th><th>Status</th><th style="text-align:right">Actions</th></tr></thead>
+        <tbody>
+          ${servers.length ? servers.map(s => `
+            <tr>
+              <td class="id">${escHtml(s.id)}</td>
+              <td style="font-family:monospace;font-size:12px">${escHtml(s.base_url||'')}</td>
+              <td style="font-family:monospace;font-size:12px">${escHtml(s.upstream)}</td>
+              <td>${statusBadge(s.status)}</td>
+              <td class="actions">
+                <div class="actions-group">
+                  <button class="btn btn-icon btn-sm" title="Test" onclick="testModel('${escAttr(s.id)}')">▶</button>
+                  <button class="btn btn-icon btn-sm" title="Delete" style="color:var(--red)" onclick="promptDeleteModel('${escAttr(s.id)}')">🗑</button>
+                </div>
+              </td>
+            </tr>`).join('') : '<tr><td colspan="5" style="text-align:center;padding:32px;color:var(--text3)">No local servers configured.<br>Add LM Studio, vLLM, llama.cpp, or any OpenAI-compatible server.</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3>Common Local Server URLs</h3></div>
+      <div class="card-body" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+        ${[
+          ['LM Studio', 'http://localhost:1234/v1', 'local-model', 'lm-studio'],
+          ['vLLM', 'http://localhost:8000/v1', 'default', ''],
+          ['llama.cpp', 'http://localhost:8080/v1', 'default', ''],
+          ['Jan', 'http://localhost:1337/v1', 'local-model', ''],
+          ['LocalAI', 'http://localhost:8080/v1', 'gpt-3.5-turbo', ''],
+          ['Kobold', 'http://localhost:5001/v1', 'default', ''],
+        ].map(([name, url, up, key]) => `
+          <div style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px">
+            <div style="font-weight:600;font-size:12px;margin-bottom:4px">${name}</div>
+            <div style="font-family:monospace;font-size:11px;color:var(--text3);margin-bottom:8px">${url}</div>
+            <button class="btn btn-ghost btn-sm" onclick="prefillServer('${name.toLowerCase().replace(/\s/g,'-')}','${url}','${up}','${key}','${name}')">+ Add</button>
+          </div>`).join('')}
+      </div>
+    </div>
+  `
+}
+
+function openAddServerModal() {
+  document.getElementById('sId').value = ''
+  document.getElementById('sUrl').value = ''
+  document.getElementById('sUpstream').value = 'local-model'
+  document.getElementById('sApiKey').value = ''
+  document.getElementById('sDesc').value = ''
+  openModal('serverModal')
+}
+
+function prefillServer(id, url, upstream, apiKey, desc) {
+  document.getElementById('sId').value = id + '/default'
+  document.getElementById('sUrl').value = url
+  document.getElementById('sUpstream').value = upstream
+  document.getElementById('sApiKey').value = apiKey
+  document.getElementById('sDesc').value = desc + ' — local inference server'
+  openModal('serverModal')
+}
+
+async function saveServer() {
+  const body = {
+    id:          document.getElementById('sId').value.trim(),
+    provider:    'openai-compatible',
+    upstream:    document.getElementById('sUpstream').value.trim() || 'local-model',
+    base_url:    document.getElementById('sUrl').value.trim(),
+    api_key:     document.getElementById('sApiKey').value.trim() || undefined,
+    description: document.getElementById('sDesc').value.trim() || undefined,
+  }
+  if (!body.id || !body.base_url) { toast('Model ID and Base URL are required', 'error'); return }
+  try {
+    await api('POST', '/admin/models', body)
+    toast(`Server '${body.id}' added`, 'success')
+    closeModal('serverModal')
+    renderServers()
+  } catch(e) { toast(e.message, 'error') }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  DEPLOY WIZARD
+// ═══════════════════════════════════════════════════════════════════════════
+function renderDeploy() {
+  document.getElementById('pageContent').innerHTML = `
+    <div style="max-width:640px">
+      <p style="color:var(--text2);margin-bottom:24px">Deploy a new model to the gateway in three steps.</p>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-header"><h3>Step 1 — Choose Source</h3></div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+          ${[
+            ['ollama', '🦙', 'Ollama Hub', 'Pull a model from ollama.com and serve locally'],
+            ['compat', '🖥', 'Local Server', 'Point to an already-running OpenAI-compatible server'],
+            ['api',    '☁', 'API Provider', 'Add an OpenAI / Gemini / Grok model entry'],
+          ].map(([v,e,t,d]) => `
+            <label style="display:flex;flex-direction:column;align-items:center;text-align:center;padding:16px;background:var(--bg3);border:2px solid var(--border);border-radius:var(--radius);cursor:pointer;transition:border-color .15s" onclick="selectDeployType('${v}',this)">
+              <input type="radio" name="deployType" value="${v}" style="display:none">
+              <div style="font-size:28px;margin-bottom:8px">${e}</div>
+              <div style="font-weight:600;font-size:12px;margin-bottom:4px">${t}</div>
+              <div style="font-size:11px;color:var(--text3)">${d}</div>
+            </label>`).join('')}
+        </div>
+      </div>
+
+      <div class="card" id="deployStep2" style="margin-bottom:16px;display:none">
+        <div class="card-header"><h3>Step 2 — Configure</h3></div>
+        <div class="card-body" id="deployStep2Body"></div>
+      </div>
+
+      <div class="card" id="deployStep3" style="display:none">
+        <div class="card-header"><h3>Step 3 — Test &amp; Deploy</h3></div>
+        <div class="card-body">
+          <div id="deployTestResult" style="margin-bottom:12px;color:var(--text2);font-size:13px">Click Test to verify the model responds correctly.</div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost" onclick="runDeployTest()">▶ Test Connection</button>
+            <button class="btn btn-primary" id="deployBtn" onclick="runDeploy()">Deploy →</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  `
+}
+
+let deployType = null, deployData = {}
+
+function selectDeployType(t, el) {
+  deployType = t
+  document.querySelectorAll('[onclick^="selectDeployType"]').forEach(e => e.style.borderColor = 'var(--border)')
+  el.style.borderColor = 'var(--blue)'
+
+  const body = document.getElementById('deployStep2Body')
+  document.getElementById('deployStep2').style.display = ''
+  document.getElementById('deployStep3').style.display = ''
+
+  if (t === 'ollama') {
+    body.innerHTML = `
+      <div class="form-row"><label>Model name</label><input id="dName" placeholder="llama3.1:8b" oninput="setDeployData()"></div>
+      <div class="form-row"><label>Gateway ID (optional)</label><input id="dId" placeholder="auto: ollama/llama3.1-8b" oninput="setDeployData()"></div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;margin-top:8px">
+        <input type="checkbox" id="dPull" checked style="width:auto"> Pull from Ollama hub if not installed
+      </label>`
+  } else if (t === 'compat') {
+    body.innerHTML = `
+      <div class="form-row"><label>Gateway Model ID</label><input id="dId" placeholder="lmstudio/llama3" oninput="setDeployData()"></div>
+      <div class="form-row"><label>Base URL</label><input id="dUrl" placeholder="http://localhost:1234/v1" oninput="setDeployData()"></div>
+      <div class="form-row"><label>Upstream model name</label><input id="dUpstream" placeholder="local-model" oninput="setDeployData()"></div>
+      <div class="form-row"><label>API Key (optional)</label><input id="dApiKey" placeholder="lm-studio" oninput="setDeployData()"></div>
+      <div class="form-row"><label>Description</label><input id="dDesc" placeholder="" oninput="setDeployData()"></div>`
+  } else {
+    body.innerHTML = `
+      <div class="form-row"><label>Provider</label>
+        <select id="dProvider" onchange="setDeployData()">
+          <option value="openai">openai</option><option value="gemini">gemini</option><option value="grok">grok</option>
+        </select>
+      </div>
+      <div class="form-row"><label>Model name</label><input id="dName" placeholder="gpt-4o" oninput="setDeployData()"></div>
+      <div class="form-row"><label>Description</label><input id="dDesc" placeholder="" oninput="setDeployData()"></div>`
+  }
+}
+
+function setDeployData() {
+  const v = id => document.getElementById(id)?.value?.trim()
+  if (deployType === 'ollama')      deployData = { name: v('dName'), id: v('dId'), pull: document.getElementById('dPull')?.checked }
+  else if (deployType === 'compat') deployData = { id: v('dId'), url: v('dUrl'), upstream: v('dUpstream'), apiKey: v('dApiKey'), desc: v('dDesc') }
+  else                              deployData = { provider: v('dProvider'), name: v('dName'), desc: v('dDesc') }
+}
+
+async function runDeployTest() {
+  setDeployData()
+  const el = document.getElementById('deployTestResult')
+  el.textContent = 'Testing…'
+  // For compat: try fetching models list
+  if (deployType === 'compat' && deployData.url) {
+    try {
+      const r = await fetch(deployData.url.replace(/\/$/, '') + '/models')
+      el.textContent = r.ok ? '✓ Server is reachable and responding' : `✗ Server returned HTTP ${r.status}`
+      el.style.color = r.ok ? 'var(--green)' : 'var(--red)'
+    } catch(e) { el.textContent = `✗ Cannot reach ${deployData.url}`; el.style.color = 'var(--red)' }
+  } else {
+    el.textContent = 'Connection test not available for this provider type — proceed to Deploy.'
+    el.style.color = 'var(--text2)'
+  }
+}
+
+async function runDeploy() {
+  setDeployData()
+  try {
+    if (deployType === 'ollama') {
+      if (!deployData.name) { toast('Model name is required', 'error'); return }
+      if (deployData.pull) {
+        navigate('ollama')
+        setTimeout(() => {
+          document.getElementById('pullName').value = deployData.name
+          document.getElementById('pullRegister').checked = true
+          pullModel()
+        }, 200)
+        return
+      }
+      await registerOllamaModel(deployData.name)
+    } else if (deployType === 'compat') {
+      if (!deployData.id || !deployData.url) { toast('Model ID and URL are required', 'error'); return }
+      await api('POST', '/admin/models', {
+        id: deployData.id, provider: 'openai-compatible',
+        upstream: deployData.upstream || 'local-model',
+        base_url: deployData.url, api_key: deployData.apiKey || undefined,
+        description: deployData.desc || undefined,
+      })
+      toast(`'${deployData.id}' deployed`, 'success')
+      navigate('servers')
+    } else {
+      if (!deployData.name) { toast('Model name is required', 'error'); return }
+      const id = `${deployData.provider}/${deployData.name}`
+      await api('POST', '/admin/models', {
+        id, provider: deployData.provider,
+        upstream: deployData.name,
+        description: deployData.desc || undefined,
+      })
+      toast(`'${id}' deployed`, 'success')
+      navigate('models')
+    }
+  } catch(e) { toast(e.message, 'error') }
+}
+
+// ── Utilities ──────────────────────────────────────────────────────────────
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+function escAttr(s) { return String(s).replace(/'/g,"\\'") }
+function formatBytes(b) {
+  if (b > 1e9) return (b/1e9).toFixed(1)+' GB'
+  if (b > 1e6) return (b/1e6).toFixed(1)+' MB'
+  return b+' B'
+}
+
+// ── Init ───────────────────────────────────────────────────────────────────
+checkHealth()
+setInterval(checkHealth, 30000)
+navigate('dashboard')
+</script>
+</body>
+</html>

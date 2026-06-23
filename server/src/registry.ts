@@ -1,7 +1,5 @@
-import { readFileSync } from 'fs'
-import { resolve } from 'path'
-import yaml from 'js-yaml'
 import { config } from './config.js'
+import { modelsStore, type ModelConfig } from './models-store.js'
 import type { BaseProvider } from './providers/base.js'
 import type { ModelObject } from './schemas/openai.js'
 import { OpenAIProvider }           from './providers/openai.provider.js'
@@ -10,15 +8,6 @@ import { OllamaProvider }           from './providers/ollama.provider.js'
 import { GrokProvider }             from './providers/grok.provider.js'
 import { OpenAICompatibleProvider } from './providers/openai-compatible.provider.js'
 import { MockProvider }             from './providers/mock.provider.js'
-
-interface ModelConfig {
-  id:           string
-  provider:     string
-  upstream:     string
-  base_url?:    string
-  api_key?:     string
-  description?: string
-}
 
 interface RegistryEntry {
   provider:     BaseProvider
@@ -31,40 +20,30 @@ export class ModelRegistry {
   private providers = new Map<string, BaseProvider | null>()
 
   load(modelsPath: string) {
-    const raw  = readFileSync(resolve(modelsPath), 'utf-8')
-    const data = yaml.load(raw) as { models: ModelConfig[] }
+    modelsStore.load(modelsPath)
 
-    // Instantiate shared providers once (null = API key not configured → models skipped)
+    // Instantiate shared providers once
+    this.providers.set('mock',   new MockProvider())
     this.providers.set('openai', config.OPENAI_API_KEY ? new OpenAIProvider(config.OPENAI_API_KEY) : null)
     this.providers.set('gemini', config.GEMINI_API_KEY ? new GeminiProvider(config.GEMINI_API_KEY) : null)
-    this.providers.set('ollama', config.OLLAMA_BASE_URL ? new OllamaProvider(config.OLLAMA_BASE_URL) : null)
     this.providers.set('grok',   config.GROK_API_KEY   ? new GrokProvider(config.GROK_API_KEY)     : null)
-    this.providers.set('mock',   new MockProvider())
+    this.providers.set('ollama', config.OLLAMA_BASE_URL ? new OllamaProvider(config.OLLAMA_BASE_URL) : null)
 
-    for (const model of data.models) {
-      let provider: BaseProvider | null = null
-
-      if (model.provider === 'openai-compatible') {
-        const cacheKey = `compat:${model.base_url}`
-        if (!this.providers.has(cacheKey)) {
-          this.providers.set(cacheKey, new OpenAICompatibleProvider(model.base_url!, model.api_key))
-        }
-        provider = this.providers.get(cacheKey) ?? null
-      } else {
-        provider = this.providers.get(model.provider) ?? null
-      }
-
-      if (!provider) continue   // skip models whose API key is not configured
-
-      this.entries.set(model.id, {
-        provider,
-        upstream:    model.upstream,
-        description: model.description,
-      })
+    for (const cfg of modelsStore.list()) {
+      this._register(cfg)
     }
 
-    const count = this.entries.size
-    console.log(`[registry] Loaded ${count} model(s) from ${modelsPath}`)
+    console.log(`[registry] Loaded ${this.entries.size} model(s) from ${modelsPath}`)
+  }
+
+  /** Dynamically add or replace a single model entry (used by admin CRUD). */
+  loadOne(cfg: ModelConfig) {
+    this._register(cfg)
+  }
+
+  /** Remove a model from the live registry (does not touch models.yaml). */
+  remove(id: string) {
+    this.entries.delete(id)
   }
 
   resolve(modelId: string): RegistryEntry | undefined {
@@ -83,6 +62,29 @@ export class ModelRegistry {
 
   namedProviders(): Map<string, BaseProvider | null> {
     return this.providers
+  }
+
+  // ── Private helpers ────────────────────────────────────────────────────────
+
+  private _register(cfg: ModelConfig) {
+    const provider = this._makeProvider(cfg)
+    if (!provider) return
+    this.entries.set(cfg.id, {
+      provider,
+      upstream:    cfg.upstream,
+      description: cfg.description,
+    })
+  }
+
+  private _makeProvider(cfg: ModelConfig): BaseProvider | null {
+    if (cfg.provider === 'openai-compatible') {
+      const key = `compat:${cfg.base_url}`
+      if (!this.providers.has(key)) {
+        this.providers.set(key, new OpenAICompatibleProvider(cfg.base_url!, cfg.api_key))
+      }
+      return this.providers.get(key) ?? null
+    }
+    return this.providers.get(cfg.provider) ?? null
   }
 }
 
