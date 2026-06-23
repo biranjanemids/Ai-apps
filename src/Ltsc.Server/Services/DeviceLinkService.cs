@@ -132,6 +132,22 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
 
     private string TenantOf(string deviceId) => _devices.TryGet(deviceId, out var d) ? d.TenantId : "default";
 
+    /// <summary>Zero-trust continuous posture: quarantine + alert on violation (design — zero trust).</summary>
+    private void EvaluatePosture(string deviceId, Heartbeat hb)
+    {
+        if (!_devices.TryGet(deviceId, out var d)) return;
+        var inPolicy = hb.PolicyVersion == ExpectedVersion(deviceId);
+        var fails = _inventory.GetResults(deviceId).Count(r => r.Status is "Failed" or "RolledBack");
+        var hs = FleetHealth.Score(true, DateTimeOffset.UtcNow, hb.Health, _inventory.GetInventory(deviceId), fails);
+        var posture = Posture.Evaluate(hb.Health, inPolicy, hs);
+
+        var wasQuarantined = d.Quarantined;
+        _devices.Touch(deviceId, r => { r.Quarantined = !posture.Compliant; r.PostureViolations = posture.Violations; });
+        if (!posture.Compliant && !wasQuarantined)
+            _alerts.Add(new Alert(d.TenantId, deviceId, "error", "posture.violation",
+                string.Join("; ", posture.Violations), DateTimeOffset.UtcNow));
+    }
+
     private void HandleAgentMessage(string deviceId, AgentMessage msg)
     {
         switch (msg.PayloadCase)
@@ -146,6 +162,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                     deviceId, msg.Heartbeat.Health?.UwfEnabled, msg.Heartbeat.PolicyVersion);
                 _inventory.SetHealth(deviceId, msg.Heartbeat.Health);
                 if (AlertRules.FromHeartbeat(TenantOf(deviceId), deviceId, msg.Heartbeat.Health) is { } ha) _alerts.Add(ha);
+                EvaluatePosture(deviceId, msg.Heartbeat);
                 // Drift detection: nudge the device to reconcile if its applied
                 // policy version doesn't match the effective one (design §7).
                 if (msg.Heartbeat.PolicyVersion != ExpectedVersion(deviceId))

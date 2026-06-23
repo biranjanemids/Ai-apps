@@ -46,6 +46,17 @@ provide." It is a living document — status reflects what is actually in the re
 | Modern typed API (gRPC) | ❌ | ❌ | 🟡 | 🟡 | ✅ | ✅ |
 | Container-native on-prem | 🟡 | ❌ | 🟡 | 🟡 | n/a | ✅ |
 
+## Futuristic capabilities (beyond current incumbents)
+- **AI ops copilot** — natural language → typed, auditable fleet action plan
+  (`POST /api/ops/ask`), targeting by health/online/group/policy-drift; deterministic
+  translator (LLM-pluggable behind `IIntentTranslator`, executor unchanged).
+- **Zero-trust continuous posture** — every heartbeat re-proves UWF-on + in-policy +
+  not-critical; violations quarantine the device + alert (composes health + revocation).
+- **Carbon/energy-aware scheduling** — defers deferrable work to the low-carbon
+  off-peak window (`POST /api/ops/ask?whenGreen=true`, `GET /api/carbon`).
+- **Digital-twin what-if** — simulate a proposed policy's blast radius (added/removed/
+  changed profiles, reboot impact, affected devices) before applying.
+
 ## Where Ltsc already differentiates
 - **OEM-agnostic** control plane (WMS=Dell-only, HPDM=HP-only) with a **modern
   typed gRPC contract** and **true desired-state reconciliation** (most incumbents

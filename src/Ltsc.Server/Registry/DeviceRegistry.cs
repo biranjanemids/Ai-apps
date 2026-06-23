@@ -21,6 +21,8 @@ public sealed class DeviceRegistry
         public DateTimeOffset LastSeen { get; set; } = DateTimeOffset.UtcNow;
         public string PolicyVersion { get; set; } = "";
         public bool RebootPending { get; set; }
+        public bool Quarantined { get; set; }            // zero-trust posture violation
+        public IReadOnlyList<string> PostureViolations { get; set; } = Array.Empty<string>();
     }
 
     private readonly ConcurrentDictionary<string, DeviceRecord> _devices = new();

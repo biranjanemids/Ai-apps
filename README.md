@@ -135,6 +135,16 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
   failures) with human-readable risk reasons; `GET /api/devices/{id}/health`,
   fleet rollup `GET /api/health`, shown in the console device overview. Triage
   at-risk devices before they fail.
+- **AI ops copilot** — natural language → typed fleet action plan
+  (`POST /api/ops/ask`, console **Ops Copilot** tab): targets by health/online/
+  group/drift, plans (dry-run) then runs; deterministic translator, LLM-pluggable.
+- **Zero-trust continuous posture** — each heartbeat re-proves UWF-on + in-policy +
+  healthy; violations quarantine the device and alert (`GET /api/devices/{id}/posture`).
+- **Carbon-aware scheduling** — defer deferrable ops to the low-carbon window
+  (`?whenGreen=true`, `GET /api/carbon`).
+- **Digital-twin what-if** — `POST /api/groups/{group}/policy/simulate` shows a
+  proposed policy's blast radius (added/removed/changed profiles, reboot, device count)
+  before applying.
 - **Audit log** — every enrollment, command dispatch, and policy change is
   persisted (`/api/audit`, Admin-only) and survives restarts.
 - **Authored policy** — Admins GET/POST a group's `PolicySnapshot` JSON at

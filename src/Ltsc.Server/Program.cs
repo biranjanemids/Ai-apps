@@ -46,6 +46,7 @@ builder.Services.AddSingleton<ShadowStore>();
 builder.Services.AddSingleton<AgentRelease>();
 builder.Services.AddSingleton<AlertStore>();
 builder.Services.AddSingleton<AppCatalog>();
+builder.Services.AddSingleton<IIntentTranslator, RuleIntentTranslator>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
@@ -271,6 +272,101 @@ app.MapPost("/api/groups/{group}/apps/{appId}", (string group, string appId, App
     return Results.Ok(new { appId, group, dispatched });
 });
 
+// ---- Zero-trust posture (Viewer, tenant-scoped) ----
+app.MapGet("/api/devices/{id}/posture", (string id, DeviceRegistry devices, AdminAuth auth, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Viewer);
+    if (who is null) return Results.Unauthorized();
+    if (!devices.TryGet(id, out var d) || d.TenantId != who.Value.tenant) return Results.NotFound();
+    return Results.Json(new { id, compliant = !d.Quarantined, quarantined = d.Quarantined, violations = d.PostureViolations });
+});
+
+// ---- Carbon-aware scheduling window ----
+app.MapGet("/api/carbon", (AdminAuth auth, HttpContext http) =>
+{
+    if (auth.Require(http, Role.Viewer) is null) return Results.Unauthorized();
+    var now = DateTimeOffset.Now;
+    return Results.Json(new
+    {
+        green = CarbonScheduler.IsGreen(now),
+        intensity = CarbonScheduler.IntensityProxy(now),
+        nextGreen = CarbonScheduler.NextGreen(now),
+    });
+});
+
+// ---- Digital-twin: simulate a proposed policy before applying (Admin) ----
+app.MapPost("/api/groups/{group}/policy/simulate", async (string group, PolicyRegistry policies, DeviceRegistry devices,
+    AdminAuth auth, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+
+    using var reader = new StreamReader(http.Request.Body);
+    PolicySnapshot proposed;
+    try { proposed = Google.Protobuf.JsonParser.Default.Parse<PolicySnapshot>(await reader.ReadToEndAsync()); }
+    catch (Exception ex) { return Results.BadRequest(new { error = $"invalid policy JSON: {ex.Message}" }); }
+
+    var current = policies.ForGroup(tenant, group);
+    var devCount = devices.ForTenant(tenant).Count(d => d.GroupId == group);
+    var impact = PolicySimulator.Simulate(current, proposed, devCount);
+    return Results.Json(impact);
+});
+
+// ---- AI ops copilot: natural language -> typed fleet action plan ----
+app.MapPost("/api/ops/ask", (string? dryRun, bool? whenGreen, DeviceRegistry devices, DeviceRouter router,
+    InventoryStore inv, PolicyRegistry policies, IIntentTranslator translator, CommandDispatcher dispatch,
+    ImageRegistry images, AdminAuth auth, IServerStore store, HttpContext http, OpsAsk body) =>
+{
+    var who = auth.Require(http, Role.Operator);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+
+    var intent = translator.Translate(body?.Q ?? "");
+    if (intent is null) return Results.BadRequest(new { error = "could not understand request" });
+
+    // Resolve the target set from the intent filter (health/online/group/drift).
+    var matched = devices.ForTenant(tenant).Where(d =>
+    {
+        if (intent.Filter.Group is { } g && d.GroupId != g) return false;
+        if (intent.Filter.Online is { } on && router.IsOnline(d.DeviceId) != on) return false;
+        if (intent.Filter.Drift is { } dr)
+        {
+            var drifted = d.PolicyVersion != policies.ForGroup(d.TenantId, d.GroupId).ContentHash;
+            if (drifted != dr) return false;
+        }
+        if (intent.Filter.Band is { } band)
+        {
+            var fails = inv.GetResults(d.DeviceId).Count(r => r.Status is "Failed" or "RolledBack");
+            var hs = FleetHealth.Score(router.IsOnline(d.DeviceId), d.LastSeen, inv.GetHealth(d.DeviceId), inv.GetInventory(d.DeviceId), fails);
+            if (hs.Band != band) return false;
+        }
+        return true;
+    }).Select(d => d.DeviceId).ToList();
+
+    var isDryRun = dryRun != "false";              // safe default: plan only
+    var defer = whenGreen == true && !CarbonScheduler.IsGreen(DateTimeOffset.Now);
+
+    var dispatched = 0;
+    if (!isDryRun && !defer)
+        foreach (var id in matched)
+        { dispatch.Dispatch(id, intent.Capability, intent.Action, Google.Protobuf.ByteString.Empty); dispatched++; }
+
+    if (!isDryRun)
+        store.AddAudit(tenant, actor, "ops:ask", intent.Summary, $"matched {matched.Count}, dispatched {dispatched}, deferred={defer}");
+
+    return Results.Json(new
+    {
+        intent.Summary,
+        intent.Capability,
+        intent.Action,
+        matched,
+        dryRun = isDryRun,
+        dispatched,
+        deferredToGreenWindow = defer ? CarbonScheduler.NextGreen(DateTimeOffset.Now) : (DateTimeOffset?)null,
+    });
+});
+
 // ---- Predictive fleet health (futuristic: get ahead of failures) ----
 static FleetHealth.Result DeviceHealth(DeviceRegistry.DeviceRecord d, DeviceRouter router, InventoryStore inv) =>
     FleetHealth.Score(
@@ -333,3 +429,6 @@ app.MapGet("/console", () => Results.Content(Ltsc.Server.ConsoleHtml.Page, "text
 app.MapGet("/", () => "Ltsc MgmtServer — gRPC/mTLS on :8443 (Enrollment, DeviceLink, Transfer, Policy, Shadow) · console at /console");
 
 app.Run();
+
+// Request body for the AI ops copilot endpoint.
+record OpsAsk(string? Q);

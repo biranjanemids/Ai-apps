@@ -59,6 +59,7 @@ pre{margin:0;font-size:.8rem;white-space:pre-wrap;word-break:break-word}
       <div class="tab" data-t="shadow" onclick="tab(this)">Shadow</div>
       <div class="tab" data-t="policy" onclick="tab(this)">Policy</div>
       <div class="tab" data-t="apps" onclick="tab(this)">Apps</div>
+      <div class="tab" data-t="ops" onclick="tab(this)">Ops Copilot</div>
       <div class="tab" data-t="alerts" onclick="tab(this)">Alerts</div>
       <div class="tab" data-t="audit" onclick="tab(this)">Audit</div>
     </div>
@@ -146,6 +147,11 @@ async function render(){
       (can('Admin')?`<p class="muted" style="margin-top:.6rem">Register a package (InstallSpec JSON):</p>
         <textarea id="appspec">{"appId":"com.example.app","version":"1.0.0","installer":{"type":"msi","artifactId":"artifact-app","installCmd":"msiexec /i app.msi /qn","validExitCodes":[0,3010]}}</textarea>
         <div style="margin-top:.4rem"><button class="primary" onclick="registerApp()">Register</button></div>`:'');}
+  else if(cur==='ops'){p.innerHTML=`<p class="muted">Natural-language fleet ops — describe what to do; review the plan, then run.</p>
+    <input id="opsq" size="60" placeholder="e.g. reboot all critical devices that are offline" value="collect inventory from all devices">
+    <label style="margin-left:.5rem"><input type=checkbox id="opsgreen"> carbon-aware</label>
+    <div style="margin-top:.4rem"><button onclick="ops(true)">Plan</button> <button class="primary" ${can('Operator')?'':'disabled'} onclick="ops(false)">Run</button></div>
+    <pre id="opsout" style="margin-top:.6rem"></pre>`;}
   else if(cur==='alerts'){const r=await api('/api/alerts');const rows=r.ok?await r.json():[];
     p.innerHTML=rows.length?'<table><thead><tr><th>Time</th><th>Device</th><th>Severity</th><th>Type</th><th>Detail</th></tr></thead><tbody>'+
       rows.map(x=>`<tr><td>${x.ts.slice(0,19)}</td><td>${x.deviceId}</td><td>${x.severity}</td><td>${x.type}</td><td>${(x.detail||'').slice(0,80)}</td></tr>`).join('')+'</tbody></table>':'<p class="muted">no alerts</p>';}
@@ -154,6 +160,9 @@ async function render(){
     p.innerHTML='<table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Detail</th></tr></thead><tbody>'+
       rows.map(a=>`<tr><td>${a.ts.slice(0,19)}</td><td>${a.actor}</td><td>${a.action}</td><td>${a.target}</td><td>${a.detail}</td></tr>`).join('')+'</tbody></table>';}
 }
+async function ops(dry){const q=document.getElementById('opsq').value;const green=document.getElementById('opsgreen').checked;
+  const r=await api(`/api/ops/ask?dryRun=${dry}&whenGreen=${green}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({q})});
+  document.getElementById('opsout').textContent=JSON.stringify(await r.json(),null,2);}
 async function registerApp(){const r=await api('/api/apps',{method:'POST',body:document.getElementById('appspec').value});toast('register: '+r.status);render();}
 async function assignApp(appId,g){const r=await api(`/api/groups/${g}/apps/${appId}`,{method:'POST'});toast('assign: '+r.status+' '+await r.text());}
 async function savePolicy(g){
