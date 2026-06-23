@@ -14,22 +14,28 @@ public sealed class DemoCommandPusher
     private readonly DeviceRouter _router;
     private readonly Ca.CertAuthority _ca;
     private readonly ArtifactStore _artifacts;
+    private readonly bool _enabled;
     private readonly ILogger<DemoCommandPusher> _log;
 
     public DemoCommandPusher(
         DeviceRouter router,
         Ca.CertAuthority ca,
         ArtifactStore artifacts,
+        IConfiguration config,
         ILogger<DemoCommandPusher> log)
     {
         _router = router;
         _ca = ca;
         _artifacts = artifacts;
+        // Default on for demos/CI; set Ltsc:DemoInstall=false in real deployments
+        // so the catalog/assignment path is the only source of installs.
+        _enabled = config.GetValue("Ltsc:DemoInstall", true);
         _log = log;
     }
 
     public void ScheduleDemoInstall(string deviceId)
     {
+        if (!_enabled) return;
         // Slight delay so the agent finishes wiring its stream first.
         _ = Task.Run(async () =>
         {

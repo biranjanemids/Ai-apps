@@ -130,6 +130,11 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
 - **Alerting** — a rule engine raises tenant-scoped alerts from device signals
   (overlay-critical, command failure, error events, revocation); feed at
   `/api/alerts` and the console **Alerts** tab.
+- **Predictive fleet health** — a transparent 0–100 risk score per device from its
+  telemetry (disk-exhaustion, UWF overlay pressure, reachability, repeated
+  failures) with human-readable risk reasons; `GET /api/devices/{id}/health`,
+  fleet rollup `GET /api/health`, shown in the console device overview. Triage
+  at-risk devices before they fail.
 - **Audit log** — every enrollment, command dispatch, and policy change is
   persisted (`/api/audit`, Admin-only) and survives restarts.
 - **Authored policy** — Admins GET/POST a group's `PolicySnapshot` JSON at

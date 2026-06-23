@@ -40,6 +40,7 @@ provide." It is a living document — status reflects what is actually in the re
 | Admin web console | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (SPA: fleet, device detail tabs, role-gated actions, policy editor, audit) |
 | RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (token roles Viewer/Operator/Admin + persisted audit log) |
 | Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (rule engine: overlay-critical, command-failed, error events, revocation; tenant-scoped feed) |
+| **Predictive health / risk scoring** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ (0–100 score + risk reasons: disk-exhaustion, overlay pressure, reachability, repeated failures) |
 | Multi-tenant / HA scale | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ (PostgreSQL + Redis multi-node + tenant isolation across devices/policy/audit) |
 | OEM-agnostic (mixed fleets) | ❌ | ❌ | 🟡 | ✅ | ✅ | ✅ (by design) |
 | Modern typed API (gRPC) | ❌ | ❌ | 🟡 | 🟡 | ✅ | ✅ |
@@ -49,6 +50,9 @@ provide." It is a living document — status reflects what is actually in the re
 - **OEM-agnostic** control plane (WMS=Dell-only, HPDM=HP-only) with a **modern
   typed gRPC contract** and **true desired-state reconciliation** (most incumbents
   are imperative push), shipped **container-native** for on-prem.
+- **Predictive fleet health** — a transparent 0–100 risk score per device
+  (disk-exhaustion, UWF overlay pressure, reachability, repeated failures) so ops
+  triages *before* failures, where incumbents are largely reactive monitoring.
 
 ## Honest gaps vs. incumbents (priority order)
 1. **Windows-device validation** of UWF/kiosk/installer/inventory/**WUA**/**DISM-FFU**

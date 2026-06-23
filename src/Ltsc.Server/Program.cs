@@ -271,6 +271,39 @@ app.MapPost("/api/groups/{group}/apps/{appId}", (string group, string appId, App
     return Results.Ok(new { appId, group, dispatched });
 });
 
+// ---- Predictive fleet health (futuristic: get ahead of failures) ----
+static FleetHealth.Result DeviceHealth(DeviceRegistry.DeviceRecord d, DeviceRouter router, InventoryStore inv) =>
+    FleetHealth.Score(
+        online: router.IsOnline(d.DeviceId),
+        lastSeen: d.LastSeen,
+        health: inv.GetHealth(d.DeviceId),
+        inv: inv.GetInventory(d.DeviceId),
+        recentFailures: inv.GetResults(d.DeviceId).Count(r => r.Status is "Failed" or "RolledBack"));
+
+app.MapGet("/api/devices/{id}/health", (string id, DeviceRegistry devices, DeviceRouter router, InventoryStore inv, AdminAuth auth, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Viewer);
+    if (who is null) return Results.Unauthorized();
+    if (!devices.TryGet(id, out var d) || d.TenantId != who.Value.tenant) return Results.NotFound();
+    var h = DeviceHealth(d, router, inv);
+    return Results.Json(new { id, h.Score, h.Band, h.Risks });
+});
+
+app.MapGet("/api/health", (DeviceRegistry devices, DeviceRouter router, InventoryStore inv, AdminAuth auth, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Viewer);
+    if (who is null) return Results.Unauthorized();
+    var scored = devices.ForTenant(who.Value.tenant).Select(d => DeviceHealth(d, router, inv)).ToList();
+    return Results.Json(new
+    {
+        total = scored.Count,
+        healthy = scored.Count(s => s.Band == "healthy"),
+        warning = scored.Count(s => s.Band == "warning"),
+        critical = scored.Count(s => s.Band == "critical"),
+        avgScore = scored.Count == 0 ? 100 : (int)scored.Average(s => s.Score),
+    });
+});
+
 // Alert feed (Viewer, tenant-scoped).
 app.MapGet("/api/alerts", (AlertStore alerts, AdminAuth auth, HttpContext http) =>
 {

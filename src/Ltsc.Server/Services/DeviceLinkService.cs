@@ -144,6 +144,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                 });
                 _log.LogDebug("Heartbeat from {DeviceId} (uwf={Uwf}, policy={Policy})",
                     deviceId, msg.Heartbeat.Health?.UwfEnabled, msg.Heartbeat.PolicyVersion);
+                _inventory.SetHealth(deviceId, msg.Heartbeat.Health);
                 if (AlertRules.FromHeartbeat(TenantOf(deviceId), deviceId, msg.Heartbeat.Health) is { } ha) _alerts.Add(ha);
                 // Drift detection: nudge the device to reconcile if its applied
                 // policy version doesn't match the effective one (design §7).

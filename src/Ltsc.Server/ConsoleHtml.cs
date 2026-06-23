@@ -120,10 +120,13 @@ async function cmd(act,extra){
 
 async function render(){
   renderActions();const p=$('panel');if(!sel){p.innerHTML='<p class="muted">Select a device.</p>';return;}
-  if(cur==='overview'){const d=dev()||{};p.innerHTML=`<div class="kv">
+  if(cur==='overview'){const d=dev()||{};const hr=await api(`/api/devices/${sel}/health`);const h=hr.ok?await hr.json():null;
+    const hcol=h?(h.band==='healthy'?'ok':'drift'):'';
+    p.innerHTML=`<div class="kv">
     <div>Device</div><div>${d.deviceId}</div><div>Group</div><div>${d.groupId}</div>
     <div>Model</div><div>${d.model||''}</div><div>OS</div><div>${d.os||''}</div>
     <div>Online</div><div>${d.online?'yes':'no'}</div>
+    <div>Health</div><div>${h?`<b class="${hcol}">${h.score}/100 ${h.band}</b>${h.risks&&h.risks.length?' — '+h.risks.join('; '):''}`:'n/a'}</div>
     <div>Policy</div><div>${d.policyVersion} vs ${d.expectedPolicy} <span class="pill ${d.inPolicy?'ok':'drift'}">${d.inPolicy?'in policy':'drift'}</span></div>
     <div>Reboot pending</div><div>${d.rebootPending?'yes':'no'}</div><div>Last seen</div><div>${d.lastSeen}</div></div>`;}
   else if(cur==='inventory'){const r=await api(`/api/devices/${sel}/inventory`);
