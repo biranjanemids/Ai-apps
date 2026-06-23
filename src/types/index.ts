@@ -50,6 +50,8 @@ export interface UserSession {
   lastActivity: Date;
   searchResults?: Product[];
   buyIntent?: BuyIntent;
+  wishlist?: Product[];
+  preferredLanguage?: 'en' | 'hi';
 }
 
 export interface ConversationMessage {

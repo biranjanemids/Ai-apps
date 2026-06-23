@@ -8,6 +8,7 @@ import {
   getBuyIntent,
   setBuyIntent,
   clearBuyIntent,
+  addToWishlist,
 } from '../agent/sessionManager.js';
 
 export const webhookRouter = Router();
@@ -135,8 +136,25 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
       return;
     }
 
+    if (action === 'save') {
+      // save__index__productId__platform — add to wishlist
+      const productId = parts[2];
+      const platform = parts[3];
+      const products = getSearchResults(from);
+      const product = products.find((p) => p.id === productId && p.platform === platform);
+      if (product) {
+        addToWishlist(from, product);
+        await sendTextMessage(
+          from,
+          `❤️ *Saved to wishlist!*\n\n_${product.title}_\n\nType *wishlist* anytime to see all saved items.`
+        );
+      } else {
+        await sendTextMessage(from, '❤️ Saved! Type *wishlist* to see your saved products.');
+      }
+      return;
+    }
+
     if (action === 'compare') {
-      // compare__index__productId__platform — route through agent as text
       const index = parts[1];
       const reply = await processMessage(from, `compare product ${index}`);
       await sendTextMessage(from, reply);

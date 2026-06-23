@@ -1,11 +1,17 @@
 import { sendButtonMessage, sendListMessage, sendTextMessage, ListRow } from './client.js';
 import { Product } from '../types/index.js';
+import { discountPercent } from '../mcp/tools/searchProducts.js';
 
 const PLATFORM_EMOJI: Record<string, string> = {
   amazon: '🛒',
   flipkart: '🛍',
   myntra: '👗',
 };
+
+function discountTag(product: Product): string {
+  const disc = discountPercent(product);
+  return disc >= 5 ? `🔥 *${disc}% off* MRP` : '';
+}
 
 // ── Product card with 3 action buttons ───────────────────────────────────────
 
@@ -29,13 +35,16 @@ export async function sendProductCard(
     .filter(Boolean)
     .join('\n');
 
+  const disc = discountTag(product);
+  const bodyWithDisc = disc ? `${body}\n${disc}` : body;
+
   await sendButtonMessage(
     to,
-    body,
+    bodyWithDisc,
     [
       { id: `buy__${index}__${product.id}__${product.platform}`, title: '💳 Buy Now' },
+      { id: `save__${index}__${product.id}__${product.platform}`, title: '❤️ Save' },
       { id: `compare__${index}__${product.id}__${product.platform}`, title: '📊 Compare' },
-      { id: `details__${index}__${product.id}__${product.platform}`, title: 'ℹ️ Details' },
     ],
     `Product ${index}`,
     `Tap an action below`
