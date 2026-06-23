@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ltsc-mgmtserver
+description: LTSC management server (multi-replica; shared PostgreSQL + Redis)
+type: application
+version: 0.1.0
+appVersion: "0.2.0"

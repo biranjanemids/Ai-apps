@@ -1,0 +1,23 @@
+# .NET build output
+bin/
+obj/
+*.user
+
+# Agent local state (SQLite)
+*.db
+*.db-wal
+*.db-shm
+
+# Tooling
+.vs/
+.idea/
+
+# Server PKI + durable state (demo single-node)
+server-state/
+*.pfx
+
+# Build artifacts (agent packages)
+artifacts/
+
+# Redis dump (from local testing)
+dump.rdb

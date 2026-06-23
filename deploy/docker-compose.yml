@@ -1,0 +1,35 @@
+# Multi-node-capable profile (design §12). The server shares durable state in
+# PostgreSQL and presence + cross-node command routing through Redis, so you can
+# scale `mgmtserver` to multiple replicas behind a load balancer. Drop the
+# postgres/redis env vars to fall back to single-node SQLite + in-process routing.
+services:
+  mgmtserver:
+    build:
+      context: ..
+      dockerfile: src/Ltsc.Server/Dockerfile
+    ports:
+      - "8443:8443"   # gRPC over mTLS; CA + server certs minted into server-state/
+    environment:
+      Ltsc__Postgres: "Host=postgres;Port=5432;Database=ltsc;Username=ltsc;Password=ltsc"
+      Ltsc__Redis: "redis:6379"
+    depends_on: [postgres, redis]
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ltsc
+      POSTGRES_USER: ltsc
+      POSTGRES_PASSWORD: ltsc
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+
+  # NATS is an interchangeable bus for cross-node command fan-out (Redis pub/sub
+  # is used by default). Wire a NatsPresence alongside RedisPresence to use it.
+  # nats:
+  #   image: nats:2-alpine
+
+volumes:
+  pgdata:

@@ -1,0 +1,418 @@
+syntax = "proto3";
+
+package ltsc.mgmt.v1;
+
+option csharp_namespace = "Ltsc.Mgmt.V1";
+
+import "google/protobuf/timestamp.proto";
+
+// =============================================================================
+// 1. Enrollment — bootstrap identity.
+//
+// Production (design §6): the agent submits a CSR + group token and receives a
+// signed, short-lived X.509 device certificate used for mTLS on every later
+// call. This scaffold issues a device_id + bearer session token as a stand-in
+// so the loop is runnable without a full PKI; the wire shape is preserved.
+// =============================================================================
+service Enrollment {
+  rpc Enroll(EnrollRequest) returns (EnrollResponse);
+  rpc RenewCertificate(RenewRequest) returns (EnrollResponse);
+}
+
+message DeviceFacts {
+  string hardware_uuid = 1;
+  string model = 2;
+  string os_build = 3;
+  string arch = 4;            // x64 | arm64
+  string agent_version = 5;
+}
+
+message EnrollRequest {
+  string enrollment_token = 1;   // group token
+  bytes  csr = 2;                // PKCS#10 CSR (production); may be empty in scaffold
+  DeviceFacts facts = 3;
+}
+
+message EnrollResponse {
+  string device_id = 1;
+  string group_id = 2;
+  bytes  device_certificate = 3; // signed cert (production); empty in scaffold
+  bytes  ca_chain = 4;
+  string session_token = 5;      // scaffold stand-in for the mTLS identity
+  google.protobuf.Timestamp not_after = 6;
+}
+
+message RenewRequest {
+  string device_id = 1;
+  bytes  csr = 2;
+}
+
+// =============================================================================
+// 2. DeviceLink — the long-lived bidirectional control stream.
+// =============================================================================
+service DeviceLink {
+  rpc Connect(stream AgentMessage) returns (stream ServerMessage);
+}
+
+message AgentMessage {
+  string device_id = 1;
+  oneof payload {
+    Heartbeat      heartbeat = 2;
+    CommandResult  result    = 3;
+    Progress       progress  = 4;
+    Event          event     = 5;
+    InventoryDelta inventory = 6;
+    StreamAck      ack       = 7;
+    InventoryReport inventory_report = 8;
+  }
+}
+
+message ServerMessage {
+  oneof payload {
+    CommandEnvelope command = 1;
+    SyncPolicy      sync    = 2;
+    StreamAck       ack     = 3;
+    ServerHello     hello   = 4;
+  }
+}
+
+message ServerHello {
+  int32 heartbeat_interval_seconds = 1;
+  // Latest agent release the server advertises; the agent self-updates if newer
+  // (design §A4 agent lifecycle). Empty = no update advertised.
+  string latest_agent_version = 2;
+  string agent_artifact_id = 3;
+  bytes  agent_sha256 = 4;
+  bool   update_mandatory = 5;
+}
+
+message Heartbeat {
+  string policy_version = 1;     // content hash of applied policy
+  string agent_version = 2;
+  Health health = 3;
+}
+
+message Health {
+  bool   uwf_enabled = 1;
+  int64  overlay_used_bytes = 2;
+  int64  overlay_max_bytes = 3;
+  bool   reboot_pending = 4;
+}
+
+message SyncPolicy { string expected_policy_version = 1; }
+
+message StreamAck { string message_id = 1; }
+
+message Event {
+  string device_id = 1;
+  string type = 2;               // e.g. "install.deferred", "uwf.overlay_critical"
+  string severity = 3;           // info | warn | error
+  string payload_json = 4;
+  google.protobuf.Timestamp ts = 5;
+}
+
+message InventoryDelta { string payload_json = 1; }
+
+// Hardware + software asset inventory (design §10 telemetry).
+message InventoryReport {
+  string hostname = 1;
+  string os_build = 2;
+  string arch = 3;
+  int32  cpu_count = 4;
+  int64  total_memory_bytes = 5;
+  int64  free_disk_bytes = 6;
+  int64  total_disk_bytes = 7;
+  int64  uptime_seconds = 8;
+  string agent_version = 9;
+  bool   uwf_enabled = 10;
+  repeated InstalledApp apps = 11;
+  google.protobuf.Timestamp collected_at = 12;
+}
+message InstalledApp { string name = 1; string version = 2; }
+
+// Specs carried in CommandEnvelope.spec for capability="command" (design §10).
+message ScriptSpec { string interpreter = 1; string script = 2; int32 timeout_seconds = 3; }
+message RestartServicesSpec { repeated string services = 1; }
+
+// OS / feature update control (design §10), capability="update", action=scan|install.
+message UpdateSpec {
+  string ring = 1;                 // immediate | broad | slow
+  int32  deferral_days = 2;
+  bool   include_feature_updates = 3;
+  repeated string kb_allow = 4;    // empty = all applicable
+  repeated string kb_block = 5;
+  RebootPolicy reboot = 6;
+  MaintenanceWindow window = 7;
+}
+message UpdateInfo {
+  string update_id = 1;
+  string title = 2;
+  string kb = 3;
+  int64  size_bytes = 4;
+  bool   reboot_required = 5;
+  bool   is_feature_update = 6;
+}
+message UpdateReport {
+  repeated UpdateInfo available = 1;
+  repeated UpdateInfo installed = 2;
+}
+
+// Imaging / BMR (design §11), capability="image", action=capture|trigger_bmr.
+message ImageSpec {
+  string image_id = 1;
+  string format = 2;               // ffu | wim
+  string wipe_policy = 3;          // full | os_only
+  bytes  sha256 = 4;
+  string model = 5;                // compatibility gate before wipe
+}
+message CaptureSpec {
+  string format = 1;               // ffu | wim
+  string target_drive = 2;
+  string image_id = 3;             // destination artifact id
+  string model = 4;
+}
+
+// ---- Commands ----------------------------------------------------------------
+message CommandEnvelope {
+  string command_id = 1;         // ULID; idempotency key
+  string capability = 2;         // config | app | kiosk | update | command | image
+  string action = 3;            // e.g. install | uninstall | apply_policy | trigger_bmr
+  bytes  spec = 4;               // capability-specific payload (e.g. InstallSpec)
+  int64  not_after_unix = 5;     // command expiry
+  bytes  signature = 6;          // server-signed (production)
+}
+
+message Progress {
+  string command_id = 1;
+  string state = 2;              // matches the install state machine (design §8.4/§8.7)
+  int32  percent = 3;
+  string detail = 4;
+}
+
+message CommandResult {
+  string command_id = 1;
+  string status = 2;             // Succeeded | Failed | RolledBack | InstalledPendingReboot
+  int32  exit_code = 3;
+  string reboot_state = 4;       // none | pending | deferred | rebooted
+  bool   uwf_reenabled = 5;
+  string stdout_tail = 6;
+  repeated ConfigResult config_results = 7;
+}
+
+message ConfigResult {
+  string task_id = 1;
+  bool   applied = 2;
+  bool   verified = 3;
+  string detail = 4;
+}
+
+// =============================================================================
+// Shadow — remote assist (design §10). Agent streams framebuffer frames after
+// on-device consent; server may stream back control (stop). mTLS only.
+// =============================================================================
+service Shadow {
+  rpc Stream(stream ShadowFrame) returns (stream ShadowControl);
+}
+message ShadowFrame {
+  string device_id = 1;
+  string session_id = 2;
+  int64  seq = 3;
+  int32  width = 4;
+  int32  height = 5;
+  string mime = 6;
+  bytes  data = 7;
+  bool   last = 8;
+}
+message ShadowControl { bool stop = 1; }
+
+// =============================================================================
+// 3. Transfer — chunked, resumable artifact movement (packages, images, logs).
+// =============================================================================
+service Transfer {
+  rpc Download(DownloadRequest) returns (stream Chunk);
+  rpc Upload(stream Chunk) returns (UploadResult);
+}
+
+message DownloadRequest {
+  string artifact_id = 1;
+  int64  offset = 2;             // resume support
+}
+
+message Chunk {
+  string transfer_id = 1;
+  int64  offset = 2;
+  bytes  data = 3;
+  bytes  sha256 = 4;             // per-chunk hash
+  bool   last = 5;
+}
+
+message UploadResult {
+  string artifact_id = 1;
+  int64  total_bytes = 2;
+  bytes  sha256 = 3;             // whole-artifact hash
+}
+
+// =============================================================================
+// App-deployment spec (design §8). Carried as CommandEnvelope.spec when
+// capability="app" and action="install".
+// =============================================================================
+message InstallSpec {
+  string app_id = 1;
+  string version = 2;
+  Installer installer = 3;
+  repeated DetectionRule detect = 4;
+  repeated Applicability applies_if = 5;
+  repeated ConfigTask config = 6;
+  Delivery delivery = 7;
+  DeferPolicy defer = 8;
+  RebootPolicy reboot = 9;
+  UwfPolicy uwf = 10;
+  repeated string depends_on = 11;
+}
+
+message Installer {
+  string type = 1;               // msi | exe | msix | script
+  string artifact_id = 2;
+  bytes  sha256 = 3;
+  string install_cmd = 4;
+  string uninstall_cmd = 5;
+  repeated int32 valid_exit_codes = 6;   // e.g. 0, 1641, 3010
+}
+
+message DetectionRule {
+  string kind = 1;               // file_version | msi_product | registry | msix_family
+  string key = 2;
+  string op = 3;                 // exists | eq | gte
+  string value = 4;
+}
+
+message Applicability {
+  string os_build_min = 1;
+  string arch = 2;
+  string model = 3;
+}
+
+message ConfigTask {
+  string task_id = 1;
+  string kind = 2;               // registry | file | app_config | command | profile
+  string apply_payload_json = 3;
+  DetectionRule verify = 4;      // must pass for the task to count as applied
+}
+
+message Delivery {
+  string mode = 1;               // immediate | scheduled | maintenance_window
+  google.protobuf.Timestamp not_before = 2;
+  MaintenanceWindow window = 3;
+  google.protobuf.Timestamp deadline = 4;
+}
+
+message MaintenanceWindow {
+  repeated int32 days = 1;       // 0=Sun..6=Sat
+  string start_local = 2;        // "HH:mm"
+  string end_local = 3;
+  string tz = 4;                 // IANA tz; empty = device local
+}
+
+message DeferPolicy {
+  bool   allow_defer = 1;
+  int32  max_count = 2;
+  int32  max_total_seconds = 3;  // wall-clock cap from first-eligible
+  int32  snooze_step_seconds = 4;
+  string prompt_text = 5;
+}
+
+message RebootPolicy {
+  bool   required = 1;
+  bool   force = 2;              // reboot immediately on 3010/1641
+  bool   allow_defer = 3;
+  int32  max_total_seconds = 4;  // reboot deferral cap
+  repeated string restart_services = 5;  // bounce these instead of full reboot when sufficient
+}
+
+message UwfPolicy {
+  string strategy = 1;           // hybrid | always_disable | commit_only
+  repeated string committable_paths = 2; // paths safe to CommitFile live
+}
+
+// =============================================================================
+// Configuration / manageability settings (design §7, §9).
+//
+// The server computes the effective desired state per device as a PolicySnapshot
+// of typed profiles. Delivery: the server pushes ServerMessage.SyncPolicy when a
+// device's heartbeat policy_version differs from expected; the agent then pulls
+// the snapshot via PolicyService.GetPolicy and reconciles (apply only drift).
+// =============================================================================
+service PolicyService {
+  rpc GetPolicy(GetPolicyRequest) returns (PolicySnapshot);
+}
+
+message GetPolicyRequest { string device_id = 1; }
+
+message PolicySnapshot {
+  string version = 1;            // monotonic version
+  string content_hash = 2;       // hash the agent reports back once applied
+  repeated ConfigProfile profiles = 3;
+}
+
+message ConfigProfile {
+  string profile_id = 1;
+  oneof body {
+    RegistryProfile       registry  = 2;
+    UwfProfile2           uwf       = 3;
+    KioskProfile          kiosk     = 4;
+    NetworkProfile        network   = 5;
+    PowerProfile          power     = 6;
+    TimeProfile           time      = 7;
+    CertProfile           certs     = 8;
+    AppLockerProfile      applocker = 9;
+    KeyboardFilterProfile keyfilter = 10;
+  }
+}
+
+message RegistryProfile { repeated RegValue values = 1; }
+message RegValue {
+  string hive = 1;               // HKLM | HKCU
+  string path = 2;
+  string name = 3;
+  string type = 4;               // dword | qword | sz | expand_sz | multi_sz | binary
+  string data = 5;               // string form; appliers parse per type
+  bool   delete = 6;             // delete the value instead of writing
+}
+
+// Manageability-profile UWF settings (distinct from the per-install app UwfPolicy).
+message UwfProfile2 {
+  bool   enabled = 1;
+  repeated string file_exclusions = 2;
+  repeated string reg_exclusions = 3;
+  int64  overlay_warn_bytes = 4;
+}
+
+message KioskProfile {
+  string mode = 1;               // shell_launcher | assigned_access_single | assigned_access_multi
+  string shell_exe = 2;          // for shell_launcher
+  string auto_logon_user = 3;
+  string assigned_access_xml = 4;// AssignedAccess CSP configuration XML
+}
+
+message NetworkProfile { repeated WlanProfile wifi = 1; }
+message WlanProfile {
+  string ssid = 1;
+  string auth = 2;               // open | wpa2psk | wpa3 | enterprise
+  string profile_xml = 3;        // Native WiFi profile XML (secrets encrypted in transit)
+}
+
+message PowerProfile { string plan_guid = 1; int32 sleep_minutes = 2; }
+message TimeProfile  { string ntp_server = 1; string timezone = 2; }
+
+message CertProfile { repeated CertEntry certs = 1; }
+message CertEntry {
+  string store = 1;              // Root | CA | My
+  string base64_der = 2;
+}
+
+message AppLockerProfile { string policy_xml = 1; }
+
+message KeyboardFilterProfile {
+  repeated string blocked_keys = 1; // e.g. "Ctrl+Alt+Del", "Win+R"
+  bool disable_breakout = 2;
+}

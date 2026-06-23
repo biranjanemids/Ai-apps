@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  # ---- Gating job: cross-platform build + unit tests (Linux) ----
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Restore
+        run: dotnet restore Ltsc.sln
+      - name: Build
+        run: dotnet build Ltsc.sln -c Release --no-restore
+      - name: Test
+        run: dotnet test Ltsc.sln -c Release --no-build --logger "trx;LogFileName=test.trx"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: "**/*.trx"
+          if-no-files-found: ignore
+
+  # ---- Integration smoke: server + agent over mTLS against Postgres + Redis ----
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_DB: ltsc, POSTGRES_USER: ltsc, POSTGRES_PASSWORD: ltsc }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ltsc" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      Ltsc__Postgres: "Host=localhost;Port=5432;Database=ltsc;Username=ltsc;Password=ltsc"
+      Ltsc__Redis: "localhost:6379"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Build
+        run: dotnet build Ltsc.sln -c Release
+      - name: Server + agent end-to-end (Postgres + Redis)
+        run: bash scripts/ci-integration.sh
+
+  # ---- Docker image builds (validates the server Dockerfile) ----
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build server image
+        run: docker build -f src/Ltsc.Server/Dockerfile -t ltsc-mgmtserver:ci .
+
+  # ---- Windows: full solution incl net8.0-windows interop, tests, agent package + MSI ----
+  # Informational (continue-on-error) because the WMI/UWF/DISM interop is validated
+  # on real LTSC hardware, not in CI; failures here surface in logs without blocking.
+  windows:
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Build solution (incl. net8.0-windows interop)
+        run: dotnet build Ltsc.sln -c Release
+
+      - name: Test
+        run: dotnet test Ltsc.sln -c Release --no-build
+
+      - name: Publish agent (win-x64, self-contained)
+        shell: pwsh
+        run: |
+          dotnet publish src/Ltsc.Agent/Ltsc.Agent.csproj -c Release -f net8.0-windows -r win-x64 `
+            --self-contained true -p:PublishSingleFile=true -p:Version=0.2.0 `
+            -o artifacts/agent-0.2.0-win-x64
+          Compress-Archive -Path artifacts/agent-0.2.0-win-x64/* -DestinationPath artifacts/agent-0.2.0-win-x64.zip -Force
+
+      - name: Build MSI (WiX v4)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix
+          wix extension add -g WixToolset.Util.wixext
+          wix build deploy/packaging/agent.wxs `
+            -ext WixToolset.Util.wixext `
+            -d PublishDir=artifacts/agent-0.2.0-win-x64 `
+            -o artifacts/LtscAgent.msi
+
+      - name: Code-sign MSI (only if a signing cert secret is configured)
+        continue-on-error: true
+        if: ${{ env.SIGNING_PFX_BASE64 != '' }}
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.SIGNING_PFX_PASSWORD }}
+        run: |
+          [IO.File]::WriteAllBytes("cert.pfx", [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+          & "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" sign `
+            /f cert.pfx /p $env:SIGNING_PFX_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 `
+            artifacts/LtscAgent.msi
+
+      - name: Upload agent package + MSI
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-windows
+          path: |
+            artifacts/agent-0.2.0-win-x64.zip
+            artifacts/LtscAgent.msi
+          if-no-files-found: ignore

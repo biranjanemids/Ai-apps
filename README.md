@@ -1,2 +1,174 @@
-# Ai-apps
-Ai-apps
+# Ai-apps — Windows LTSC remote management agent + server
+
+A devicemanagment system for managing Windows IoT Enterprise LTSC
+thin clients from a central server. See the full low-level design in
+[`docs/windows-ltsc-agent-design.md`](docs/windows-ltsc-agent-design.md).
+
+This repository contains a runnable gRPC server and agent covering two
+capabilities end-to-end: the **App-deployment install state machine** (design §8)
+and the **config / manageability reconcile loop** (design §7/§9) —
+enroll → stream → heartbeat → command/policy → apply → status reporting.
+
+> **Build status:** builds clean with the .NET 8 SDK, 16/16 tests pass, and the
+> demo below runs end-to-end on Linux **over mTLS**: CSR-based enrollment issues
+> a CA-signed device certificate, the agent pins the CA, commands are
+> server-signed and verified before execution, artifacts are SHA-256-verified
+> before install, config reconciles idempotently, and the fleet survives a
+> server restart (SQLite). Negative paths verified: plain HTTP refused, invalid
+> enrollment token rejected, tampered command/artifact rejected.
+
+## Layout
+
+```
+proto/                     gRPC contract (ltsc.mgmt.v1): Enrollment, DeviceLink, Transfer, InstallSpec
+src/Ltsc.Contracts/        Shared generated stubs (GrpcServices=Both)
+src/Ltsc.Server/           ASP.NET Core gRPC server (in-process control plane)
+src/Ltsc.Agent/            .NET worker / Windows service agent
+  Comm/CommChannel.cs        enrollment + DeviceLink bidi stream + outbox + policy pull
+  Orchestrator.cs            routes commands/policy to modules, reports results (IModuleContext)
+  Modules/AppModule.cs       App-deployment install state machine (design §8)
+  Modules/ConfigModule.cs    config/manageability reconcile loop (design §7/§9)
+  Platform/                  Windows behaviors behind interfaces + cross-platform stubs
+  Platform/Windows/          real WMI/registry/UWF interop (net8.0-windows only)
+  Storage/LocalStore.cs      SQLite identity + resumable install jobs + applied policy version
+deploy/                    docker-compose, server Dockerfile
+```
+
+The Windows-only behaviors (UWF/WMI, registry, msiexec/DISM, WTS session UI) sit
+behind interfaces in `src/Ltsc.Agent/Platform/` with **cross-platform stubs**, so
+the agent builds, tests, and demos on Linux/macOS. The **real Windows
+implementations** live in `src/Ltsc.Agent/Platform/Windows/` and are compiled only
+for the `net8.0-windows` target (built on Windows / the windows CI leg, selected
+at runtime via `OperatingSystem.IsWindows()`).
+
+## Configuration you can apply (ConfigModule)
+
+The server ships a versioned `PolicySnapshot` of typed profiles; the agent pulls
+it on a `SyncPolicy` signal and reconciles desired-state (applies only drift,
+idempotent, UWF-bracketed for persistent writes). Profile types: **registry,
+UWF write-filter, kiosk (Shell Launcher / Assigned Access), Wi-Fi, power, time/
+NTP, certificates, AppLocker, keyboard filter**. The applied policy hash is
+reported in heartbeats so the server can detect drift and re-trigger reconcile.
+
+## Run the demo (two terminals)
+
+```bash
+# 1) Server — gRPC over h2c on :8080
+dotnet run --project src/Ltsc.Server
+
+# 2) Agent — enrolls, opens the stream, heartbeats; server pushes a demo install
+dotnet run --project src/Ltsc.Agent
+```
+
+Expected, on the server log:
+- **Config reconcile** — `GetPolicy` (3 profiles) then per-profile progress
+  `Registry → Uwf → Kiosk` → `Reconciled (3 applied)` → `Succeeded`; a second
+  pass reports every profile `in desired state` / `no drift` (idempotent).
+- **App install** — `Progress` stages
+  (`Scheduled → PreCheck → EnterServicing → Downloading → Installing →
+  ConfiguringApp → Verifying → ExitServicing → PendingReboot → PostRebootVerify`)
+  then the terminal `CommandResult`. The stub installer returns `3010`, so you see
+  the `InstalledPendingReboot` interim status and the separate reboot handling.
+
+## Capabilities (implemented)
+
+- **App deployment** (`AppModule`) — scheduling, user deferral, reboot policy,
+  UWF-bracketed install, verified artifact download, config-verify, status.
+- **Config / manageability** (`ConfigModule`) — desired-state reconcile of
+  registry, UWF, kiosk, network, power, time, certs, AppLocker, keyboard filter.
+- **Inventory** (`InventoryModule`) — hardware + OS asset report (cross-platform,
+  real data) at startup and on demand; viewable at `/api/devices/{id}/inventory`.
+- **Remote commands** (`CommandModule`) — `reboot`, `shutdown`, `restart_services`,
+  `run_script`, `collect_logs`, `wake` (WoL). Power actions are gated behind
+  `LTSC_ALLOW_POWER=1` so demo/CI hosts are safe.
+- **OS update** (`UpdateModule`) — scan / install with ring, KB allow/block,
+  feature-update gating, UWF-bracketed install, and reboot deferral (WUA COM on
+  Windows; cross-platform simulated otherwise).
+- **Imaging / BMR** (`ImageModule`) — disk **capture** (FFU/WIM) + upload, and
+  **trigger_bmr** state machine (compat gate → Pulling verified download →
+  Applying → Sealing → Rejoining → Done). DISM/WinPE on Windows; simulated otherwise.
+- **Remote shadow** (`ShadowModule`) — **on-device consent** gate, then frame
+  streaming over the `Shadow` gRPC stream; session status at
+  `/api/devices/{id}/shadow`, audited. Real screen capture is the Windows piece.
+
+- **Agent self-update** — the server advertises the latest agent version in
+  `ServerHello` (`Ltsc:AgentRelease:Version`); a device on an older version
+  downloads the package (hash-verified) and applies it (`msiexec` on Windows).
+  Packaging: `deploy/packaging/build-agent-package.sh` (win-x64 payload) + WiX
+  `agent.wxs` for the signed MSI.
+- **Admin console SPA** (`/console`) — token login, live fleet table, per-device
+  tabs (overview / inventory / command history / shadow / policy editor / audit),
+  and role-gated action buttons. Vanilla JS served inline, no build step.
+
+Issue any of these from the console: `POST /api/devices/{id}/command?action=...`
+(`reboot|shutdown|collect|collect_logs|restart_services|update_scan|update_install|capture|trigger_bmr|shadow`)
+— signed + pushed; results at `/api/devices/{id}/commands`.
+
+See [`docs/COMPETITIVE-ANALYSIS.md`](docs/COMPETITIVE-ANALYSIS.md) for the feature
+parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intune.
+
+## Security model (implemented)
+
+- **mTLS everywhere** — TLS-only Kestrel (:8443); enrollment is the single
+  anonymous RPC: agent submits a PKCS#10 CSR + group token, the internal CA
+  (`src/Ltsc.Server/Ca/CertAuthority.cs`) signs a 90-day device cert; every
+  other RPC requires a CA-chained client certificate (`DeviceAuth`).
+- **CA pinning** — the agent stores the CA from enrollment and validates the
+  server against it (TOFU only for the bootstrap enrollment call).
+- **Command signing** — every `CommandEnvelope` is ECDSA-signed by the CA key
+  (`src/Ltsc.Contracts/CommandSigning.cs`); the agent rejects unsigned or
+  tampered commands before dispatch.
+- **Artifact integrity** — downloads verify per-chunk and whole-file SHA-256
+  against the hash in the signed install spec; mismatch fails the install
+  closed, the installer never runs.
+- **RBAC + OIDC** — bearer-token roles (Viewer/Operator/Admin) enforced on every
+  console API (`AdminAuth`); accepts static tokens (`Ltsc:AdminTokens`) **or**
+  OIDC-style HS256 JWTs (`Ltsc:Oidc:Secret`) carrying `role`/`tenant` claims.
+- **Certificate revocation (CRL)** — `POST /api/devices/{id}/revoke` (Admin) adds
+  the device cert to a persisted revocation list; the device is locked out on its
+  next mTLS call and stays out across restarts.
+- **Alerting** — a rule engine raises tenant-scoped alerts from device signals
+  (overlay-critical, command failure, error events, revocation); feed at
+  `/api/alerts` and the console **Alerts** tab.
+- **Predictive fleet health** — a transparent 0–100 risk score per device from its
+  telemetry (disk-exhaustion, UWF overlay pressure, reachability, repeated
+  failures) with human-readable risk reasons; `GET /api/devices/{id}/health`,
+  fleet rollup `GET /api/health`, shown in the console device overview. Triage
+  at-risk devices before they fail.
+- **AI ops copilot** — natural language → typed fleet action plan
+  (`POST /api/ops/ask`, console **Ops Copilot** tab): targets by health/online/
+  group/drift, plans (dry-run) then runs; deterministic translator, LLM-pluggable.
+- **Zero-trust continuous posture** — each heartbeat re-proves UWF-on + in-policy +
+  healthy; violations quarantine the device and alert (`GET /api/devices/{id}/posture`).
+- **Carbon-aware scheduling** — defer deferrable ops to the low-carbon window
+  (`?whenGreen=true`, `GET /api/carbon`).
+- **Digital-twin what-if** — `POST /api/groups/{group}/policy/simulate` shows a
+  proposed policy's blast radius (added/removed/changed profiles, reboot, device count)
+  before applying.
+- **Audit log** — every enrollment, command dispatch, and policy change is
+  persisted (`/api/audit`, Admin-only) and survives restarts.
+- **Authored policy** — Admins GET/POST a group's `PolicySnapshot` JSON at
+  `/api/groups/{group}/policy`; saving re-versions it and pushes `SyncPolicy` to
+  online devices in the group, which re-reconcile.
+
+## Honest gaps that remain before production
+
+- **Windows-device validation** — the `net8.0-windows` WMI/registry/UWF
+  appliers compile but have never executed on real LTSC hardware; the full UWF
+  disable→reboot→re-enable servicing cycle still needs wiring + a device lab.
+- **Key storage** — device private key persists as PFX in SQLite; on Windows it
+  belongs in TPM/CNG. CA key belongs in an HSM. No revocation (CRL/OCSP) yet.
+- **Scale** — set `Ltsc:Postgres` for shared durable state (multi-node) and
+  `Ltsc:Redis` for fleet-wide presence + cross-node command routing; unset both
+  for single-node SQLite + in-process routing. Multi-replica deploy via the Helm
+  chart in `deploy/helm/ltsc-mgmtserver` (scale `replicaCount`); all replicas
+  share Postgres + Redis. Multi-tenant isolation is enforced across devices,
+  policy, audit, alerts, and the app catalog.
+- **USB imaging media** — `POST /api/images/{id}/usb` returns the payload manifest;
+  `deploy/packaging/build-usb-media.sh` materializes the offline USB payload
+  (FFU image + first-boot enrollment seed) for WinPE assembly (design §11.2).
+- **Capabilities still open** — real Windows installer execution/detection,
+  remote shadow, USB imaging media builder + WinPE RecoveryAgent, agent MSI
+  packaging/code-signing/self-update, RBAC + audit. (App deploy, config/kiosk,
+  inventory, remote commands, OS update, and network BMR are built — logic
+  tested with stubs, pending Windows-hardware validation.)

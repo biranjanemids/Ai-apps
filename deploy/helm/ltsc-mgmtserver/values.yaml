@@ -1,0 +1,27 @@
+# Multi-node: scale `replicaCount` freely — all replicas share state via PostgreSQL
+# and presence/command routing via Redis (design §12.2/§12.3). The agent's mTLS
+# stream can land on any replica; commands route cross-replica through Redis.
+replicaCount: 3
+
+image:
+  repository: ltsc-mgmtserver
+  tag: "0.2.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: LoadBalancer
+  port: 8443
+
+# Shared backends (point at managed services or in-cluster charts).
+postgres: "Host=postgres;Port=5432;Database=ltsc;Username=ltsc;Password=ltsc"
+redis: "redis:6379"
+
+# Latest agent release advertised in ServerHello for self-update.
+agentReleaseVersion: "0.2.0"
+
+# Optional OIDC HS256 secret for console JWT auth (else static tokens only).
+oidcSecret: ""
+
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { cpu: "1", memory: 512Mi }
