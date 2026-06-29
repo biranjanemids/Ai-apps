@@ -1,8 +1,11 @@
 import { searchAmazon } from '../../platforms/amazon.js';
 import { searchFlipkart } from '../../platforms/flipkart.js';
 import { searchMyntra } from '../../platforms/myntra.js';
+import { searchMeesho } from '../../platforms/meesho.js';
+import { searchNykaa } from '../../platforms/nykaa.js';
+import { searchAjio } from '../../platforms/ajio.js';
 import { getCache, setCache, cacheKey } from '../../platforms/cache.js';
-import { Product, SearchParams } from '../../types/index.js';
+import { Product, SearchParams, Platform } from '../../types/index.js';
 
 // Value score: balances rating quality vs price — higher is better deal
 function valueScore(p: Product): number {
@@ -28,13 +31,17 @@ export async function searchProducts(params: SearchParams): Promise<{
   cheapestPlatform?: string;
   bestValuePlatform?: string;
 }> {
-  const platforms = params.platforms ?? ['amazon', 'flipkart', 'myntra'];
+  const platforms: Platform[] = params.platforms ?? ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'];
 
   const platformSearches = [
     { name: 'amazon',   fn: () => searchAmazon(params) },
     { name: 'flipkart', fn: () => searchFlipkart(params) },
     { name: 'myntra',   fn: () => searchMyntra(params) },
-  ].filter((p) => platforms.includes(p.name as 'amazon' | 'flipkart' | 'myntra'));
+    { name: 'meesho',   fn: () => searchMeesho(params) },
+    { name: 'nykaa',    fn: () => searchNykaa(params) },
+    { name: 'ajio',     fn: () => searchAjio(params) },
+  ].filter((p) => platforms.includes(p.name as Platform));
+
 
   const searches = await Promise.allSettled(
     platformSearches.map(async ({ name, fn }) => {

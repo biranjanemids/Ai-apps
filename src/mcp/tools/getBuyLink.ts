@@ -1,6 +1,9 @@
 import { getAmazonProduct } from '../../platforms/amazon.js';
 import { getFlipkartProduct } from '../../platforms/flipkart.js';
 import { getMyntraProduct } from '../../platforms/myntra.js';
+import { getMeeshoProduct } from '../../platforms/meesho.js';
+import { getNykaaProduct } from '../../platforms/nykaa.js';
+import { getAjioProduct } from '../../platforms/ajio.js';
 import { getMockProduct } from '../../platforms/mock.js';
 
 export interface BuyLinkResult {
@@ -9,26 +12,38 @@ export interface BuyLinkResult {
   title: string;
   price: number;
   imageUrl: string;
-  productUrl: string;      // product detail page
-  checkoutUrl: string;     // direct add-to-cart / buy-now URL
+  productUrl: string;
+  checkoutUrl: string;
 }
 
 function buildAmazonCheckoutUrl(asin: string): string {
-  // Add to cart and redirect straight to checkout
   return `https://www.amazon.in/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`;
 }
 
 function buildFlipkartCheckoutUrl(productUrl: string, pid: string): string {
-  // Flipkart buy-now deep link — appending affid for tracking + direct buy
   const base = productUrl.split('?')[0];
   return `${base}?param=buyNow&pid=${pid}`;
 }
 
 function buildMyntraCheckoutUrl(productUrl: string, productId: string): string {
-  // Myntra buy URLs already contain /buy — normalise
   const clean = productUrl.replace(/\?.*$/, '');
   if (clean.endsWith('/buy')) return clean;
   return `https://www.myntra.com/${productId}/buy`;
+}
+
+// Meesho: direct product page (no cart API; user completes on site)
+function buildMeeshoCheckoutUrl(productUrl: string): string {
+  return productUrl;
+}
+
+// Nykaa: add to cart redirect
+function buildNykaaCheckoutUrl(productId: string, productUrl: string): string {
+  return `https://www.nykaa.com/checkout/cart/add?productId=${productId}&skuId=${productId}` || productUrl;
+}
+
+// Ajio: add to bag redirect
+function buildAjioCheckoutUrl(productUrl: string): string {
+  return productUrl;
 }
 
 export async function getBuyLink(
@@ -46,8 +61,7 @@ export async function getBuyLink(
 
     switch (platform) {
       case 'amazon': {
-        const product = await getAmazonProduct(productId);
-        const p = product ?? fallback;
+        const p = (await getAmazonProduct(productId)) ?? fallback;
         title = p?.title ?? title;
         price = p?.price ?? price;
         imageUrl = p?.imageUrl ?? imageUrl;
@@ -56,8 +70,7 @@ export async function getBuyLink(
         break;
       }
       case 'flipkart': {
-        const product = await getFlipkartProduct(productId);
-        const p = product ?? fallback;
+        const p = (await getFlipkartProduct(productId)) ?? fallback;
         title = p?.title ?? title;
         price = p?.price ?? price;
         imageUrl = p?.imageUrl ?? imageUrl;
@@ -66,8 +79,7 @@ export async function getBuyLink(
         break;
       }
       case 'myntra': {
-        const product = await getMyntraProduct(productId);
-        const p = product ?? fallback;
+        const p = (await getMyntraProduct(productId)) ?? fallback;
         title = p?.title ?? title;
         price = p?.price ?? price;
         imageUrl = p?.imageUrl ?? imageUrl;
@@ -75,9 +87,36 @@ export async function getBuyLink(
         checkoutUrl = buildMyntraCheckoutUrl(productUrl, productId);
         break;
       }
+      case 'meesho': {
+        const p = (await getMeeshoProduct(productId)) ?? fallback;
+        title = p?.title ?? title;
+        price = p?.price ?? price;
+        imageUrl = p?.imageUrl ?? imageUrl;
+        productUrl = p?.productUrl ?? `https://www.meesho.com/product/p/${productId}`;
+        checkoutUrl = buildMeeshoCheckoutUrl(productUrl);
+        break;
+      }
+      case 'nykaa': {
+        const p = (await getNykaaProduct(productId)) ?? fallback;
+        title = p?.title ?? title;
+        price = p?.price ?? price;
+        imageUrl = p?.imageUrl ?? imageUrl;
+        productUrl = p?.productUrl ?? `https://www.nykaa.com/product/p/${productId}`;
+        checkoutUrl = buildNykaaCheckoutUrl(productId, productUrl);
+        break;
+      }
+      case 'ajio': {
+        const p = (await getAjioProduct(productId)) ?? fallback;
+        title = p?.title ?? title;
+        price = p?.price ?? price;
+        imageUrl = p?.imageUrl ?? imageUrl;
+        productUrl = p?.productUrl ?? `https://www.ajio.com/p/${productId}`;
+        checkoutUrl = buildAjioCheckoutUrl(productUrl);
+        break;
+      }
       default:
-        productUrl = '';
-        checkoutUrl = '';
+        productUrl = fallback?.productUrl ?? '';
+        checkoutUrl = productUrl;
     }
 
     return { platform, productId, title, price, imageUrl, productUrl, checkoutUrl };
@@ -101,6 +140,7 @@ function buildCheckoutFallback(platform: string, productId: string, productUrl: 
     case 'amazon':   return buildAmazonCheckoutUrl(productId);
     case 'flipkart': return buildFlipkartCheckoutUrl(productUrl, productId);
     case 'myntra':   return buildMyntraCheckoutUrl(productUrl, productId);
+    case 'nykaa':    return buildNykaaCheckoutUrl(productId, productUrl);
     default:         return productUrl;
   }
 }

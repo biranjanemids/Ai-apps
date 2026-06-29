@@ -6,6 +6,9 @@ const PLATFORM_EMOJI: Record<string, string> = {
   amazon: '🛒',
   flipkart: '🛍',
   myntra: '👗',
+  meesho: '🏷️',
+  nykaa: '💄',
+  ajio: '👔',
 };
 
 function discountTag(product: Product): string {

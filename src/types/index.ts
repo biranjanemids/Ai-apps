@@ -1,4 +1,4 @@
-export type Platform = 'amazon' | 'flipkart' | 'myntra';
+export type Platform = 'amazon' | 'flipkart' | 'myntra' | 'meesho' | 'nykaa' | 'ajio';
 
 export interface Product {
   id: string;
