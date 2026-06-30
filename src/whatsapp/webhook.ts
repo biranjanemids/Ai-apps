@@ -3,6 +3,7 @@ import { processMessage } from '../agent/claudeAgent.js';
 import { sendTextMessage, markAsRead } from './client.js';
 import { sendOrderSummary, sendCheckoutLink } from './interactiveMessages.js';
 import { getBuyLink } from '../mcp/tools/getBuyLink.js';
+import { Platform } from '../types/index.js';
 import {
   getSearchResults,
   getBuyIntent,
@@ -113,7 +114,7 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
       setBuyIntent(from, {
         product: {
           id: linkResult.productId,
-          platform: platform as 'amazon' | 'flipkart' | 'myntra',
+          platform: platform as Platform,
           title: linkResult.title,
           price: linkResult.price,
           currency: 'INR',

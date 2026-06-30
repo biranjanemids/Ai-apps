@@ -10,6 +10,7 @@ import { searchProducts } from './tools/searchProducts.js';
 import { compareProducts } from './tools/compareProducts.js';
 import { getProductDetails } from './tools/getProductDetails.js';
 import { getBuyLink } from './tools/getBuyLink.js';
+import { Platform } from '../types/index.js';
 
 dotenv.config();
 
@@ -23,7 +24,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'search_products',
       description:
-        'Search for products across Amazon, Flipkart, and Myntra. Returns top results from each platform sorted by rating.',
+        'Search for products across Amazon, Flipkart, Myntra, Meesho, Nykaa, and Ajio. Returns top results from each platform ranked by a value score combining rating, price, and discount.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -45,8 +46,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           platforms: {
             type: 'array',
-            items: { type: 'string', enum: ['amazon', 'flipkart', 'myntra'] },
-            description: 'Platforms to search (default: all three)',
+            items: { type: 'string', enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'] },
+            description: 'Platforms to search (default: all six)',
           },
         },
         required: ['query'],
@@ -67,7 +68,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 productId: { type: 'string', description: 'Product ID' },
                 platform: {
                   type: 'string',
-                  enum: ['amazon', 'flipkart', 'myntra'],
+                  enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'],
                   description: 'Platform the product is from',
                 },
               },
@@ -89,7 +90,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           productId: { type: 'string', description: 'Product ID' },
           platform: {
             type: 'string',
-            enum: ['amazon', 'flipkart', 'myntra'],
+            enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'],
             description: 'Platform the product is from',
           },
         },
@@ -105,7 +106,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           productId: { type: 'string', description: 'Product ID' },
           platform: {
             type: 'string',
-            enum: ['amazon', 'flipkart', 'myntra'],
+            enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'],
             description: 'Platform the product is from',
           },
         },
@@ -126,7 +127,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           minPrice: args['minPrice'] as number | undefined,
           maxPrice: args['maxPrice'] as number | undefined,
           category: args['category'] as string | undefined,
-          platforms: args['platforms'] as ('amazon' | 'flipkart' | 'myntra')[] | undefined,
+          platforms: args['platforms'] as Platform[] | undefined,
         });
         return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
       }
