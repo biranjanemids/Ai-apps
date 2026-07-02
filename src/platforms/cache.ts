@@ -1,6 +1,7 @@
 import { Product } from '../types/index.js';
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const MAX_ENTRIES = 500;
 
 interface CacheEntry {
   products: Product[];
@@ -29,8 +30,21 @@ export function getCache(key: string): Product[] | null {
 }
 
 export function setCache(key: string, products: Product[]): void {
+  // Evict oldest entry when full so unique queries can't grow the map unbounded
+  if (store.size >= MAX_ENTRIES && !store.has(key)) {
+    const oldest = store.keys().next().value;
+    if (oldest !== undefined) store.delete(oldest);
+  }
   store.set(key, { products, cachedAt: Date.now() });
 }
+
+// Sweep expired entries so memory is reclaimed even for keys never read again
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of store.entries()) {
+    if (now - entry.cachedAt > CACHE_TTL_MS) store.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
 
 export function cacheStats(): { entries: number; oldestMs: number } {
   const now = Date.now();

@@ -86,7 +86,7 @@ export function clearSession(userId: string): void {
   sessions.delete(userId);
 }
 
-// Clean up expired sessions every 5 minutes
+// Clean up expired sessions every 5 minutes (unref'd so it never blocks exit)
 setInterval(() => {
   const now = Date.now();
   for (const [userId, session] of sessions.entries()) {
@@ -94,4 +94,4 @@ setInterval(() => {
       sessions.delete(userId);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();

@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { processMessage } from '../agent/claudeAgent.js';
 import { sendTextMessage, markAsRead } from './client.js';
@@ -13,6 +14,76 @@ import {
 } from '../agent/sessionManager.js';
 
 export const webhookRouter = Router();
+
+// ── Security: verify Meta's X-Hub-Signature-256 HMAC ─────────────────────────
+// Requires WHATSAPP_APP_SECRET (Meta App Dashboard → Settings → Basic).
+// If unset, verification is skipped — index.ts refuses to start in production.
+
+function verifySignature(req: Request): boolean {
+  const appSecret = process.env.WHATSAPP_APP_SECRET;
+  if (!appSecret) return true;
+
+  const signature = req.header('x-hub-signature-256') ?? '';
+  const rawBody = (req as Request & { rawBody?: Buffer }).rawBody;
+  if (!signature || !rawBody) return false;
+
+  const expected =
+    'sha256=' + crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
+  try {
+    return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+  } catch {
+    return false; // length mismatch
+  }
+}
+
+// ── Reliability: dedupe Meta's webhook redeliveries ───────────────────────────
+
+const DEDUP_TTL_MS = 10 * 60 * 1000;
+const MAX_DEDUP_ENTRIES = 5000;
+const processedMessages = new Map<string, number>();
+
+function isDuplicate(messageId: string): boolean {
+  const now = Date.now();
+  if (processedMessages.has(messageId)) return true;
+  processedMessages.set(messageId, now);
+  if (processedMessages.size > MAX_DEDUP_ENTRIES) {
+    for (const [id, ts] of processedMessages) {
+      if (now - ts > DEDUP_TTL_MS) processedMessages.delete(id);
+    }
+  }
+  return false;
+}
+
+// ── Abuse protection: per-user sliding-window rate limit ─────────────────────
+
+const RATE_LIMIT = 10; // messages per window
+const RATE_WINDOW_MS = 60 * 1000;
+const userTimestamps = new Map<string, number[]>();
+
+// Returns how many messages this user has sent within the current window
+function recordMessage(userId: string): number {
+  const now = Date.now();
+  const recent = (userTimestamps.get(userId) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+  recent.push(now);
+  userTimestamps.set(userId, recent);
+  return recent.length;
+}
+
+// ── Consistency: serialize processing per user ────────────────────────────────
+// Two rapid messages from the same user must not interleave session state.
+
+const userQueues = new Map<string, Promise<void>>();
+
+function enqueueForUser(userId: string, task: () => Promise<void>): void {
+  const prev = userQueues.get(userId) ?? Promise.resolve();
+  const next = prev.then(task).catch((err) => {
+    console.error(`[Webhook] Task failed for ${userId}:`, err);
+  });
+  userQueues.set(userId, next);
+  void next.finally(() => {
+    if (userQueues.get(userId) === next) userQueues.delete(userId);
+  });
+}
 
 // GET /webhook — Meta webhook verification challenge
 webhookRouter.get('/', (req: Request, res: Response) => {
@@ -30,7 +101,13 @@ webhookRouter.get('/', (req: Request, res: Response) => {
 });
 
 // POST /webhook — Incoming WhatsApp messages
-webhookRouter.post('/', async (req: Request, res: Response) => {
+webhookRouter.post('/', (req: Request, res: Response) => {
+  if (!verifySignature(req)) {
+    console.warn('[Webhook] Signature verification failed — rejecting request');
+    res.sendStatus(403);
+    return;
+  }
+
   // Respond 200 immediately so Meta doesn't retry
   res.sendStatus(200);
 
@@ -46,48 +123,76 @@ webhookRouter.post('/', async (req: Request, res: Response) => {
         for (const message of value.messages) {
           const from: string = message.from;
           const messageId: string = message.id;
+          if (!from || !messageId) continue;
 
-          await markAsRead(messageId);
-
-          // ── Interactive reply (button or list tap) ─────────────────────────
-          if (message.type === 'interactive') {
-            const interactive = message.interactive;
-            const buttonId: string =
-              interactive?.button_reply?.id ??
-              interactive?.list_reply?.id ??
-              '';
-
-            console.log(`[Webhook] Interactive from ${from}: ${buttonId}`);
-            await handleInteractive(from, buttonId);
+          if (isDuplicate(messageId)) {
+            console.log(`[Webhook] Skipping duplicate delivery of ${messageId}`);
             continue;
           }
 
-          // ── Plain text message ─────────────────────────────────────────────
-          if (message.type !== 'text') continue;
-
-          const text: string = message.text?.body ?? '';
-          if (!text.trim()) continue;
-
-          console.log(`[Webhook] Message from ${from}: ${text}`);
-
-          // Check if we're mid-buy-flow (collecting address/phone)
-          const intent = getBuyIntent(from);
-          if (intent) {
-            await handleBuyFlowText(from, text, intent);
+          const count = recordMessage(from);
+          if (count > RATE_LIMIT) {
+            // Warn once when the limit is first crossed, then drop silently
+            if (count === RATE_LIMIT + 1) {
+              sendTextMessage(
+                from,
+                "⏳ You're sending messages a bit fast — give me a few seconds to catch up!"
+              ).catch(() => { /* best effort */ });
+            }
             continue;
           }
 
-          // Normal agent processing
-          const reply = await processMessage(from, text);
-          await sendTextMessage(from, reply);
-          console.log(`[Webhook] Replied to ${from}`);
+          enqueueForUser(from, () => handleMessage(from, messageId, message));
         }
       }
     }
   } catch (err) {
-    console.error('[Webhook] Error processing message:', err);
+    console.error('[Webhook] Error processing payload:', err);
   }
 });
+
+// ── Single-message handler (runs serialized per user) ─────────────────────────
+
+async function handleMessage(
+  from: string,
+  messageId: string,
+  message: { type?: string; interactive?: { button_reply?: { id?: string }; list_reply?: { id?: string } }; text?: { body?: string } }
+): Promise<void> {
+  await markAsRead(messageId);
+
+  // ── Interactive reply (button or list tap) ──────────────────────────────────
+  if (message.type === 'interactive') {
+    const interactive = message.interactive;
+    const buttonId: string =
+      interactive?.button_reply?.id ??
+      interactive?.list_reply?.id ??
+      '';
+
+    console.log(`[Webhook] Interactive from ${from}: ${buttonId}`);
+    await handleInteractive(from, buttonId);
+    return;
+  }
+
+  // ── Plain text message ───────────────────────────────────────────────────────
+  if (message.type !== 'text') return;
+
+  const text: string = message.text?.body ?? '';
+  if (!text.trim()) return;
+
+  console.log(`[Webhook] Message from ${from}: ${text}`);
+
+  // Check if we're mid-buy-flow (collecting address/phone)
+  const intent = getBuyIntent(from);
+  if (intent) {
+    await handleBuyFlowText(from, text, intent);
+    return;
+  }
+
+  // Normal agent processing
+  const reply = await processMessage(from, text);
+  await sendTextMessage(from, reply);
+  console.log(`[Webhook] Replied to ${from}`);
+}
 
 // ── Interactive button/list handler ───────────────────────────────────────────
 

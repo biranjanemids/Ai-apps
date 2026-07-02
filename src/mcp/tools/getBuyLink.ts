@@ -37,8 +37,8 @@ function buildMeeshoCheckoutUrl(productUrl: string): string {
 }
 
 // Nykaa: add to cart redirect
-function buildNykaaCheckoutUrl(productId: string, productUrl: string): string {
-  return `https://www.nykaa.com/checkout/cart/add?productId=${productId}&skuId=${productId}` || productUrl;
+function buildNykaaCheckoutUrl(productId: string): string {
+  return `https://www.nykaa.com/checkout/cart/add?productId=${productId}&skuId=${productId}`;
 }
 
 // Ajio: add to bag redirect
@@ -102,7 +102,7 @@ export async function getBuyLink(
         price = p?.price ?? price;
         imageUrl = p?.imageUrl ?? imageUrl;
         productUrl = p?.productUrl ?? `https://www.nykaa.com/product/p/${productId}`;
-        checkoutUrl = buildNykaaCheckoutUrl(productId, productUrl);
+        checkoutUrl = buildNykaaCheckoutUrl(productId);
         break;
       }
       case 'ajio': {
@@ -140,7 +140,7 @@ function buildCheckoutFallback(platform: string, productId: string, productUrl: 
     case 'amazon':   return buildAmazonCheckoutUrl(productId);
     case 'flipkart': return buildFlipkartCheckoutUrl(productUrl, productId);
     case 'myntra':   return buildMyntraCheckoutUrl(productUrl, productId);
-    case 'nykaa':    return buildNykaaCheckoutUrl(productId, productUrl);
+    case 'nykaa':    return buildNykaaCheckoutUrl(productId);
     default:         return productUrl;
   }
 }

@@ -26,6 +26,9 @@ function getGroq(): Groq {
 // Model to use — llama-3.3-70b-versatile has the best tool-calling support on Groq free tier
 const MODEL = 'llama-3.3-70b-versatile';
 
+// Safety cap on tool-calling rounds per user message — prevents runaway loops
+const MAX_TOOL_ROUNDS = 6;
+
 const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that finds, compares, and helps buy products across 6 Indian platforms: Amazon, Flipkart, Myntra, Meesho, Nykaa, and Ajio.
 
 ## Language
@@ -37,7 +40,7 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 1. Greet and ask what product they want
 2. Ask for budget range in ₹ (e.g. "₹500 to ₹2000")
 3. Ask for brand/platform preference or "any"
-4. Call search_products — always search all 3 platforms unless they specify
+4. Call search_products — always search all 6 platforms unless they specify
 5. Present results grouped by platform with numbers (1, 2, 3…)
 6. Highlight the cheapest platform and any discount deals automatically shown
 7. Ask: "Want to compare specific products, buy one, or save to wishlist?"
@@ -171,8 +174,8 @@ export async function processMessage(
       })),
     ];
 
-    // Agentic loop — keep running until the model stops calling tools
-    while (true) {
+    // Agentic loop — bounded so a tool-happy model can't spin forever
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const response = await getGroq().chat.completions.create({
         model: MODEL,
         messages,
@@ -251,8 +254,25 @@ export async function processMessage(
         });
       }
     }
+
+    // Tool-round budget exhausted — force a final answer without tools
+    console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) for ${userId} — forcing final answer`);
+    const finalResponse = await getGroq().chat.completions.create({
+      model: MODEL,
+      messages,
+      max_tokens: 1024,
+      temperature: 0.7,
+    });
+    const finalText = finalResponse.choices[0]?.message?.content?.trim() ?? '';
+    appendMessage(userId, { role: 'assistant', content: finalText });
+    return finalText || 'I found some options but need you to narrow things down — could you rephrase your search?';
   } catch (err) {
     console.error('[Agent] processMessage error:', err);
+    // If the MCP transport died, drop the client so the next message reconnects
+    if (err instanceof Error && /clos|transport|EPIPE|ECONN|not connected/i.test(err.message)) {
+      console.warn('[Agent] MCP connection appears dead — resetting client for reconnect');
+      mcpClient = null;
+    }
     return 'Sorry, I ran into a problem. Please try again in a moment.';
   }
 }

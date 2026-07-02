@@ -15,11 +15,33 @@ function getPhoneNumberId(): string {
   return id;
 }
 
+const SEND_TIMEOUT_MS = 10_000;
+const MAX_RETRIES = 2;
+
 async function post(body: Record<string, unknown>): Promise<void> {
   const phoneNumberId = getPhoneNumberId();
-  await axios.post(`${BASE_URL}/${phoneNumberId}/messages`, body, {
-    headers: getHeaders(),
-  });
+  const url = `${BASE_URL}/${phoneNumberId}/messages`;
+
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      await axios.post(url, body, { headers: getHeaders(), timeout: SEND_TIMEOUT_MS });
+      return;
+    } catch (err) {
+      lastErr = err;
+      const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+      // Retry only on network errors, rate limiting, or server errors
+      const retriable = status === undefined || status === 429 || status >= 500;
+      if (!retriable || attempt === MAX_RETRIES) break;
+      await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+    }
+  }
+
+  const detail = axios.isAxiosError(lastErr)
+    ? JSON.stringify(lastErr.response?.data ?? lastErr.message)
+    : lastErr;
+  console.error('[WhatsApp] Send failed after retries:', detail);
+  throw lastErr;
 }
 
 // ── Text message ──────────────────────────────────────────────────────────────
@@ -136,10 +158,14 @@ export async function markAsRead(messageId: string): Promise<void> {
 function chunkText(text: string, maxLen: number): string[] {
   if (text.length <= maxLen) return [text];
   const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    chunks.push(text.slice(start, start + maxLen));
-    start += maxLen;
+  let remaining = text;
+  while (remaining.length > maxLen) {
+    // Prefer breaking at a newline so we don't split a product entry mid-line
+    let cut = remaining.lastIndexOf('\n', maxLen);
+    if (cut < maxLen / 2) cut = maxLen;
+    chunks.push(remaining.slice(0, cut));
+    remaining = remaining.slice(cut).replace(/^\n/, '');
   }
+  if (remaining) chunks.push(remaining);
   return chunks;
 }
