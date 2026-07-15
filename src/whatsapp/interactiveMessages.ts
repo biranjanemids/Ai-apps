@@ -9,6 +9,7 @@ import {
 } from './client.js';
 import { Product } from '../types/index.js';
 import { discountPercent } from '../mcp/tools/searchProducts.js';
+import { wrapAffiliateLink } from '../monetization/affiliateLinks.js';
 
 const PLATFORM_EMOJI: Record<string, string> = {
   amazon: '🛒',
@@ -65,7 +66,7 @@ export async function sendProductCard(
       .slice(0, 2)
       .map(([k, v]) => `  • ${k}: ${v}`)
       .join('\n'),
-    product.productUrl ? `🔗 ${product.productUrl}` : '',
+    product.productUrl ? `🔗 ${wrapAffiliateLink(product.productUrl, product.platform)}` : '',
   ]
     .filter(Boolean)
     .join('\n');
@@ -121,7 +122,7 @@ export async function sendProductCardWithLink(
 
   const footer = `${emoji} Tap to buy on ${platformName}`;
   const headerImage = await resolveHeaderImage(product.imageUrl);
-  const buyUrl = product.productUrl;
+  const buyUrl = wrapAffiliateLink(product.productUrl, product.platform);
 
   if (buyUrl?.startsWith('http')) {
     try {

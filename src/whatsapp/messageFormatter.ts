@@ -1,5 +1,6 @@
 import { Product, ComparisonRow } from '../types/index.js';
 import { discountPercent } from '../mcp/tools/searchProducts.js';
+import { wrapAffiliateLink, isAffiliateEnabled } from '../monetization/affiliateLinks.js';
 
 const PLATFORM_EMOJI: Record<string, string> = {
   amazon: '🛒',
@@ -74,9 +75,12 @@ export function formatSearchResults(
     lines.push(`🔍 _No matches on: ${noResults.join(' · ')}_`);
   }
 
-  // Add affiliate CTA
+  // Affiliate CTA + required disclosure (Amazon Associates policy)
   lines.push('');
   lines.push('💡 *Tap "Buy Now"* to support this service & unlock exclusive deals!');
+  if (isAffiliateEnabled()) {
+    lines.push('_We may earn a commission on purchases — at no extra cost to you._');
+  }
 
   return { text: lines.join('\n').trim(), allProducts };
 }
@@ -153,7 +157,7 @@ export function formatProductDetail(product: Product): string {
 
   if (product.productUrl) {
     lines.push('');
-    lines.push(`🔗 *Buy here:* ${product.productUrl}`);
+    lines.push(`🔗 *Buy here:* ${wrapAffiliateLink(product.productUrl, product.platform)}`);
   }
 
   return lines.join('\n');

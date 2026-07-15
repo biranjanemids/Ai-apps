@@ -8,6 +8,7 @@ import { getZeptoProduct } from '../../platforms/zepto.js';
 import { getInstamartProduct } from '../../platforms/instamart.js';
 import { getLiveProduct } from '../../platforms/liveRegistry.js';
 import { getMockProduct } from '../../platforms/mock.js';
+import { wrapAffiliateLink } from '../../monetization/affiliateLinks.js';
 
 // Add UTM tracking for analytics
 function addTrackingParams(url: string, platform: string, productId: string): string {
@@ -32,11 +33,12 @@ function buildAmazonCheckoutUrl(asin: string): string {
   return tag ? `${baseUrl}&tag=${tag}` : baseUrl;
 }
 
+// Flipkart's direct affiliate program is closed to new signups — commission
+// comes from Cuelinks link-wrapping (see monetization/affiliateLinks.ts), so
+// the checkout URL itself stays clean.
 function buildFlipkartCheckoutUrl(productUrl: string, pid: string): string {
   const base = productUrl.split('?')[0];
-  const url = `${base}?param=buyNow&pid=${pid}`;
-  const affId = process.env.FLIPKART_AFFILIATE_ID || '';
-  return affId ? `${url}&affId=${affId}` : url;
+  return `${base}?param=buyNow&pid=${pid}`;
 }
 
 function buildMyntraCheckoutUrl(productUrl: string, productId: string): string {
@@ -67,6 +69,7 @@ export async function getBuyLink(
   // Live aggregated products: the product URL is the buy link
   const live = getLiveProduct(productId);
   if (live) {
+    const tracked = addTrackingParams(live.productUrl, live.platform, productId);
     return {
       platform: live.platform,
       productId,
@@ -74,7 +77,7 @@ export async function getBuyLink(
       price: live.price,
       imageUrl: live.imageUrl,
       productUrl: live.productUrl,
-      checkoutUrl: live.productUrl,
+      checkoutUrl: wrapAffiliateLink(tracked, live.platform),
     };
   }
 
@@ -167,7 +170,15 @@ export async function getBuyLink(
     }
 
     const trackedCheckoutUrl = addTrackingParams(checkoutUrl, platform, productId);
-    return { platform, productId, title, price, imageUrl, productUrl, checkoutUrl: trackedCheckoutUrl };
+    return {
+      platform,
+      productId,
+      title,
+      price,
+      imageUrl,
+      productUrl,
+      checkoutUrl: wrapAffiliateLink(trackedCheckoutUrl, platform),
+    };
   } catch {
     const p = fallback;
     const productUrl = p?.productUrl ?? '';
@@ -180,7 +191,7 @@ export async function getBuyLink(
       price: p?.price ?? 0,
       imageUrl: p?.imageUrl ?? '',
       productUrl,
-      checkoutUrl: trackedUrl,
+      checkoutUrl: wrapAffiliateLink(trackedUrl, platform),
     };
   }
 }
