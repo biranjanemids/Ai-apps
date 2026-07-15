@@ -1,7 +1,7 @@
 import { UserSession, ConversationMessage, Product, BuyIntent } from '../types/index.js';
 
 const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
-const MAX_MESSAGES = 12; // keeps Groq token usage per turn in check
+const MAX_MESSAGES = 8; // keeps LLM token usage per turn in check (Groq free tier is 100K tokens/DAY)
 
 const sessions = new Map<string, UserSession>();
 const clickAnalytics = new Map<string, { platform: string; timestamp: number; productId: string }[]>();

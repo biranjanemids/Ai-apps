@@ -134,7 +134,7 @@ sm.clearBuyIntent(uid);
 check(sm.getBuyIntent(uid) === undefined, 'buy intent clear failed');
 
 for (let i = 0; i < 25; i++) sm.appendMessage(uid, { role: 'user', content: `m${i}` });
-check(sm.getSession(uid).messages.length === 12, 'message history cap failed');
+check(sm.getSession(uid).messages.length === 8, 'message history cap failed');
 
 // ── 6. Live-provider plumbing (no network — registry + store mapping) ────────
 

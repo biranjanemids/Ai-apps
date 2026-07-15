@@ -27,20 +27,23 @@ const PROVIDERS: ProviderDef[] = [
     defaultModel: 'llama-3.3-70b-versatile',
   },
   {
+    // 'gemini-flash-latest' is Google's rolling alias for the newest Flash
+    // model — pinned versions get retired for new users (2.5-flash 404s with
+    // "no longer available to new users"), the alias never rots.
     name: 'gemini',
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyEnv: 'GEMINI_API_KEY',
     modelEnv: 'GEMINI_MODEL',
-    defaultModel: 'gemini-2.5-flash',
+    defaultModel: 'gemini-flash-latest',
   },
   {
-    // NOTE: Cerebras model ids have no dash after "llama" — 'llama3.3-70b',
-    // not 'llama-3.3-70b' (the latter 404s on every call)
+    // Cerebras retired its llama-3.3 hosting ("model_not_found") — gpt-oss-120b
+    // is their current free-tier model with tool-calling support.
     name: 'cerebras',
     baseUrl: 'https://api.cerebras.ai/v1',
     keyEnv: 'CEREBRAS_API_KEY',
     modelEnv: 'CEREBRAS_MODEL',
-    defaultModel: 'llama3.3-70b',
+    defaultModel: 'gpt-oss-120b',
   },
   {
     name: 'openrouter',
