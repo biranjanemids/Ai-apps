@@ -1,0 +1,125 @@
+import { searchAmazon } from '../../platforms/amazon.js';
+import { searchFlipkart } from '../../platforms/flipkart.js';
+import { searchMyntra } from '../../platforms/myntra.js';
+import { searchMeesho } from '../../platforms/meesho.js';
+import { searchNykaa } from '../../platforms/nykaa.js';
+import { searchAjio } from '../../platforms/ajio.js';
+import { searchZepto } from '../../platforms/zepto.js';
+import { searchInstamart } from '../../platforms/instamart.js';
+import { getCache, setCache, cacheKey } from '../../platforms/cache.js';
+import { isSerpApiEnabled, searchViaSerpApi } from '../../providers/serpapi.js';
+import { Product, SearchParams, Platform } from '../../types/index.js';
+
+// Value score: balances rating quality vs price — higher is better deal
+function valueScore(p: Product): number {
+  if (p.price <= 0) return 0;
+  const mrpStr = p.specs['MRP'] ?? p.specs['mrp'] ?? '';
+  const mrp = parseFloat(mrpStr.replace(/[^0-9.]/g, '')) || p.price;
+  const discountFactor = mrp > p.price ? (mrp - p.price) / mrp : 0;
+  return ((p.rating * p.rating) / p.price) * 1000 * (1 + discountFactor);
+}
+
+export function discountPercent(product: Product): number {
+  const mrpStr = product.specs['MRP'] ?? product.specs['mrp'] ?? '';
+  const mrp = parseFloat(mrpStr.replace(/[^0-9.]/g, '')) || 0;
+  if (mrp > product.price && mrp > 0) {
+    return Math.round(((mrp - product.price) / mrp) * 100);
+  }
+  return 0;
+}
+
+export async function searchProducts(params: SearchParams): Promise<{
+  results: Array<{ platform: string; products: Product[]; cached?: boolean; error?: string }>;
+  totalFound: number;
+  cheapestPlatform?: string;
+  bestValuePlatform?: string;
+}> {
+  const platforms: Platform[] = params.platforms ?? [
+    'amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio', 'zepto', 'instamart',
+  ];
+
+  const platformSearches = [
+    { name: 'amazon',    fn: () => searchAmazon(params) },
+    { name: 'flipkart',  fn: () => searchFlipkart(params) },
+    { name: 'myntra',    fn: () => searchMyntra(params) },
+    { name: 'meesho',    fn: () => searchMeesho(params) },
+    { name: 'nykaa',     fn: () => searchNykaa(params) },
+    { name: 'ajio',      fn: () => searchAjio(params) },
+    { name: 'zepto',     fn: () => searchZepto(params) },
+    { name: 'instamart', fn: () => searchInstamart(params) },
+  ].filter((p) => platforms.includes(p.name as Platform));
+
+
+  // Primary source: authenticated aggregated live data (one call, all stores).
+  // Falls back to the per-platform scrapers for anything it doesn't cover.
+  let liveByPlatform: Map<Platform, Product[]> | null = null;
+  if (isSerpApiEnabled()) {
+    try {
+      liveByPlatform = await searchViaSerpApi(params);
+    } catch (err) {
+      console.error(
+        '[SerpApi] Live search failed — falling back to scrapers:',
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
+  const searches = await Promise.allSettled(
+    platformSearches.map(async ({ name, fn }) => {
+      const key = cacheKey(name, params.query, params.minPrice, params.maxPrice);
+      const cached = getCache(key);
+      if (cached) return { products: cached, cached: true };
+
+      const live = liveByPlatform?.get(name as Platform);
+      if (live && live.length > 0) {
+        setCache(key, live);
+        return { products: live, cached: false };
+      }
+
+      const products = await fn();
+      if (products.length > 0) setCache(key, products);
+      return { products, cached: false };
+    })
+  );
+
+  const results = searches.map((result, i) => {
+    const name = platformSearches[i].name;
+    if (result.status === 'fulfilled') {
+      // Enforce the budget here regardless of what the adapter returned
+      const inBudget = result.value.products.filter(
+        (p) =>
+          (params.minPrice === undefined || p.price >= params.minPrice) &&
+          (params.maxPrice === undefined || p.price <= params.maxPrice)
+      );
+      // Sort by value score (rating²/price * discount factor) — best deals first.
+      // Top 3 per platform keeps the WhatsApp reply scannable.
+      const sorted = inBudget.sort((a, b) => valueScore(b) - valueScore(a));
+      return { platform: name, products: sorted.slice(0, 3), cached: result.value.cached };
+    }
+    return {
+      platform: name,
+      products: [],
+      error: result.reason instanceof Error ? result.reason.message : 'Search failed',
+    };
+  });
+
+  // Cross-platform cheapest + best-value signals
+  const allWithPrice = results.flatMap((r) => r.products.filter((p) => p.price > 0));
+  const cheapest = allWithPrice.reduce<Product | null>(
+    (min, p) => (!min || p.price < min.price ? p : min),
+    null
+  );
+  const bestValue = allWithPrice.reduce<Product | null>(
+    (best, p) => (!best || valueScore(p) > valueScore(best) ? p : best),
+    null
+  );
+
+  const totalFound = results.reduce((sum, r) => sum + r.products.length, 0);
+  return {
+    results,
+    totalFound,
+    cheapestPlatform: cheapest?.platform,
+    bestValuePlatform: bestValue?.platform,
+  };
+}
+
