@@ -9,6 +9,8 @@ const PLATFORM_EMOJI: Record<string, string> = {
   meesho: '🏷️',
   nykaa: '💄',
   ajio: '👔',
+  zepto: '⚡',
+  instamart: '🥦',
 };
 
 function discountTag(product: Product): string {
@@ -31,9 +33,11 @@ export async function sendProductCard(
     `${emoji} *${product.title}*`,
     `💰 ${price}${rating}`,
     Object.entries(product.specs)
+      .filter(([k]) => k !== 'MRP')
       .slice(0, 2)
       .map(([k, v]) => `  • ${k}: ${v}`)
       .join('\n'),
+    product.productUrl ? `🔗 ${product.productUrl}` : '',
   ]
     .filter(Boolean)
     .join('\n');

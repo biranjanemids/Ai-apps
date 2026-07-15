@@ -23,13 +23,77 @@ function getGroq(): Groq {
   return _groq;
 }
 
-// Model to use — llama-3.3-70b-versatile has the best tool-calling support on Groq free tier
-const MODEL = 'llama-3.3-70b-versatile';
+// Model to use — llama-3.3-70b-versatile has the best tool-calling support on Groq
+// free tier. Override with GROQ_MODEL in .env without touching code.
+const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 
 // Safety cap on tool-calling rounds per user message — prevents runaway loops
 const MAX_TOOL_ROUNDS = 6;
 
-const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that finds, compares, and helps buy products across 6 Indian platforms: Amazon, Flipkart, Myntra, Meesho, Nykaa, and Ajio.
+// Groq's llama models occasionally emit tool calls in a malformed format like
+// `<function=search_products {"query": ...} </function>` — Groq then 400s with
+// code 'tool_use_failed' but includes the intended call in failed_generation.
+// We salvage it (the args are usually valid JSON) and retry as fallback.
+const TOOL_CALL_SALVAGE = /<function=([a-zA-Z0-9_]+)[=\s]*(\{[\s\S]*?\})\s*<?\/?function>?/;
+
+type GroqChoice = Groq.Chat.Completions.ChatCompletion.Choice;
+
+async function chatWithToolRetry(
+  messages: Groq.Chat.ChatCompletionMessageParam[],
+  tools: Groq.Chat.ChatCompletionTool[]
+): Promise<GroqChoice> {
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await getGroq().chat.completions.create({
+        model: MODEL,
+        messages,
+        tools,
+        tool_choice: 'auto',
+        max_tokens: 1024,
+        // Lower temperature on retries — malformed tool calls are more likely when sampling hot
+        temperature: attempt === 1 ? 0.6 : 0.2,
+      });
+      return response.choices[0];
+    } catch (err) {
+      const inner = (err as { error?: { error?: { code?: string; failed_generation?: string } } })
+        ?.error?.error;
+      if (inner?.code !== 'tool_use_failed') throw err;
+      lastErr = err;
+
+      // Salvage: extract the tool call the model intended and synthesize the turn
+      const m = inner.failed_generation?.match(TOOL_CALL_SALVAGE);
+      if (m) {
+        try {
+          JSON.parse(m[2]); // only salvage if the args are valid JSON
+          console.warn(`[Agent] Salvaged malformed tool call for ${m[1]}`);
+          return {
+            index: 0,
+            finish_reason: 'tool_calls',
+            logprobs: null,
+            message: {
+              role: 'assistant',
+              content: null,
+              tool_calls: [
+                {
+                  id: `salvaged_${attempt}_${m[1]}`,
+                  type: 'function',
+                  function: { name: m[1], arguments: m[2] },
+                },
+              ],
+            },
+          } as unknown as GroqChoice;
+        } catch {
+          // args weren't valid JSON — fall through to a plain retry
+        }
+      }
+      console.warn(`[Agent] Groq tool_use_failed (attempt ${attempt}/3) — retrying`);
+    }
+  }
+  throw lastErr;
+}
+
+const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that finds, compares, and helps buy products across 8 Indian platforms: Amazon, Flipkart, Myntra, Meesho, Nykaa, Ajio, Zepto, and Instamart.
 
 ## Language
 - Detect if the user writes in Hindi (Devanagari or Hinglish). If so, respond in simple Hindi/Hinglish. Otherwise respond in English.
@@ -38,15 +102,17 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 
 ## Conversation Flow
 1. Greet and ask what product they want
-2. Ask for budget range in ₹ (e.g. "₹500 to ₹2000")
-3. Ask for brand/platform preference or "any"
-4. Call search_products — always search all 6 platforms unless they specify
-5. Present results grouped by platform with numbers (1, 2, 3…)
-6. Highlight the cheapest platform and any discount deals automatically shown
-7. Ask: "Want to compare specific products, buy one, or save to wishlist?"
-8. If compare → call compare_products and highlight price savings
-9. If buy → call get_buy_link and share checkout URL
-10. If wishlist → confirm "Saved ❤️ to your wishlist! Type *wishlist* to see all saved items"
+2. Ask for budget range in ₹ (e.g. "₹500 to ₹2000") if not given
+3. Call search_products — always search all 8 platforms unless they specify
+4. IMPORTANT: ALWAYS extract the budget from the message into minPrice/maxPrice:
+   "under 3000" → maxPrice: 3000 · "above 500" → minPrice: 500 · "500 to 2000" → both
+5. CRITICAL: After search_products returns, DO NOT list or describe the products yourself.
+   The system automatically sends the user a formatted result list and product cards with
+   Buy buttons. Your reply must be only 1-2 short lines: a recommendation (e.g. which pick
+   is best value and why) + a nudge like "Tap *Buy Now* on a card below 👇"
+6. If compare → call compare_products and highlight price savings
+7. If buy → call get_buy_link and share checkout URL
+8. If wishlist → confirm "Saved ❤️ to your wishlist! Type *wishlist* to see all saved items"
 
 ## Platform Guide (use this to recommend the right platform)
 - 🛒 Amazon — electronics, gadgets, books, wide selection
@@ -55,9 +121,11 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 - 🏷️ Meesho — budget shopping, ethnic wear, home decor under ₹500
 - 💄 Nykaa — beauty, skincare, haircare, wellness
 - 👔 Ajio — branded fashion, Reliance exclusives, ethnic sets
+- ⚡ Zepto — groceries & daily essentials in 10 minutes
+- 🥦 Instamart — Swiggy quick-commerce: groceries, household, snacks in 15 minutes
 
 ## Key Differentiators to Mention
-- "I compare prices across 6 platforms — Amazon, Flipkart, Myntra, Meesho, Nykaa & Ajio"
+- "I compare prices across 8 platforms — Amazon, Flipkart, Myntra, Meesho, Nykaa, Ajio, Zepto & Instamart"
 - "I'll tell you which platform gives the best value for money"
 - "I show real discount % off MRP so you see actual savings"
 - "Meesho for budget, Nykaa for beauty, Ajio for fashion — I route you to the right place"
@@ -81,7 +149,7 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 ## Response Style
 - Keep messages short — WhatsApp is not a webpage
 - Use bold *text* for product names and prices
-- Use emojis: 🛒 Amazon · 🛍 Flipkart · 👗 Myntra · 🏷️ Meesho · 💄 Nykaa · 👔 Ajio · 🔥 deals · ⭐ ratings
+- Use emojis: 🛒 Amazon · 🛍 Flipkart · 👗 Myntra · 🏷️ Meesho · 💄 Nykaa · 👔 Ajio · ⚡ Zepto · 🥦 Instamart · 🔥 deals · ⭐ ratings
 - Number every product so users can refer by number
 - Format prices as ₹X,XXX (Indian number format)
 - Never write long paragraphs — use short lines
@@ -93,7 +161,7 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 - Direct buy link to platform checkout
 - Wishlist / save-for-later within session
 - "Which is cheaper?" queries answered from search results
-- Category routing: beauty → Nykaa, budget → Meesho, fashion → Ajio/Myntra, electronics → Amazon/Flipkart
+- Category routing: beauty → Nykaa, budget → Meesho, fashion → Ajio/Myntra, electronics → Amazon/Flipkart, groceries/essentials → Zepto/Instamart
 - "Search only on Nykaa" or "compare Amazon and Meesho" — platform-specific searches supported`;
 
 
@@ -146,10 +214,25 @@ function containsHindi(text: string): boolean {
 // Wishlist shortcut keywords (English + Hindi)
 const WISHLIST_KEYWORDS = /^(wishlist|my wishlist|meri list|saved items|saved products|meri wishlist)$/i;
 
+// Search outcome captured from a search_products tool call, so the webhook can
+// render results deterministically (formatted list + product cards) instead of
+// relying on the LLM to write them out.
+export interface SearchOutcome {
+  results: Array<{ platform: string; products: Product[]; error?: string }>;
+  cheapestPlatform?: string;
+  bestValuePlatform?: string;
+}
+
+export interface AgentReply {
+  text: string;
+  search?: SearchOutcome;
+}
+
 export async function processMessage(
   userId: string,
   userText: string
-): Promise<string> {
+): Promise<AgentReply> {
+  let lastSearch: SearchOutcome | undefined;
   try {
     const client = await getMcpClient();
     const session = getSession(userId);
@@ -160,7 +243,7 @@ export async function processMessage(
     // Wishlist shortcut — no LLM needed
     if (WISHLIST_KEYWORDS.test(userText.trim())) {
       const { formatWishlist } = await import('../whatsapp/messageFormatter.js');
-      return formatWishlist(getWishlist(userId));
+      return { text: formatWishlist(getWishlist(userId)) };
     }
 
     appendMessage(userId, { role: 'user', content: userText });
@@ -176,16 +259,7 @@ export async function processMessage(
 
     // Agentic loop — bounded so a tool-happy model can't spin forever
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const response = await getGroq().chat.completions.create({
-        model: MODEL,
-        messages,
-        tools: groqTools,
-        tool_choice: 'auto',
-        max_tokens: 1024,
-        temperature: 0.7,
-      });
-
-      const choice = response.choices[0];
+      const choice = await chatWithToolRetry(messages, groqTools);
       const assistantMessage = choice.message;
 
       // Append assistant turn to history
@@ -199,7 +273,10 @@ export async function processMessage(
       ) {
         const text = assistantMessage.content?.trim() ?? '';
         appendMessage(userId, { role: 'assistant', content: text });
-        return text || 'I encountered an issue. Please try again.';
+        return {
+          text: text || (lastSearch ? '' : 'I encountered an issue. Please try again.'),
+          search: lastSearch,
+        };
       }
 
       // Execute each tool call via MCP
@@ -227,7 +304,8 @@ export async function processMessage(
               .map((c) => c.text as string)
               .join('\n') || '{}';
 
-          // Cache search results for session context
+          // Cache search results for session context and capture the outcome
+          // so the webhook can render it deterministically
           if (toolCall.function.name === 'search_products') {
             try {
               const parsed = JSON.parse(resultText);
@@ -236,6 +314,13 @@ export async function processMessage(
                 allProducts.push(...(r.products ?? []));
               }
               saveSearchResults(userId, allProducts);
+              if (allProducts.length > 0) {
+                lastSearch = {
+                  results: parsed.results ?? [],
+                  cheapestPlatform: parsed.cheapestPlatform,
+                  bestValuePlatform: parsed.bestValuePlatform,
+                };
+              }
             } catch {
               // ignore JSON parse errors
             }
@@ -265,7 +350,10 @@ export async function processMessage(
     });
     const finalText = finalResponse.choices[0]?.message?.content?.trim() ?? '';
     appendMessage(userId, { role: 'assistant', content: finalText });
-    return finalText || 'I found some options but need you to narrow things down — could you rephrase your search?';
+    return {
+      text: finalText || (lastSearch ? '' : 'I found some options but need you to narrow things down — could you rephrase your search?'),
+      search: lastSearch,
+    };
   } catch (err) {
     console.error('[Agent] processMessage error:', err);
     // If the MCP transport died, drop the client so the next message reconnects
@@ -273,6 +361,6 @@ export async function processMessage(
       console.warn('[Agent] MCP connection appears dead — resetting client for reconnect');
       mcpClient = null;
     }
-    return 'Sorry, I ran into a problem. Please try again in a moment.';
+    return { text: 'Sorry, I ran into a problem. Please try again in a moment.', search: lastSearch };
   }
 }

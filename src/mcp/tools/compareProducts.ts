@@ -4,6 +4,8 @@ import { getMyntraProduct } from '../../platforms/myntra.js';
 import { getMeeshoProduct } from '../../platforms/meesho.js';
 import { getNykaaProduct } from '../../platforms/nykaa.js';
 import { getAjioProduct } from '../../platforms/ajio.js';
+import { getZeptoProduct } from '../../platforms/zepto.js';
+import { getInstamartProduct } from '../../platforms/instamart.js';
 import { Product, ComparisonRow } from '../../types/index.js';
 
 export async function compareProducts(
@@ -26,6 +28,10 @@ export async function compareProducts(
         return getNykaaProduct(productId);
       case 'ajio':
         return getAjioProduct(productId);
+      case 'zepto':
+        return getZeptoProduct(productId);
+      case 'instamart':
+        return getInstamartProduct(productId);
       default:
         return Promise.resolve(null);
     }

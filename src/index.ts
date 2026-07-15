@@ -74,8 +74,8 @@ const server = app.listen(PORT, () => {
 ║   Webhook:   http://localhost:${PORT}/webhook               ║
 ║   Health:    http://localhost:${PORT}/health                ║
 ╠══════════════════════════════════════════════════════════╣
-║   Platforms: Amazon | Flipkart | Myntra                  ║
-║              Meesho | Nykaa | Ajio                       ║
+║   Platforms: Amazon | Flipkart | Myntra | Meesho        ║
+║              Nykaa | Ajio | Zepto | Instamart           ║
 ╚══════════════════════════════════════════════════════════╝
   `);
   if (missing.length === 0) {

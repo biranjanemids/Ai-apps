@@ -8,6 +8,8 @@ const PLATFORM_EMOJI: Record<string, string> = {
   meesho: '🏷️',
   nykaa: '💄',
   ajio: '👔',
+  zepto: '⚡',
+  instamart: '🥦',
 };
 
 export function formatSearchResults(

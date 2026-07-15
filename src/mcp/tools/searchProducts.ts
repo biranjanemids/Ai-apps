@@ -4,6 +4,8 @@ import { searchMyntra } from '../../platforms/myntra.js';
 import { searchMeesho } from '../../platforms/meesho.js';
 import { searchNykaa } from '../../platforms/nykaa.js';
 import { searchAjio } from '../../platforms/ajio.js';
+import { searchZepto } from '../../platforms/zepto.js';
+import { searchInstamart } from '../../platforms/instamart.js';
 import { getCache, setCache, cacheKey } from '../../platforms/cache.js';
 import { Product, SearchParams, Platform } from '../../types/index.js';
 
@@ -31,15 +33,19 @@ export async function searchProducts(params: SearchParams): Promise<{
   cheapestPlatform?: string;
   bestValuePlatform?: string;
 }> {
-  const platforms: Platform[] = params.platforms ?? ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'];
+  const platforms: Platform[] = params.platforms ?? [
+    'amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio', 'zepto', 'instamart',
+  ];
 
   const platformSearches = [
-    { name: 'amazon',   fn: () => searchAmazon(params) },
-    { name: 'flipkart', fn: () => searchFlipkart(params) },
-    { name: 'myntra',   fn: () => searchMyntra(params) },
-    { name: 'meesho',   fn: () => searchMeesho(params) },
-    { name: 'nykaa',    fn: () => searchNykaa(params) },
-    { name: 'ajio',     fn: () => searchAjio(params) },
+    { name: 'amazon',    fn: () => searchAmazon(params) },
+    { name: 'flipkart',  fn: () => searchFlipkart(params) },
+    { name: 'myntra',    fn: () => searchMyntra(params) },
+    { name: 'meesho',    fn: () => searchMeesho(params) },
+    { name: 'nykaa',     fn: () => searchNykaa(params) },
+    { name: 'ajio',      fn: () => searchAjio(params) },
+    { name: 'zepto',     fn: () => searchZepto(params) },
+    { name: 'instamart', fn: () => searchInstamart(params) },
   ].filter((p) => platforms.includes(p.name as Platform));
 
 
@@ -57,8 +63,14 @@ export async function searchProducts(params: SearchParams): Promise<{
   const results = searches.map((result, i) => {
     const name = platformSearches[i].name;
     if (result.status === 'fulfilled') {
+      // Enforce the budget here regardless of what the adapter returned
+      const inBudget = result.value.products.filter(
+        (p) =>
+          (params.minPrice === undefined || p.price >= params.minPrice) &&
+          (params.maxPrice === undefined || p.price <= params.maxPrice)
+      );
       // Sort by value score (rating²/price * discount factor) — best deals first
-      const sorted = result.value.products.sort((a, b) => valueScore(b) - valueScore(a));
+      const sorted = inBudget.sort((a, b) => valueScore(b) - valueScore(a));
       return { platform: name, products: sorted.slice(0, 5), cached: result.value.cached };
     }
     return {

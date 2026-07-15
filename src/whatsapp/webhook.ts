@@ -1,10 +1,11 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
-import { processMessage } from '../agent/claudeAgent.js';
+import { processMessage, AgentReply } from '../agent/claudeAgent.js';
 import { sendTextMessage, markAsRead } from './client.js';
-import { sendOrderSummary, sendCheckoutLink } from './interactiveMessages.js';
+import { sendOrderSummary, sendCheckoutLink, sendProductCard } from './interactiveMessages.js';
+import { formatSearchResults } from './messageFormatter.js';
 import { getBuyLink } from '../mcp/tools/getBuyLink.js';
-import { Platform } from '../types/index.js';
+import { Platform, Product } from '../types/index.js';
 import {
   getSearchResults,
   getBuyIntent,
@@ -190,8 +191,63 @@ async function handleMessage(
 
   // Normal agent processing
   const reply = await processMessage(from, text);
-  await sendTextMessage(from, reply);
+  await deliverAgentReply(from, reply);
   console.log(`[Webhook] Replied to ${from}`);
+}
+
+// ── Rich reply delivery ────────────────────────────────────────────────────────
+// When the agent ran a product search, render the results deterministically:
+// formatted list (badges, discounts, numbering) + tappable product cards with
+// Buy buttons — instead of trusting the LLM to write out a readable list.
+
+async function deliverAgentReply(to: string, reply: AgentReply): Promise<void> {
+  const search = reply.search;
+  if (!search || search.results.length === 0) {
+    if (reply.text) await sendTextMessage(to, reply.text);
+    return;
+  }
+
+  const { text: resultsText, allProducts } = formatSearchResults(
+    search.results,
+    1,
+    search.cheapestPlatform,
+    search.bestValuePlatform
+  );
+  await sendTextMessage(to, resultsText);
+
+  // Product cards for the top picks (best value, cheapest, plus one more)
+  for (const { product, index } of pickTopProducts(allProducts, search)) {
+    try {
+      await sendProductCard(to, product, index);
+    } catch (err) {
+      console.error('[Webhook] Product card send failed:', err);
+      break;
+    }
+  }
+
+  if (reply.text) await sendTextMessage(to, reply.text);
+}
+
+function pickTopProducts(
+  allProducts: Product[],
+  search: { cheapestPlatform?: string; bestValuePlatform?: string }
+): Array<{ product: Product; index: number }> {
+  const picks: Product[] = [];
+  const addFirstOf = (platform?: string) => {
+    if (!platform) return;
+    const p = allProducts.find((x) => x.platform === platform);
+    if (p && !picks.includes(p)) picks.push(p);
+  };
+
+  addFirstOf(search.bestValuePlatform);
+  addFirstOf(search.cheapestPlatform);
+  for (const p of allProducts) {
+    if (picks.length >= 3) break;
+    if (!picks.includes(p) && !picks.some((x) => x.platform === p.platform)) picks.push(p);
+  }
+
+  // index = the product's number in the formatted list, so cards and list agree
+  return picks.map((product) => ({ product, index: allProducts.indexOf(product) + 1 }));
 }
 
 // ── Interactive button/list handler ───────────────────────────────────────────
@@ -263,14 +319,14 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
     if (action === 'compare') {
       const index = parts[1];
       const reply = await processMessage(from, `compare product ${index}`);
-      await sendTextMessage(from, reply);
+      await deliverAgentReply(from, reply);
       return;
     }
 
     if (action === 'details') {
       const index = parts[1];
       const reply = await processMessage(from, `details for product ${index}`);
-      await sendTextMessage(from, reply);
+      await deliverAgentReply(from, reply);
       return;
     }
 
@@ -287,13 +343,13 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
     if (action === 'newSearch') {
       clearBuyIntent(from);
       const reply = await processMessage(from, 'I want to search for something else');
-      await sendTextMessage(from, reply);
+      await deliverAgentReply(from, reply);
       return;
     }
 
     // Unknown button — fall through to agent
     const reply = await processMessage(from, buttonId.replace(/__/g, ' '));
-    await sendTextMessage(from, reply);
+    await deliverAgentReply(from, reply);
   } catch (err) {
     console.error('[Webhook] handleInteractive error:', err);
     await sendTextMessage(from, 'Something went wrong. Please try again.');

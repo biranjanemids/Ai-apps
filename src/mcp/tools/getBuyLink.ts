@@ -4,6 +4,8 @@ import { getMyntraProduct } from '../../platforms/myntra.js';
 import { getMeeshoProduct } from '../../platforms/meesho.js';
 import { getNykaaProduct } from '../../platforms/nykaa.js';
 import { getAjioProduct } from '../../platforms/ajio.js';
+import { getZeptoProduct } from '../../platforms/zepto.js';
+import { getInstamartProduct } from '../../platforms/instamart.js';
 import { getMockProduct } from '../../platforms/mock.js';
 
 export interface BuyLinkResult {
@@ -112,6 +114,25 @@ export async function getBuyLink(
         imageUrl = p?.imageUrl ?? imageUrl;
         productUrl = p?.productUrl ?? `https://www.ajio.com/p/${productId}`;
         checkoutUrl = buildAjioCheckoutUrl(productUrl);
+        break;
+      }
+      // Quick-commerce: purchase completes on the product page / in the app
+      case 'zepto': {
+        const p = (await getZeptoProduct(productId)) ?? fallback;
+        title = p?.title ?? title;
+        price = p?.price ?? price;
+        imageUrl = p?.imageUrl ?? imageUrl;
+        productUrl = p?.productUrl ?? `https://www.zeptonow.com/pvid/${productId}`;
+        checkoutUrl = productUrl;
+        break;
+      }
+      case 'instamart': {
+        const p = (await getInstamartProduct(productId)) ?? fallback;
+        title = p?.title ?? title;
+        price = p?.price ?? price;
+        imageUrl = p?.imageUrl ?? imageUrl;
+        productUrl = p?.productUrl ?? `https://www.swiggy.com/instamart/item/${productId}`;
+        checkoutUrl = productUrl;
         break;
       }
       default:

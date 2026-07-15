@@ -24,7 +24,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
     {
       name: 'search_products',
       description:
-        'Search for products across Amazon, Flipkart, Myntra, Meesho, Nykaa, and Ajio. Returns top results from each platform ranked by a value score combining rating, price, and discount.',
+        'Search for products across Amazon, Flipkart, Myntra, Meesho, Nykaa, Ajio, Zepto, and Instamart. Returns top results from each platform ranked by a value score combining rating, price, and discount. Zepto/Instamart are 10-15 min quick-commerce for groceries and daily essentials.',
       inputSchema: {
         type: 'object',
         properties: {
@@ -46,8 +46,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           },
           platforms: {
             type: 'array',
-            items: { type: 'string', enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'] },
-            description: 'Platforms to search (default: all six)',
+            items: { type: 'string', enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio', 'zepto', 'instamart'] },
+            description: 'Platforms to search (default: all eight)',
           },
         },
         required: ['query'],
@@ -68,14 +68,14 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
                 productId: { type: 'string', description: 'Product ID' },
                 platform: {
                   type: 'string',
-                  enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'],
+                  enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio', 'zepto', 'instamart'],
                   description: 'Platform the product is from',
                 },
               },
               required: ['productId', 'platform'],
             },
-            description: 'List of products to compare (max 6)',
-            maxItems: 6,
+            description: 'List of products to compare (max 8)',
+            maxItems: 8,
           },
         },
         required: ['products'],
@@ -90,7 +90,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           productId: { type: 'string', description: 'Product ID' },
           platform: {
             type: 'string',
-            enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'],
+            enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio', 'zepto', 'instamart'],
             description: 'Platform the product is from',
           },
         },
@@ -106,7 +106,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
           productId: { type: 'string', description: 'Product ID' },
           platform: {
             type: 'string',
-            enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio'],
+            enum: ['amazon', 'flipkart', 'myntra', 'meesho', 'nykaa', 'ajio', 'zepto', 'instamart'],
             description: 'Platform the product is from',
           },
         },

@@ -607,6 +607,156 @@ const AJIO_PRODUCTS: Product[] = [
   },
 ];
 
+const ZEPTO_PRODUCTS: Product[] = [
+  {
+    id: 'zep-milk-500',
+    platform: 'zepto',
+    title: 'Amul Taaza Toned Milk 500ml Pouch',
+    price: 29,
+    currency: 'INR',
+    rating: 4.5,
+    reviewCount: 32450,
+    imageUrl: 'https://cdn.zeptonow.com/production/amul-taaza-500ml.jpg',
+    productUrl: 'https://www.zeptonow.com/pn/amul-taaza-toned-milk/pvid/zep-milk-500',
+    specs: { Brand: 'Amul', Category: 'Dairy', Quantity: '500ml', Delivery: '10 min' },
+  },
+  {
+    id: 'zep-bread-400',
+    platform: 'zepto',
+    title: 'Britannia Brown Bread 400g',
+    price: 55,
+    currency: 'INR',
+    rating: 4.3,
+    reviewCount: 18760,
+    imageUrl: 'https://cdn.zeptonow.com/production/britannia-brown-bread.jpg',
+    productUrl: 'https://www.zeptonow.com/pn/britannia-brown-bread/pvid/zep-bread-400',
+    specs: { Brand: 'Britannia', Category: 'Bakery', Quantity: '400g', Delivery: '10 min', MRP: '₹60' },
+  },
+  {
+    id: 'zep-eggs-12',
+    platform: 'zepto',
+    title: 'Farm Fresh White Eggs 12 pcs',
+    price: 95,
+    currency: 'INR',
+    rating: 4.4,
+    reviewCount: 25890,
+    imageUrl: 'https://cdn.zeptonow.com/production/farm-eggs-12.jpg',
+    productUrl: 'https://www.zeptonow.com/pn/farm-fresh-eggs-12/pvid/zep-eggs-12',
+    specs: { Category: 'Eggs & Dairy', Quantity: '12 pcs', Delivery: '10 min', MRP: '₹110' },
+  },
+  {
+    id: 'zep-maggi-560',
+    platform: 'zepto',
+    title: 'Maggi 2-Minute Masala Noodles Pack of 8',
+    price: 108,
+    currency: 'INR',
+    rating: 4.6,
+    reviewCount: 54320,
+    imageUrl: 'https://cdn.zeptonow.com/production/maggi-8pack.jpg',
+    productUrl: 'https://www.zeptonow.com/pn/maggi-masala-8-pack/pvid/zep-maggi-560',
+    specs: { Brand: 'Maggi', Category: 'Instant Food', Quantity: '8 x 70g', Delivery: '10 min', MRP: '₹128' },
+  },
+  {
+    id: 'zep-toy-blocks',
+    platform: 'zepto',
+    title: 'Funskool Building Blocks Kids Toy Set 100 pcs',
+    price: 499,
+    currency: 'INR',
+    rating: 4.2,
+    reviewCount: 4560,
+    imageUrl: 'https://cdn.zeptonow.com/production/funskool-blocks.jpg',
+    productUrl: 'https://www.zeptonow.com/pn/funskool-building-blocks/pvid/zep-toy-blocks',
+    specs: { Brand: 'Funskool', Category: 'Toys & Games', Age: '3+ years', Delivery: '10 min', MRP: '₹699' },
+  },
+  {
+    id: 'zep-choco-100',
+    platform: 'zepto',
+    title: 'Cadbury Dairy Milk Silk Chocolate 150g',
+    price: 165,
+    currency: 'INR',
+    rating: 4.7,
+    reviewCount: 41230,
+    imageUrl: 'https://cdn.zeptonow.com/production/dairy-milk-silk.jpg',
+    productUrl: 'https://www.zeptonow.com/pn/cadbury-dairy-milk-silk/pvid/zep-choco-100',
+    specs: { Brand: 'Cadbury', Category: 'Chocolates', Quantity: '150g', Delivery: '10 min', MRP: '₹180' },
+  },
+];
+
+const INSTAMART_PRODUCTS: Product[] = [
+  {
+    id: 'im-atta-5kg',
+    platform: 'instamart',
+    title: 'Aashirvaad Shudh Chakki Atta 5kg',
+    price: 245,
+    currency: 'INR',
+    rating: 4.5,
+    reviewCount: 38670,
+    imageUrl: 'https://instamart-media.swiggy.com/aashirvaad-atta-5kg.jpg',
+    productUrl: 'https://www.swiggy.com/instamart/item/im-atta-5kg',
+    specs: { Brand: 'Aashirvaad', Category: 'Staples', Quantity: '5kg', Delivery: '15 min', MRP: '₹285' },
+  },
+  {
+    id: 'im-oil-1l',
+    platform: 'instamart',
+    title: 'Fortune Sunlite Refined Sunflower Oil 1L',
+    price: 139,
+    currency: 'INR',
+    rating: 4.4,
+    reviewCount: 29840,
+    imageUrl: 'https://instamart-media.swiggy.com/fortune-oil-1l.jpg',
+    productUrl: 'https://www.swiggy.com/instamart/item/im-oil-1l',
+    specs: { Brand: 'Fortune', Category: 'Cooking Oil', Quantity: '1L', Delivery: '15 min', MRP: '₹165' },
+  },
+  {
+    id: 'im-banana-6',
+    platform: 'instamart',
+    title: 'Fresh Robusta Banana 6 pcs',
+    price: 42,
+    currency: 'INR',
+    rating: 4.2,
+    reviewCount: 15670,
+    imageUrl: 'https://instamart-media.swiggy.com/banana-robusta.jpg',
+    productUrl: 'https://www.swiggy.com/instamart/item/im-banana-6',
+    specs: { Category: 'Fresh Fruits', Quantity: '6 pcs', Delivery: '15 min' },
+  },
+  {
+    id: 'im-detergent-1kg',
+    platform: 'instamart',
+    title: 'Surf Excel Easy Wash Detergent Powder 1kg',
+    price: 135,
+    currency: 'INR',
+    rating: 4.5,
+    reviewCount: 22310,
+    imageUrl: 'https://instamart-media.swiggy.com/surf-excel-1kg.jpg',
+    productUrl: 'https://www.swiggy.com/instamart/item/im-detergent-1kg',
+    specs: { Brand: 'Surf Excel', Category: 'Laundry', Quantity: '1kg', Delivery: '15 min', MRP: '₹150' },
+  },
+  {
+    id: 'im-toy-car',
+    platform: 'instamart',
+    title: 'Hot Wheels Die-Cast Kids Toy Car Set of 5',
+    price: 549,
+    currency: 'INR',
+    rating: 4.4,
+    reviewCount: 6780,
+    imageUrl: 'https://instamart-media.swiggy.com/hot-wheels-5pack.jpg',
+    productUrl: 'https://www.swiggy.com/instamart/item/im-toy-car',
+    specs: { Brand: 'Hot Wheels', Category: 'Toys & Games', Age: '3+ years', Delivery: '15 min', MRP: '₹749' },
+  },
+  {
+    id: 'im-coffee-50',
+    platform: 'instamart',
+    title: 'Nescafe Classic Instant Coffee 50g Jar',
+    price: 185,
+    currency: 'INR',
+    rating: 4.6,
+    reviewCount: 33450,
+    imageUrl: 'https://instamart-media.swiggy.com/nescafe-classic-50g.jpg',
+    productUrl: 'https://www.swiggy.com/instamart/item/im-coffee-50',
+    specs: { Brand: 'Nescafe', Category: 'Beverages', Quantity: '50g', Delivery: '15 min', MRP: '₹210' },
+  },
+];
+
 const ALL_PRODUCTS: Record<string, Product[]> = {
   amazon: AMAZON_PRODUCTS,
   flipkart: FLIPKART_PRODUCTS,
@@ -614,9 +764,17 @@ const ALL_PRODUCTS: Record<string, Product[]> = {
   meesho: MEESHO_PRODUCTS,
   nykaa: NYKAA_PRODUCTS,
   ajio: AJIO_PRODUCTS,
+  zepto: ZEPTO_PRODUCTS,
+  instamart: INSTAMART_PRODUCTS,
 };
 
 // ─── Exported helpers ─────────────────────────────────────────────────────────
+
+// Words that carry no product meaning — ignored when matching mock items
+const STOPWORDS = new Set([
+  'i', 'want', 'to', 'buy', 'a', 'an', 'the', 'under', 'below', 'above', 'over',
+  'for', 'me', 'my', 'inr', 'rs', 'rupees', 'best', 'good', 'new', 'cheap', 'price',
+]);
 
 export function getMockProducts(
   platform: string,
@@ -624,15 +782,22 @@ export function getMockProducts(
   params: Partial<SearchParams>
 ): Product[] {
   const catalogue = ALL_PRODUCTS[platform] ?? [];
-  const keywords = query.toLowerCase().split(/\s+/);
+  const keywords = query
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((kw) => kw.length > 1 && !STOPWORDS.has(kw) && !/^\d+$/.test(kw));
 
-  let results = catalogue.filter((p) => {
-    const searchable = `${p.title} ${p.specs['Brand'] ?? ''} ${p.specs['Category'] ?? ''}`.toLowerCase();
-    return keywords.some((kw) => searchable.includes(kw));
-  });
-
-  // If no keyword match, return all (generic fallback)
-  if (results.length === 0) results = catalogue;
+  // Word-prefix matching, not substring: "men" must NOT match "woMEN",
+  // while "shoe" still matches "shoes" and "pant" matches "pants"
+  let results = keywords.length
+    ? catalogue.filter((p) => {
+        const words = `${p.title} ${p.specs['Brand'] ?? ''} ${p.specs['Category'] ?? ''}`
+          .toLowerCase()
+          .split(/[^a-z0-9]+/);
+        return keywords.some((kw) => words.some((w) => w.startsWith(kw)));
+      })
+    : catalogue;
 
   if (params.minPrice !== undefined) results = results.filter((p) => p.price >= params.minPrice!);
   if (params.maxPrice !== undefined) results = results.filter((p) => p.price <= params.maxPrice!);
