@@ -781,6 +781,12 @@ export function getMockProducts(
   query: string,
   params: Partial<SearchParams>
 ): Product[] {
+  // Live mode must NEVER show demo products: a failed scrape returns "no
+  // results", not a fake catalog. Users trust "no results" — they never trust
+  // a bot that answers a toy search with the demo kurti list. Every scraper's
+  // fallback path routes through here, so this one gate covers them all.
+  if (process.env.USE_MOCK_DATA !== 'true') return [];
+
   const catalogue = ALL_PRODUCTS[platform] ?? [];
   const keywords = query
     .toLowerCase()

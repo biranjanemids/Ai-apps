@@ -232,6 +232,9 @@ async function handleMessage(
     return;
   }
 
+  // "buy 3" / "send me the link" — handled deterministically, never by the LLM
+  if (await handleBuyLinkCommand(from, text)) return;
+
   // Normal agent processing
   const reply = await processMessage(from, text);
   await deliverAgentReply(from, reply);
@@ -269,7 +272,9 @@ async function deliverAgentReply(to: string, reply: AgentReply): Promise<void> {
     }
   }
 
-  if (reply.text) await sendTextMessage(to, reply.text);
+  // Deliberately DROP the LLM's own text after a search: the formatted list
+  // already carries the cheapest/best-value insight, and the trailing LLM
+  // summary was the main source of invented products, prices, and links.
 }
 
 function pickTopProducts(
@@ -312,45 +317,7 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
         return;
       }
 
-      // Record click analytics
-      recordBuyClick(from, platform, productId);
-
-      // Fetch checkout URL
-      const linkResult = await getBuyLink(productId, platform);
-
-      // Track product price
-      recordProductPrice(from, productId, platform, linkResult.price);
-
-      // Check for price drops
-      const hasPriceDrop = checkPriceDrop(productId, platform, linkResult.price, 10);
-      if (hasPriceDrop) {
-        console.log(`[Analytics] Price drop detected for ${productId} on ${platform}`);
-      }
-
-      // Start the buy flow — collect delivery address first
-      setBuyIntent(from, {
-        product: {
-          id: linkResult.productId,
-          platform: platform as Platform,
-          title: linkResult.title,
-          price: linkResult.price,
-          currency: 'INR',
-          rating: 0,
-          reviewCount: 0,
-          imageUrl: linkResult.imageUrl,
-          productUrl: linkResult.productUrl,
-          specs: {},
-        },
-        checkoutUrl: linkResult.checkoutUrl,
-        stage: 'awaiting_address',
-      });
-
-      const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
-      const price = linkResult.price > 0 ? ` (₹${linkResult.price.toLocaleString('en-IN')})` : '';
-      await sendTextMessage(
-        from,
-        `🛒 *Ready to buy from ${platformName}!*\n\n*${linkResult.title}*${price}\n\n📍 Please share your *delivery address* so I can include it in your order summary:`
-      );
+      await startBuyFlow(from, productId, platform);
       return;
     }
 
@@ -415,6 +382,85 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
     console.error('[Webhook] handleInteractive error:', err);
     await sendTextMessage(from, 'Something went wrong. Please try again.');
   }
+}
+
+// ── Buy flow entry (shared by button taps and "buy N" text commands) ─────────
+
+async function startBuyFlow(from: string, productId: string, platform: string): Promise<void> {
+  // Record click analytics
+  recordBuyClick(from, platform, productId);
+
+  // Fetch checkout URL
+  const linkResult = await getBuyLink(productId, platform);
+
+  // Track product price
+  recordProductPrice(from, productId, platform, linkResult.price);
+
+  // Check for price drops
+  const hasPriceDrop = checkPriceDrop(productId, platform, linkResult.price, 10);
+  if (hasPriceDrop) {
+    console.log(`[Analytics] Price drop detected for ${productId} on ${platform}`);
+  }
+
+  // Start the buy flow — collect delivery address first
+  setBuyIntent(from, {
+    product: {
+      id: linkResult.productId,
+      platform: platform as Platform,
+      title: linkResult.title,
+      price: linkResult.price,
+      currency: 'INR',
+      rating: 0,
+      reviewCount: 0,
+      imageUrl: linkResult.imageUrl,
+      productUrl: linkResult.productUrl,
+      specs: {},
+    },
+    checkoutUrl: linkResult.checkoutUrl,
+    stage: 'awaiting_address',
+  });
+
+  const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
+  const price = linkResult.price > 0 ? ` (₹${linkResult.price.toLocaleString('en-IN')})` : '';
+  await sendTextMessage(
+    from,
+    `🛒 *Ready to buy from ${platformName}!*\n\n*${linkResult.title}*${price}\n\n📍 Please share your *delivery address* so I can include it in your order summary:`
+  );
+}
+
+// ── Deterministic buy/link text commands ─────────────────────────────────────
+// "buy 3", "link 2", "send me the link", "link do" etc. must NEVER reach the
+// LLM — it invents URLs. Route them straight to the real product from the
+// last search. Returns true if the message was handled here.
+
+const BUY_LINK_COMMAND =
+  /^(?:buy|link|checkout|buy\s+link|(?:send|give|provide|share)(?:\s+me)?(?:\s+the)?(?:\s+buy(?:ing)?)?\s+link|link\s+(?:do|bhejo|send))\s*(?:for\s*)?(?:product\s*|#\s*)?(\d+)?\s*$/i;
+
+async function handleBuyLinkCommand(from: string, text: string): Promise<boolean> {
+  const match = text.trim().match(BUY_LINK_COMMAND);
+  if (!match) return false;
+
+  const products = getSearchResults(from);
+  if (products.length === 0) {
+    await sendTextMessage(
+      from,
+      '🔍 Search for a product first — then reply *buy 2* (the product number) or tap *Buy Now* on a card.'
+    );
+    return true;
+  }
+
+  const num = match[1] ? parseInt(match[1], 10) : NaN;
+  if (!num || num < 1 || num > products.length) {
+    await sendTextMessage(
+      from,
+      `Which one? Reply with the product number, e.g. *buy 1* — your last search had ${products.length} products.`
+    );
+    return true;
+  }
+
+  const product = products[num - 1];
+  await startBuyFlow(from, product.id, product.platform);
+  return true;
 }
 
 // ── Buy-flow text handler (collecting address → phone) ────────────────────────

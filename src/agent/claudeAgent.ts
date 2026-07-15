@@ -12,35 +12,26 @@ import {
   getPreferredLanguage,
   setPreferredLanguage,
 } from './sessionManager.js';
+import {
+  chatCompletion,
+  providerSummary,
+  ToolUseFailedError,
+  AllProvidersFailedError,
+  LlmChoice,
+} from './llmProviders.js';
 import { Product } from '../types/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Lazy-initialized to ensure dotenv has loaded before the key is read
-let _groq: Groq | null = null;
-function getGroq(): Groq {
-  if (!_groq) _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-  return _groq;
-}
-
-// Model to use — llama-3.3-70b-versatile has the best tool-calling support on Groq
-// free tier. Override with GROQ_MODEL in .env without touching code.
-const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
-
-// When the primary model's daily token quota runs out (429), fall back to a
-// smaller model — Groq tracks rate limits per model, so its quota is separate.
-const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL ?? 'llama-3.1-8b-instant';
-
 // Safety cap on tool-calling rounds per user message — prevents runaway loops
 const MAX_TOOL_ROUNDS = 6;
 
-// Groq's llama models occasionally emit tool calls in malformed formats like
+// Llama models occasionally emit tool calls as text in malformed formats like
 // `<function=search_products {"query": ...} </function>` or
-// `<function=get_product_details({"platform": ...})</function>` — Groq then
-// 400s with code 'tool_use_failed' but includes the intended call in
-// failed_generation. We salvage it (the args are usually valid JSON).
+// `function=get_buy_link>{"platform": ...}</function>` (no angle bracket).
+// We salvage the intended call (the args are usually valid JSON).
 function salvageToolCall(failedGeneration: string): { name: string; args: string } | null {
-  const nameMatch = failedGeneration.match(/<function=([a-zA-Z0-9_]+)/);
+  const nameMatch = failedGeneration.match(/<?function=([a-zA-Z0-9_]+)/);
   const start = failedGeneration.indexOf('{');
   const end = failedGeneration.lastIndexOf('}');
   if (!nameMatch || start === -1 || end <= start) return null;
@@ -53,49 +44,44 @@ function salvageToolCall(failedGeneration: string): { name: string; args: string
   }
 }
 
-type GroqChoice = Groq.Chat.Completions.ChatCompletion.Choice;
+// Scrub every observed leak shape from text that reaches the user, with or
+// without the leading '<' and with or without a closing tag. Two passes:
+// tag-closed leaks can span lines and nest braces; tagless leaks are consumed
+// greedily to the last '}' on their line (handles nested JSON).
+export function scrubToolLeaks(text: string): string {
+  return text
+    .replace(/<?\/?function=[a-zA-Z0-9_]+[\s\S]*?<\/function>/g, '')
+    .replace(/<?\/?function=[a-zA-Z0-9_]+[^{}\n]*(?:\{.*\})?/g, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+type GroqChoice = LlmChoice;
 
 async function chatWithToolRetry(
   messages: Groq.Chat.ChatCompletionMessageParam[],
   tools: Groq.Chat.ChatCompletionTool[]
 ): Promise<GroqChoice> {
   let lastErr: unknown;
-  let model = MODEL;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const response = await getGroq().chat.completions.create({
-        model,
-        messages,
-        tools,
-        tool_choice: 'auto',
-        max_tokens: 1024,
+      // chatCompletion rotates Groq → Gemini → Cerebras → OpenRouter →
+      // llama-8b on rate limits/outages, so a 429 here never reaches the user
+      return await chatCompletion(messages, tools, {
+        maxTokens: 1024,
         // Lower temperature on retries — malformed tool calls are more likely when sampling hot
         temperature: attempt === 1 ? 0.6 : 0.2,
       });
-      return response.choices[0];
     } catch (err) {
-      // Daily quota exhausted on the primary model → switch to the fallback
-      // model, which has its own separate quota
-      if ((err as { status?: number })?.status === 429 && model !== FALLBACK_MODEL) {
-        console.warn(`[Agent] ${model} rate-limited — falling back to ${FALLBACK_MODEL}`);
-        model = FALLBACK_MODEL;
-        lastErr = err;
-        continue;
-      }
-
-      const inner = (err as { error?: { error?: { code?: string; failed_generation?: string } } })
-        ?.error?.error;
-      if (inner?.code !== 'tool_use_failed') throw err;
+      if (!(err instanceof ToolUseFailedError)) throw err;
       lastErr = err;
 
       // Salvage: extract the tool call the model intended and synthesize the turn
-      const salvaged = salvageToolCall(inner.failed_generation ?? '');
+      const salvaged = salvageToolCall(err.failedGeneration);
       if (salvaged) {
         console.warn(`[Agent] Salvaged malformed tool call for ${salvaged.name}`);
         return {
-          index: 0,
           finish_reason: 'tool_calls',
-          logprobs: null,
           message: {
             role: 'assistant',
             content: null,
@@ -107,9 +93,9 @@ async function chatWithToolRetry(
               },
             ],
           },
-        } as unknown as GroqChoice;
+        };
       }
-      console.warn(`[Agent] Groq tool_use_failed (attempt ${attempt}/3) — retrying`);
+      console.warn(`[Agent] tool_use_failed (attempt ${attempt}/3) — retrying`);
     }
   }
   throw lastErr;
@@ -128,6 +114,7 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 - Any new product request, or a changed budget/category/size → call search_products again FIRST — do not answer from earlier results
 - If a tool returned nothing, say so honestly and suggest broadening the search
 - NEVER write "<function=...>" or any tool-call syntax as text in a reply — actually call the tool
+- NEVER write a URL yourself. Links come ONLY from get_buy_link tool results, copied exactly. If you don't have a real link, tell the user to tap *Buy Now* on a product card or reply "buy 2" (the product number)
 
 ## Conversation Flow
 1. Greet and ask what product they want
@@ -173,7 +160,6 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 - If budget is under ₹5,000: prioritize value-for-money picks, flag deals with 20%+ off
 - If budget is over ₹20,000: prioritize rating and brand reputation
 - If no results: suggest broadening the search term or removing price filters
-- If scraping returns mock data: still present it helpfully, results may vary
 
 ## Response Style
 - Keep messages short — WhatsApp is not a webpage
@@ -229,15 +215,22 @@ async function getMcpClient(): Promise<Client> {
   }));
 
   mcpClient = client;
-  console.log(`[Agent] Groq + MCP ready | model: ${MODEL} | tools: ${groqTools.map((t) => t.function?.name).join(', ')}`);
+  console.log(`[Agent] LLM chain: ${providerSummary()} | tools: ${groqTools.map((t) => t.function?.name).join(', ')}`);
   return client;
 }
 
 // ── Message processing ────────────────────────────────────────────────────────
 
-// Detect if text contains Hindi/Devanagari characters
-function containsHindi(text: string): boolean {
-  return /[ऀ-ॿ]/.test(text);
+// Detect the language of a single message: Devanagari is a certain signal for
+// Hindi; romanized Hindi (Hinglish) is detected via common function words —
+// two or more hits means the message is Hinglish, not English.
+const HINGLISH_WORDS =
+  /\b(hai|hain|nahi|nhi|chahiye|kharid\w*|karo|karna|karein|mujhe|muje|mera|meri|kya|kaise|bhejo|dikhao|batao|wala|vala|rupay\w*|sasta|se|tak|ka|ke|ki|pe|abhi|jyada|zyada|thoda|acha|accha)\b/gi;
+
+function detectLanguage(text: string): 'hi' | 'en' {
+  if (/[ऀ-ॿ]/.test(text)) return 'hi';
+  const hits = text.toLowerCase().match(HINGLISH_WORDS);
+  return hits && hits.length >= 2 ? 'hi' : 'en';
 }
 
 // Wishlist shortcut keywords (English + Hindi)
@@ -266,8 +259,10 @@ export async function processMessage(
     const client = await getMcpClient();
     const session = getSession(userId);
 
-    // Detect and remember language preference
-    if (containsHindi(userText)) setPreferredLanguage(userId, 'hi');
+    // Mirror the language of the LATEST message — a user who switches to
+    // English must get English back immediately (and vice versa)
+    const lang = detectLanguage(userText);
+    setPreferredLanguage(userId, lang);
 
     // Wishlist shortcut — no LLM needed
     if (WISHLIST_KEYWORDS.test(userText.trim())) {
@@ -284,6 +279,12 @@ export async function processMessage(
         role: m.role as 'user' | 'assistant',
         content: m.content,
       })),
+      {
+        role: 'system',
+        content: `Language rule: the user's most recent message is in ${
+          lang === 'hi' ? 'Hindi/Hinglish — reply in simple Hindi' : 'English — reply in English'
+        }. Write your ENTIRE reply in that language. Only deviate if the user explicitly asked for a different language.`,
+      },
     ];
 
     // Agentic loop — bounded so a tool-happy model can't spin forever
@@ -295,7 +296,8 @@ export async function processMessage(
       // a real tool call — convert it into a real one so it actually executes
       if (
         (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) &&
-        assistantMessage.content?.includes('<function=')
+        assistantMessage.content &&
+        /<?function=/.test(assistantMessage.content)
       ) {
         const leaked = salvageToolCall(assistantMessage.content);
         if (leaked) {
@@ -325,10 +327,7 @@ export async function processMessage(
       ) {
         // Scrub any remaining tool-call syntax the model leaked into its text
         // (multiple pseudo calls in one message can't be converted above)
-        const text = (assistantMessage.content?.trim() ?? '').replace(
-          /<function=[^{<]*\{[\s\S]*?\}(?:\s*\))?(?:\s*<\/function>)?/g,
-          '_(tap Buy Now on the product card)_'
-        );
+        const text = scrubToolLeaks(assistantMessage.content?.trim() ?? '');
         appendMessage(userId, { role: 'assistant', content: text });
         return {
           text: text || (lastSearch ? '' : 'I encountered an issue. Please try again.'),
@@ -417,13 +416,8 @@ export async function processMessage(
 
     // Tool-round budget exhausted — force a final answer without tools
     console.warn(`[Agent] Hit MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) for ${userId} — forcing final answer`);
-    const finalResponse = await getGroq().chat.completions.create({
-      model: MODEL,
-      messages,
-      max_tokens: 1024,
-      temperature: 0.7,
-    });
-    const finalText = finalResponse.choices[0]?.message?.content?.trim() ?? '';
+    const finalChoice = await chatCompletion(messages, undefined, { maxTokens: 1024, temperature: 0.7 });
+    const finalText = scrubToolLeaks(finalChoice.message?.content?.trim() ?? '');
     appendMessage(userId, { role: 'assistant', content: finalText });
     return {
       text: finalText || (lastSearch ? '' : 'I found some options but need you to narrow things down — could you rephrase your search?'),
@@ -432,12 +426,15 @@ export async function processMessage(
   } catch (err) {
     console.error('[Agent] processMessage error:', err);
 
-    // Daily AI quota exhausted on all models — tell the user when to retry
-    if ((err as { status?: number })?.status === 429) {
+    // Every configured AI provider is rate-limited — tell the user when to retry
+    if (
+      (err instanceof AllProvidersFailedError && err.status === 429) ||
+      (err as { status?: number })?.status === 429
+    ) {
       const waitMatch = err instanceof Error ? err.message.match(/try again in (\d+)m/i) : null;
-      const wait = waitMatch ? `about ${waitMatch[1]} minutes` : 'a little while';
+      const wait = waitMatch ? `about ${waitMatch[1]} minutes` : 'a few minutes';
       return {
-        text: `⏳ I've hit today's free AI usage limit. Please try again in ${wait} 🙏`,
+        text: `⏳ I'm getting a lot of requests right now. Please try again in ${wait} 🙏`,
         search: lastSearch,
       };
     }

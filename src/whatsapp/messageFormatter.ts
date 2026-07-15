@@ -139,7 +139,7 @@ export function formatProductDetail(product: Product): string {
   ];
 
   const specEntries = Object.entries(product.specs)
-    .filter(([k]) => k !== 'MRP')
+    .filter(([k]) => !['MRP', 'Source', 'Store'].includes(k))
     .slice(0, 5);
   if (specEntries.length > 0) {
     lines.push('');
@@ -155,9 +155,15 @@ export function formatProductDetail(product: Product): string {
     lines.push(`💸 MRP: ${mrp} · You save ${disc}%`);
   }
 
-  if (product.productUrl) {
+  // Only show a raw URL when it's short enough to look trustworthy — the
+  // 400-char Google Shopping redirects go behind the Buy Now button instead
+  const buyUrl = wrapAffiliateLink(product.productUrl, product.platform);
+  if (buyUrl && buyUrl.length <= 96) {
     lines.push('');
-    lines.push(`🔗 *Buy here:* ${wrapAffiliateLink(product.productUrl, product.platform)}`);
+    lines.push(`🔗 *Buy here:* ${buyUrl}`);
+  } else if (product.productUrl) {
+    lines.push('');
+    lines.push('🛒 Tap *Buy Now* on the product card to purchase');
   }
 
   return lines.join('\n');

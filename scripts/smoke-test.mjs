@@ -151,7 +151,11 @@ const liveP = { ...p1, id: 'serp_test_1', productUrl: 'https://example.com/buy' 
 registerLiveProduct(liveP);
 check(getLiveProduct('serp_test_1')?.productUrl === 'https://example.com/buy', 'live registry roundtrip failed');
 const liveLink = await getBuyLink('serp_test_1', liveP.platform);
-check(liveLink.checkoutUrl === 'https://example.com/buy', 'live product buy link should be its product URL');
+check(
+  liveLink.checkoutUrl.startsWith('https://example.com/buy') &&
+    liveLink.checkoutUrl.includes('utm_source=whatsapp_bot'),
+  'live product buy link should be its product URL plus UTM tracking'
+);
 const liveDetail = await getProductDetails('serp_test_1', liveP.platform);
 check(liveDetail?.id === 'serp_test_1', 'live product details lookup failed');
 

@@ -58,15 +58,18 @@ export async function sendProductCard(
   const price = product.price > 0 ? `₹${product.price.toLocaleString('en-IN')}` : 'Price N/A';
   const rating = product.rating > 0 ? ` · ⭐${product.rating}` : '';
 
+  // No raw URL in the body — 400-char redirect links look sketchy and kill
+  // purchase confidence. The Buy Now button is the only path to the link.
+  // Source/Store are internal metadata, not product facts.
+  const HIDDEN_SPECS = new Set(['MRP', 'Source', 'Store']);
   const body = [
     `${emoji} *${product.title}*`,
     `💰 ${price}${rating}`,
     Object.entries(product.specs)
-      .filter(([k]) => k !== 'MRP')
+      .filter(([k]) => !HIDDEN_SPECS.has(k))
       .slice(0, 2)
       .map(([k, v]) => `  • ${k}: ${v}`)
       .join('\n'),
-    product.productUrl ? `🔗 ${wrapAffiliateLink(product.productUrl, product.platform)}` : '',
   ]
     .filter(Boolean)
     .join('\n');
