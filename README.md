@@ -27,7 +27,10 @@ WhatsApp Cloud API ──▶ Express webhook ──▶ Groq agent (llama-3.3-70b
                     (scrape)  (scrape)   (API)    (API)     (API)     (API)
 ```
 
-Every platform adapter falls back to bundled mock data on scrape/API failure, so the bot always answers. Set `USE_MOCK_DATA=true` for a fully offline demo.
+**Data sources (in priority order):**
+1. **SerpApi Google Shopping** (recommended) — set `SERPAPI_KEY` in `.env` for real, authenticated product data, prices, and buy links across all major Indian stores in one API call. Free tier: 100 searches/month at https://serpapi.com.
+2. **Per-platform scrapers** — best-effort, unauthenticated; the sites' internal APIs change and block frequently.
+3. **Demo catalog** — bundled mock data so the bot always answers. Set `USE_MOCK_DATA=true` to force this mode for offline demos.
 
 ## Setup
 

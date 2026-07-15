@@ -6,6 +6,7 @@ import { getNykaaProduct } from '../../platforms/nykaa.js';
 import { getAjioProduct } from '../../platforms/ajio.js';
 import { getZeptoProduct } from '../../platforms/zepto.js';
 import { getInstamartProduct } from '../../platforms/instamart.js';
+import { getLiveProduct } from '../../platforms/liveRegistry.js';
 import { getMockProduct } from '../../platforms/mock.js';
 
 export interface BuyLinkResult {
@@ -52,6 +53,20 @@ export async function getBuyLink(
   productId: string,
   platform: string
 ): Promise<BuyLinkResult> {
+  // Live aggregated products: the product URL is the buy link
+  const live = getLiveProduct(productId);
+  if (live) {
+    return {
+      platform: live.platform,
+      productId,
+      title: live.title,
+      price: live.price,
+      imageUrl: live.imageUrl,
+      productUrl: live.productUrl,
+      checkoutUrl: live.productUrl,
+    };
+  }
+
   const fallback = getMockProduct(platform, productId);
 
   try {

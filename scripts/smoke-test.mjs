@@ -136,6 +136,25 @@ check(sm.getBuyIntent(uid) === undefined, 'buy intent clear failed');
 for (let i = 0; i < 25; i++) sm.appendMessage(uid, { role: 'user', content: `m${i}` });
 check(sm.getSession(uid).messages.length === 20, 'message history cap failed');
 
+// ── 6. Live-provider plumbing (no network — registry + store mapping) ────────
+
+const { mapStoreToPlatform } = await import('../dist/providers/serpapi.js');
+const { registerLiveProduct, getLiveProduct } = await import('../dist/platforms/liveRegistry.js');
+
+check(mapStoreToPlatform('Amazon.in') === 'amazon', 'store mapping failed for Amazon.in');
+check(mapStoreToPlatform('Flipkart') === 'flipkart', 'store mapping failed for Flipkart');
+check(mapStoreToPlatform('Nykaa') === 'nykaa', 'store mapping failed for Nykaa');
+check(mapStoreToPlatform('Swiggy Instamart') === 'instamart', 'store mapping failed for Instamart');
+check(mapStoreToPlatform('Croma') === null, 'unknown store should map to null');
+
+const liveP = { ...p1, id: 'serp_test_1', productUrl: 'https://example.com/buy' };
+registerLiveProduct(liveP);
+check(getLiveProduct('serp_test_1')?.productUrl === 'https://example.com/buy', 'live registry roundtrip failed');
+const liveLink = await getBuyLink('serp_test_1', liveP.platform);
+check(liveLink.checkoutUrl === 'https://example.com/buy', 'live product buy link should be its product URL');
+const liveDetail = await getProductDetails('serp_test_1', liveP.platform);
+check(liveDetail?.id === 'serp_test_1', 'live product details lookup failed');
+
 // ── Report ───────────────────────────────────────────────────────────────────
 
 if (failures.length > 0) {

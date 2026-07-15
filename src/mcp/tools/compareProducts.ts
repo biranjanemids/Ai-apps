@@ -6,6 +6,7 @@ import { getNykaaProduct } from '../../platforms/nykaa.js';
 import { getAjioProduct } from '../../platforms/ajio.js';
 import { getZeptoProduct } from '../../platforms/zepto.js';
 import { getInstamartProduct } from '../../platforms/instamart.js';
+import { getLiveProduct } from '../../platforms/liveRegistry.js';
 import { Product, ComparisonRow } from '../../types/index.js';
 
 export async function compareProducts(
@@ -15,6 +16,9 @@ export async function compareProducts(
   comparisonTable: ComparisonRow[];
 }> {
   const fetches = productRefs.map(({ productId, platform }) => {
+    const live = getLiveProduct(productId);
+    if (live) return Promise.resolve(live);
+
     switch (platform) {
       case 'amazon':
         return getAmazonProduct(productId);

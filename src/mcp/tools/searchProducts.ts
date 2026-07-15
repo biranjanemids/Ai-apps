@@ -7,6 +7,7 @@ import { searchAjio } from '../../platforms/ajio.js';
 import { searchZepto } from '../../platforms/zepto.js';
 import { searchInstamart } from '../../platforms/instamart.js';
 import { getCache, setCache, cacheKey } from '../../platforms/cache.js';
+import { isSerpApiEnabled, searchViaSerpApi } from '../../providers/serpapi.js';
 import { Product, SearchParams, Platform } from '../../types/index.js';
 
 // Value score: balances rating quality vs price — higher is better deal
@@ -49,11 +50,32 @@ export async function searchProducts(params: SearchParams): Promise<{
   ].filter((p) => platforms.includes(p.name as Platform));
 
 
+  // Primary source: authenticated aggregated live data (one call, all stores).
+  // Falls back to the per-platform scrapers for anything it doesn't cover.
+  let liveByPlatform: Map<Platform, Product[]> | null = null;
+  if (isSerpApiEnabled()) {
+    try {
+      liveByPlatform = await searchViaSerpApi(params);
+    } catch (err) {
+      console.error(
+        '[SerpApi] Live search failed — falling back to scrapers:',
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
+
   const searches = await Promise.allSettled(
     platformSearches.map(async ({ name, fn }) => {
       const key = cacheKey(name, params.query, params.minPrice, params.maxPrice);
       const cached = getCache(key);
       if (cached) return { products: cached, cached: true };
+
+      const live = liveByPlatform?.get(name as Platform);
+      if (live && live.length > 0) {
+        setCache(key, live);
+        return { products: live, cached: false };
+      }
+
       const products = await fn();
       if (products.length > 0) setCache(key, products);
       return { products, cached: false };
