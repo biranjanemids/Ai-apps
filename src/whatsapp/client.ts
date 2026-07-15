@@ -77,17 +77,35 @@ export async function uploadMediaFromUrl(imageUrl: string): Promise<string | nul
       },
     });
 
-    const mime = String(img.headers['content-type'] ?? '').split(';')[0].trim();
+    let mime = String(img.headers['content-type'] ?? '').split(';')[0].trim();
+    let fileData: Buffer = Buffer.from(img.data);
+
+    // WhatsApp only accepts JPEG/PNG. Google Shopping thumbnails are WebP, so
+    // convert anything else to JPEG instead of dropping the image.
     if (!/^image\/(jpeg|png)$/.test(mime)) {
-      console.warn(`[WhatsApp] Skipping image upload — unsupported type "${mime}" for ${imageUrl.slice(0, 80)}`);
-      return null;
+      try {
+        const sharp = (await import('sharp')).default;
+        fileData = await sharp(fileData).jpeg({ quality: 85 }).toBuffer();
+        console.log(`[WhatsApp] Converted ${mime || 'unknown'} → JPEG for ${imageUrl.slice(0, 60)}`);
+        mime = 'image/jpeg';
+      } catch (convErr) {
+        console.warn(
+          `[WhatsApp] Skipping image — cannot convert type "${mime}":`,
+          convErr instanceof Error ? convErr.message : convErr
+        );
+        return null;
+      }
     }
 
     const phoneNumberId = getPhoneNumberId();
     const form = new FormData();
     form.append('messaging_product', 'whatsapp');
     form.append('type', mime);
-    form.append('file', new Blob([img.data], { type: mime }), mime === 'image/png' ? 'product.png' : 'product.jpg');
+    form.append(
+      'file',
+      new Blob([Uint8Array.from(fileData)], { type: mime }),
+      mime === 'image/png' ? 'product.png' : 'product.jpg'
+    );
 
     const { data } = await axios.post<{ id?: string }>(
       `${BASE_URL}/${phoneNumberId}/media`,

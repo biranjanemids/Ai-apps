@@ -44,6 +44,10 @@ async function resolveHeaderImage(imageUrl?: string): Promise<HeaderImage | unde
   if (!imageUrl?.startsWith('https')) return undefined;
   const mediaId = await uploadMediaFromUrl(imageUrl);
   if (mediaId) return { id: mediaId };
+  // Google Shopping thumbnails are WebP — Meta's own fetcher can't render
+  // them either (error 131053), so a link fallback is a guaranteed failed
+  // send. Better no image than a failed message.
+  if (/gstatic\.com|googleusercontent\.com/.test(imageUrl)) return undefined;
   return { link: imageUrl };
 }
 

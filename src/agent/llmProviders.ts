@@ -182,8 +182,17 @@ async function tryProviders(
       // a 5xx outage must not hide the friendly rate-limit message
       if (status === 400 || status === 401 || status === 403) sawNonRateLimit = true;
       lastMessage = err instanceof Error ? err.message : String(err);
+
+      // Surface the provider's own explanation (safe: response bodies carry
+      // error text, never our API keys) so 404/400s are diagnosable from logs
+      let detail = '';
+      if (axios.isAxiosError(err) && err.response?.data) {
+        try {
+          detail = ` | ${JSON.stringify(err.response.data).slice(0, 220)}`;
+        } catch { /* unserializable body */ }
+      }
       console.warn(
-        `[LLM] ${provider.name}/${model} failed (${status ?? 'network'}) — ${
+        `[LLM] ${provider.name}/${model} failed (${status ?? 'network'})${detail} — ${
           provider === providers[providers.length - 1] ? 'no providers left' : 'trying next provider'
         }`
       );
