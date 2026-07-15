@@ -44,6 +44,71 @@ async function post(body: Record<string, unknown>): Promise<void> {
   throw lastErr;
 }
 
+// ── Media upload ──────────────────────────────────────────────────────────────
+// WhatsApp renders link-based image headers only if ITS servers can fetch the
+// URL — many product CDNs block Meta's fetcher. Uploading the image ourselves
+// and referencing the media ID makes rendering reliable. JPEG/PNG only.
+
+const mediaCache = new Map<string, { id: string; at: number }>();
+const MEDIA_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+
+export async function uploadMediaFromUrl(imageUrl: string): Promise<string | null> {
+  const cached = mediaCache.get(imageUrl);
+  if (cached && Date.now() - cached.at < MEDIA_CACHE_TTL_MS) return cached.id;
+
+  try {
+    const img = await axios.get(imageUrl, {
+      responseType: 'arraybuffer',
+      timeout: 8000,
+      maxContentLength: 5 * 1024 * 1024, // WhatsApp image limit
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        Accept: 'image/jpeg,image/png,image/*;q=0.8',
+      },
+    });
+
+    const mime = String(img.headers['content-type'] ?? '').split(';')[0].trim();
+    if (!/^image\/(jpeg|png)$/.test(mime)) {
+      console.warn(`[WhatsApp] Skipping image upload — unsupported type "${mime}" for ${imageUrl.slice(0, 80)}`);
+      return null;
+    }
+
+    const phoneNumberId = getPhoneNumberId();
+    const form = new FormData();
+    form.append('messaging_product', 'whatsapp');
+    form.append('type', mime);
+    form.append('file', new Blob([img.data], { type: mime }), mime === 'image/png' ? 'product.png' : 'product.jpg');
+
+    const { data } = await axios.post<{ id?: string }>(
+      `${BASE_URL}/${phoneNumberId}/media`,
+      form,
+      {
+        headers: { Authorization: `Bearer ${process.env.WHATSAPP_ACCESS_TOKEN}` },
+        timeout: 15_000,
+      }
+    );
+
+    if (data?.id) {
+      if (mediaCache.size > 500) mediaCache.clear();
+      mediaCache.set(imageUrl, { id: data.id, at: Date.now() });
+      return data.id;
+    }
+    return null;
+  } catch (err) {
+    const detail = axios.isAxiosError(err)
+      ? JSON.stringify(err.response?.data ?? err.message)
+      : err;
+    console.warn(`[WhatsApp] Media upload failed for ${imageUrl.slice(0, 80)}:`, detail);
+    return null;
+  }
+}
+
+export interface HeaderImage {
+  id?: string;
+  link?: string;
+}
+
 // ── Text message ──────────────────────────────────────────────────────────────
 
 export async function sendTextMessage(to: string, text: string): Promise<void> {
@@ -73,7 +138,7 @@ export async function sendButtonMessage(
   buttons: WhatsAppButton[],
   headerText?: string,
   footerText?: string,
-  headerImageUrl?: string
+  headerImage?: HeaderImage
 ): Promise<void> {
   const interactive: Record<string, unknown> = {
     type: 'button',
@@ -89,8 +154,8 @@ export async function sendButtonMessage(
     },
   };
   // Image header takes priority (a button message has one header, image OR text)
-  if (headerImageUrl) {
-    interactive['header'] = { type: 'image', image: { link: headerImageUrl } };
+  if (headerImage && (headerImage.id || headerImage.link)) {
+    interactive['header'] = { type: 'image', image: headerImage };
   } else if (headerText) {
     interactive['header'] = { type: 'text', text: headerText.slice(0, 60) };
   }
@@ -155,7 +220,7 @@ export async function sendCtaUrlMessage(
   bodyText: string,
   buttonLabel: string,
   url: string,
-  headerImageUrl?: string,
+  headerImage?: HeaderImage,
   footerText?: string
 ): Promise<void> {
   const interactive: Record<string, unknown> = {
@@ -169,7 +234,9 @@ export async function sendCtaUrlMessage(
       },
     },
   };
-  if (headerImageUrl) interactive['header'] = { type: 'image', image: { link: headerImageUrl } };
+  if (headerImage && (headerImage.id || headerImage.link)) {
+    interactive['header'] = { type: 'image', image: headerImage };
+  }
   if (footerText) interactive['footer'] = { text: footerText.slice(0, 60) };
 
   await post({

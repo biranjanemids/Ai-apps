@@ -1,4 +1,12 @@
-import { sendButtonMessage, sendCtaUrlMessage, sendListMessage, sendTextMessage, ListRow } from './client.js';
+import {
+  sendButtonMessage,
+  sendCtaUrlMessage,
+  sendListMessage,
+  sendTextMessage,
+  uploadMediaFromUrl,
+  HeaderImage,
+  ListRow,
+} from './client.js';
 import { Product } from '../types/index.js';
 import { discountPercent } from '../mcp/tools/searchProducts.js';
 
@@ -16,6 +24,15 @@ const PLATFORM_EMOJI: Record<string, string> = {
 function discountTag(product: Product): string {
   const disc = discountPercent(product);
   return disc >= 5 ? `🔥 *${disc}% off* MRP` : '';
+}
+
+// Upload the product image to WhatsApp for reliable rendering; fall back to a
+// link header (WhatsApp fetches it) only if upload isn't possible.
+async function resolveHeaderImage(imageUrl?: string): Promise<HeaderImage | undefined> {
+  if (!imageUrl?.startsWith('https')) return undefined;
+  const mediaId = await uploadMediaFromUrl(imageUrl);
+  if (mediaId) return { id: mediaId };
+  return { link: imageUrl };
 }
 
 // ── Product card with 3 action buttons ───────────────────────────────────────
@@ -51,13 +68,12 @@ export async function sendProductCard(
     { id: `compare__${index}__${product.id}__${product.platform}`, title: '📊 Compare' },
   ];
 
-  // Show the product image as the card header when we have a public HTTPS URL.
-  // WhatsApp fetches the image server-side and rejects the message if the URL
-  // is unreachable, so fall back to a plain text-header card on failure.
-  const imageUrl = product.imageUrl?.startsWith('https') ? product.imageUrl : undefined;
-  if (imageUrl) {
+  // Show the product image as the card header when available — uploaded to
+  // WhatsApp first for reliable rendering.
+  const headerImage = await resolveHeaderImage(product.imageUrl);
+  if (headerImage) {
     try {
-      await sendButtonMessage(to, bodyWithDisc, buttons, undefined, 'Tap an action below', imageUrl);
+      await sendButtonMessage(to, bodyWithDisc, buttons, undefined, 'Tap an action below', headerImage);
       return;
     } catch {
       console.warn(`[WhatsApp] Image card failed for ${product.id} — retrying without image`);
@@ -91,16 +107,16 @@ export async function sendProductCardWithLink(
     .join('\n');
 
   const footer = `${emoji} Sold on ${platformName}`;
-  const imageUrl = product.imageUrl?.startsWith('https') ? product.imageUrl : undefined;
+  const headerImage = await resolveHeaderImage(product.imageUrl);
   const buyUrl = product.productUrl;
 
   if (buyUrl?.startsWith('http')) {
     try {
-      await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, imageUrl, footer);
+      await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, headerImage, footer);
       return;
     } catch {
-      // Most common failure: WhatsApp couldn't fetch the image — retry without it
-      if (imageUrl) {
+      // Retry without the image before giving up on the link button
+      if (headerImage) {
         try {
           await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, undefined, footer);
           return;
