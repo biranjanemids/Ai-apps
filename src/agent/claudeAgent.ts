@@ -30,11 +30,24 @@ const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 // Safety cap on tool-calling rounds per user message — prevents runaway loops
 const MAX_TOOL_ROUNDS = 6;
 
-// Groq's llama models occasionally emit tool calls in a malformed format like
-// `<function=search_products {"query": ...} </function>` — Groq then 400s with
-// code 'tool_use_failed' but includes the intended call in failed_generation.
-// We salvage it (the args are usually valid JSON) and retry as fallback.
-const TOOL_CALL_SALVAGE = /<function=([a-zA-Z0-9_]+)[=\s]*(\{[\s\S]*?\})\s*<?\/?function>?/;
+// Groq's llama models occasionally emit tool calls in malformed formats like
+// `<function=search_products {"query": ...} </function>` or
+// `<function=get_product_details({"platform": ...})</function>` — Groq then
+// 400s with code 'tool_use_failed' but includes the intended call in
+// failed_generation. We salvage it (the args are usually valid JSON).
+function salvageToolCall(failedGeneration: string): { name: string; args: string } | null {
+  const nameMatch = failedGeneration.match(/<function=([a-zA-Z0-9_]+)/);
+  const start = failedGeneration.indexOf('{');
+  const end = failedGeneration.lastIndexOf('}');
+  if (!nameMatch || start === -1 || end <= start) return null;
+  const args = failedGeneration.slice(start, end + 1);
+  try {
+    JSON.parse(args);
+    return { name: nameMatch[1], args };
+  } catch {
+    return null;
+  }
+}
 
 type GroqChoice = Groq.Chat.Completions.ChatCompletion.Choice;
 
@@ -62,30 +75,25 @@ async function chatWithToolRetry(
       lastErr = err;
 
       // Salvage: extract the tool call the model intended and synthesize the turn
-      const m = inner.failed_generation?.match(TOOL_CALL_SALVAGE);
-      if (m) {
-        try {
-          JSON.parse(m[2]); // only salvage if the args are valid JSON
-          console.warn(`[Agent] Salvaged malformed tool call for ${m[1]}`);
-          return {
-            index: 0,
-            finish_reason: 'tool_calls',
-            logprobs: null,
-            message: {
-              role: 'assistant',
-              content: null,
-              tool_calls: [
-                {
-                  id: `salvaged_${attempt}_${m[1]}`,
-                  type: 'function',
-                  function: { name: m[1], arguments: m[2] },
-                },
-              ],
-            },
-          } as unknown as GroqChoice;
-        } catch {
-          // args weren't valid JSON — fall through to a plain retry
-        }
+      const salvaged = salvageToolCall(inner.failed_generation ?? '');
+      if (salvaged) {
+        console.warn(`[Agent] Salvaged malformed tool call for ${salvaged.name}`);
+        return {
+          index: 0,
+          finish_reason: 'tool_calls',
+          logprobs: null,
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: `salvaged_${attempt}_${salvaged.name}`,
+                type: 'function',
+                function: { name: salvaged.name, arguments: salvaged.args },
+              },
+            ],
+          },
+        } as unknown as GroqChoice;
       }
       console.warn(`[Agent] Groq tool_use_failed (attempt ${attempt}/3) — retrying`);
     }
