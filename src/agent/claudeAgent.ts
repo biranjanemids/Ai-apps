@@ -27,6 +27,10 @@ function getGroq(): Groq {
 // free tier. Override with GROQ_MODEL in .env without touching code.
 const MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 
+// When the primary model's daily token quota runs out (429), fall back to a
+// smaller model — Groq tracks rate limits per model, so its quota is separate.
+const FALLBACK_MODEL = process.env.GROQ_FALLBACK_MODEL ?? 'llama-3.1-8b-instant';
+
 // Safety cap on tool-calling rounds per user message — prevents runaway loops
 const MAX_TOOL_ROUNDS = 6;
 
@@ -56,10 +60,11 @@ async function chatWithToolRetry(
   tools: Groq.Chat.ChatCompletionTool[]
 ): Promise<GroqChoice> {
   let lastErr: unknown;
+  let model = MODEL;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const response = await getGroq().chat.completions.create({
-        model: MODEL,
+        model,
         messages,
         tools,
         tool_choice: 'auto',
@@ -69,6 +74,15 @@ async function chatWithToolRetry(
       });
       return response.choices[0];
     } catch (err) {
+      // Daily quota exhausted on the primary model → switch to the fallback
+      // model, which has its own separate quota
+      if ((err as { status?: number })?.status === 429 && model !== FALLBACK_MODEL) {
+        console.warn(`[Agent] ${model} rate-limited — falling back to ${FALLBACK_MODEL}`);
+        model = FALLBACK_MODEL;
+        lastErr = err;
+        continue;
+      }
+
       const inner = (err as { error?: { error?: { code?: string; failed_generation?: string } } })
         ?.error?.error;
       if (inner?.code !== 'tool_use_failed') throw err;
@@ -329,6 +343,24 @@ export async function processMessage(
                   bestValuePlatform: parsed.bestValuePlatform,
                 };
               }
+              // Token diet: the LLM only needs compact facts to reason with —
+              // URLs/images/specs are rendered by the webhook, not the model.
+              // This cuts search-turn token usage by roughly half.
+              resultText = JSON.stringify({
+                cheapestPlatform: parsed.cheapestPlatform,
+                bestValuePlatform: parsed.bestValuePlatform,
+                results: (parsed.results ?? []).map(
+                  (r: { platform: string; products?: Product[] }) => ({
+                    platform: r.platform,
+                    products: (r.products ?? []).map((p) => ({
+                      id: p.id,
+                      title: p.title,
+                      price: p.price,
+                      rating: p.rating,
+                    })),
+                  })
+                ),
+              });
             } catch {
               // ignore JSON parse errors
             }
@@ -364,6 +396,17 @@ export async function processMessage(
     };
   } catch (err) {
     console.error('[Agent] processMessage error:', err);
+
+    // Daily AI quota exhausted on all models — tell the user when to retry
+    if ((err as { status?: number })?.status === 429) {
+      const waitMatch = err instanceof Error ? err.message.match(/try again in (\d+)m/i) : null;
+      const wait = waitMatch ? `about ${waitMatch[1]} minutes` : 'a little while';
+      return {
+        text: `⏳ I've hit today's free AI usage limit. Please try again in ${wait} 🙏`,
+        search: lastSearch,
+      };
+    }
+
     // If the MCP transport died, drop the client so the next message reconnects
     if (err instanceof Error && /clos|transport|EPIPE|ECONN|not connected/i.test(err.message)) {
       console.warn('[Agent] MCP connection appears dead — resetting client for reconnect');
