@@ -91,9 +91,10 @@ export async function searchProducts(params: SearchParams): Promise<{
           (params.minPrice === undefined || p.price >= params.minPrice) &&
           (params.maxPrice === undefined || p.price <= params.maxPrice)
       );
-      // Sort by value score (rating²/price * discount factor) — best deals first
+      // Sort by value score (rating²/price * discount factor) — best deals first.
+      // Top 3 per platform keeps the WhatsApp reply scannable.
       const sorted = inBudget.sort((a, b) => valueScore(b) - valueScore(a));
-      return { platform: name, products: sorted.slice(0, 5), cached: result.value.cached };
+      return { platform: name, products: sorted.slice(0, 3), cached: result.value.cached };
     }
     return {
       platform: name,

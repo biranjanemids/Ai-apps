@@ -39,6 +39,7 @@ export function formatSearchResults(
     if (insight) lines.push(insight, '');
   }
 
+  const noResults: string[] = [];
   for (const r of results) {
     const emoji = PLATFORM_EMOJI[r.platform] ?? '🏪';
     const platformName = r.platform.charAt(0).toUpperCase() + r.platform.slice(1);
@@ -49,12 +50,9 @@ export function formatSearchResults(
       .filter(Boolean)
       .join(' · ');
 
-    if (r.error) {
-      lines.push(`${emoji} *${platformName}*: Unavailable right now`);
-      continue;
-    }
-    if (r.products.length === 0) {
-      lines.push(`${emoji} *${platformName}*: No results found`);
+    // Collapse empty/unavailable platforms into a single trailing line
+    if (r.error || r.products.length === 0) {
+      noResults.push(platformName);
       continue;
     }
 
@@ -70,6 +68,10 @@ export function formatSearchResults(
       index++;
     }
     lines.push('');
+  }
+
+  if (noResults.length > 0) {
+    lines.push(`🔍 _No matches on: ${noResults.join(' · ')}_`);
   }
 
   return { text: lines.join('\n').trim(), allProducts };

@@ -146,6 +146,41 @@ export async function sendListMessage(
   });
 }
 
+// ── Interactive CTA-URL message ───────────────────────────────────────────────
+// A single button that OPENS A LINK directly (image header supported) — the
+// best primitive for "tap to buy on the store".
+
+export async function sendCtaUrlMessage(
+  to: string,
+  bodyText: string,
+  buttonLabel: string,
+  url: string,
+  headerImageUrl?: string,
+  footerText?: string
+): Promise<void> {
+  const interactive: Record<string, unknown> = {
+    type: 'cta_url',
+    body: { text: bodyText.slice(0, 1024) },
+    action: {
+      name: 'cta_url',
+      parameters: {
+        display_text: buttonLabel.slice(0, 20),
+        url,
+      },
+    },
+  };
+  if (headerImageUrl) interactive['header'] = { type: 'image', image: { link: headerImageUrl } };
+  if (footerText) interactive['footer'] = { text: footerText.slice(0, 60) };
+
+  await post({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  });
+}
+
 // ── Mark as read ──────────────────────────────────────────────────────────────
 
 export async function markAsRead(messageId: string): Promise<void> {

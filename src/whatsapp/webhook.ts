@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
 import { processMessage, AgentReply } from '../agent/claudeAgent.js';
 import { sendTextMessage, markAsRead } from './client.js';
-import { sendOrderSummary, sendCheckoutLink, sendProductCard } from './interactiveMessages.js';
+import { sendOrderSummary, sendCheckoutLink, sendProductCardWithLink } from './interactiveMessages.js';
 import { formatSearchResults } from './messageFormatter.js';
 import { getBuyLink } from '../mcp/tools/getBuyLink.js';
 import { Platform, Product } from '../types/index.js';
@@ -215,10 +215,11 @@ async function deliverAgentReply(to: string, reply: AgentReply): Promise<void> {
   );
   await sendTextMessage(to, resultsText);
 
-  // Product cards for the top picks (best value, cheapest, plus one more)
+  // Visual product cards for the top picks (best value, cheapest, plus one
+  // more): product photo + direct "Buy Now" link button
   for (const { product, index } of pickTopProducts(allProducts, search)) {
     try {
-      await sendProductCard(to, product, index);
+      await sendProductCardWithLink(to, product, index);
     } catch (err) {
       console.error('[Webhook] Product card send failed:', err);
       break;

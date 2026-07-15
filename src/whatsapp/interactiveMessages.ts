@@ -1,4 +1,4 @@
-import { sendButtonMessage, sendListMessage, sendTextMessage, ListRow } from './client.js';
+import { sendButtonMessage, sendCtaUrlMessage, sendListMessage, sendTextMessage, ListRow } from './client.js';
 import { Product } from '../types/index.js';
 import { discountPercent } from '../mcp/tools/searchProducts.js';
 
@@ -64,6 +64,54 @@ export async function sendProductCard(
     }
   }
   await sendButtonMessage(to, bodyWithDisc, buttons, `Product ${index}`, 'Tap an action below');
+}
+
+// ── Visual product card with a direct "Buy Now" link button ──────────────────
+// Product photo on top, details in the body, and a URL button that opens the
+// store's product page directly. Falls back to the reply-button card when the
+// image or CTA message is rejected.
+
+export async function sendProductCardWithLink(
+  to: string,
+  product: Product,
+  index: number
+): Promise<void> {
+  const emoji = PLATFORM_EMOJI[product.platform] ?? '🏪';
+  const platformName = product.platform.charAt(0).toUpperCase() + product.platform.slice(1);
+  const price = product.price > 0 ? `₹${product.price.toLocaleString('en-IN')}` : 'Price N/A';
+  const rating = product.rating > 0 ? ` · ⭐${product.rating}` : '';
+  const disc = discountTag(product);
+
+  const body = [
+    `*${index}. ${product.title}*`,
+    `💰 *${price}*${rating}`,
+    disc,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  const footer = `${emoji} Sold on ${platformName}`;
+  const imageUrl = product.imageUrl?.startsWith('https') ? product.imageUrl : undefined;
+  const buyUrl = product.productUrl;
+
+  if (buyUrl?.startsWith('http')) {
+    try {
+      await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, imageUrl, footer);
+      return;
+    } catch {
+      // Most common failure: WhatsApp couldn't fetch the image — retry without it
+      if (imageUrl) {
+        try {
+          await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, undefined, footer);
+          return;
+        } catch {
+          // fall through to the reply-button card
+        }
+      }
+      console.warn(`[WhatsApp] CTA card failed for ${product.id} — falling back to button card`);
+    }
+  }
+  await sendProductCard(to, product, index);
 }
 
 // ── Search results as a tappable list ────────────────────────────────────────
