@@ -45,17 +45,25 @@ export async function sendProductCard(
   const disc = discountTag(product);
   const bodyWithDisc = disc ? `${body}\n${disc}` : body;
 
-  await sendButtonMessage(
-    to,
-    bodyWithDisc,
-    [
-      { id: `buy__${index}__${product.id}__${product.platform}`, title: '💳 Buy Now' },
-      { id: `save__${index}__${product.id}__${product.platform}`, title: '❤️ Save' },
-      { id: `compare__${index}__${product.id}__${product.platform}`, title: '📊 Compare' },
-    ],
-    `Product ${index}`,
-    `Tap an action below`
-  );
+  const buttons = [
+    { id: `buy__${index}__${product.id}__${product.platform}`, title: '💳 Buy Now' },
+    { id: `save__${index}__${product.id}__${product.platform}`, title: '❤️ Save' },
+    { id: `compare__${index}__${product.id}__${product.platform}`, title: '📊 Compare' },
+  ];
+
+  // Show the product image as the card header when we have a public HTTPS URL.
+  // WhatsApp fetches the image server-side and rejects the message if the URL
+  // is unreachable, so fall back to a plain text-header card on failure.
+  const imageUrl = product.imageUrl?.startsWith('https') ? product.imageUrl : undefined;
+  if (imageUrl) {
+    try {
+      await sendButtonMessage(to, bodyWithDisc, buttons, undefined, 'Tap an action below', imageUrl);
+      return;
+    } catch {
+      console.warn(`[WhatsApp] Image card failed for ${product.id} — retrying without image`);
+    }
+  }
+  await sendButtonMessage(to, bodyWithDisc, buttons, `Product ${index}`, 'Tap an action below');
 }
 
 // ── Search results as a tappable list ────────────────────────────────────────

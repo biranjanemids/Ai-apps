@@ -61,6 +61,7 @@ export async function searchViaSerpApi(
     gl: 'in',
     hl: 'en',
     num: '40',
+    direct_link: 'true', // direct merchant product links instead of Google redirect URLs
     api_key: process.env.SERPAPI_KEY ?? '',
   };
   // Native price filter (the aggregator enforces budget again afterwards)

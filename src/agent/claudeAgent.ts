@@ -122,6 +122,13 @@ const SYSTEM_PROMPT = `You are ShopBot, a smart WhatsApp shopping assistant that
 - Hindi greeting: "नमस्ते! मैं ShopBot हूं 🛒 आप क्या खरीदना चाहते हैं?"
 - English greeting: "Hi! I'm ShopBot 🛒 What are you looking to buy today?"
 
+## Data Integrity (CRITICAL — never break these)
+- NEVER invent, imagine, or recall products, prices, or ratings from memory
+- Every product you mention MUST come from a tool result in THIS conversation
+- Any new product request, or a changed budget/category/size → call search_products again FIRST — do not answer from earlier results
+- If a tool returned nothing, say so honestly and suggest broadening the search
+- NEVER write "<function=...>" or any tool-call syntax as text in a reply — actually call the tool
+
 ## Conversation Flow
 1. Greet and ask what product they want
 2. Ask for budget range in ₹ (e.g. "₹500 to ₹2000") if not given
@@ -282,7 +289,30 @@ export async function processMessage(
     // Agentic loop — bounded so a tool-happy model can't spin forever
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const choice = await chatWithToolRetry(messages, groqTools);
-      const assistantMessage = choice.message;
+      let assistantMessage = choice.message;
+
+      // The model sometimes writes a pseudo tool call as plain TEXT instead of
+      // a real tool call — convert it into a real one so it actually executes
+      if (
+        (!assistantMessage.tool_calls || assistantMessage.tool_calls.length === 0) &&
+        assistantMessage.content?.includes('<function=')
+      ) {
+        const leaked = salvageToolCall(assistantMessage.content);
+        if (leaked) {
+          console.warn(`[Agent] Converting leaked text tool call to real call: ${leaked.name}`);
+          assistantMessage = {
+            role: 'assistant',
+            content: null,
+            tool_calls: [
+              {
+                id: `leaked_${round}_${leaked.name}`,
+                type: 'function',
+                function: { name: leaked.name, arguments: leaked.args },
+              },
+            ],
+          } as typeof assistantMessage;
+        }
+      }
 
       // Append assistant turn to history
       messages.push(assistantMessage);
@@ -293,7 +323,12 @@ export async function processMessage(
         !assistantMessage.tool_calls ||
         assistantMessage.tool_calls.length === 0
       ) {
-        const text = assistantMessage.content?.trim() ?? '';
+        // Scrub any remaining tool-call syntax the model leaked into its text
+        // (multiple pseudo calls in one message can't be converted above)
+        const text = (assistantMessage.content?.trim() ?? '').replace(
+          /<function=[^{<]*\{[\s\S]*?\}(?:\s*\))?(?:\s*<\/function>)?/g,
+          '_(tap Buy Now on the product card)_'
+        );
         appendMessage(userId, { role: 'assistant', content: text });
         return {
           text: text || (lastSearch ? '' : 'I encountered an issue. Please try again.'),

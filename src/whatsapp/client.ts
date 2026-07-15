@@ -72,7 +72,8 @@ export async function sendButtonMessage(
   bodyText: string,
   buttons: WhatsAppButton[],
   headerText?: string,
-  footerText?: string
+  footerText?: string,
+  headerImageUrl?: string
 ): Promise<void> {
   const interactive: Record<string, unknown> = {
     type: 'button',
@@ -87,7 +88,12 @@ export async function sendButtonMessage(
       })),
     },
   };
-  if (headerText) interactive['header'] = { type: 'text', text: headerText.slice(0, 60) };
+  // Image header takes priority (a button message has one header, image OR text)
+  if (headerImageUrl) {
+    interactive['header'] = { type: 'image', image: { link: headerImageUrl } };
+  } else if (headerText) {
+    interactive['header'] = { type: 'text', text: headerText.slice(0, 60) };
+  }
   if (footerText) interactive['footer'] = { text: footerText.slice(0, 60) };
 
   await post({

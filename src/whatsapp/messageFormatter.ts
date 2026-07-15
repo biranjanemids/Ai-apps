@@ -145,6 +145,11 @@ export function formatProductDetail(product: Product): string {
     lines.push(`💸 MRP: ${mrp} · You save ${disc}%`);
   }
 
+  if (product.productUrl) {
+    lines.push('');
+    lines.push(`🔗 *Buy here:* ${product.productUrl}`);
+  }
+
   return lines.join('\n');
 }
 
