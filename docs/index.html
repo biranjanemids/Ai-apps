@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OneCartBot — Compare Prices Across 8 Indian Stores on WhatsApp</title>
+<meta name="description" content="OneCartBot is a WhatsApp shopping assistant that compares prices across Amazon, Flipkart, Myntra, Meesho, Nykaa, Ajio, Zepto and Instamart — and alerts you when prices drop.">
+<style>
+  :root {
+    --bg: #ffffff;
+    --text: #1a1a2e;
+    --muted: #5c5c72;
+    --accent: #0f7b5f;
+    --accent-light: #e6f4f0;
+    --card: #f7f8fa;
+    --border: #e4e6eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12121a;
+      --text: #eaeaf2;
+      --muted: #9a9ab0;
+      --accent: #2fbf94;
+      --accent-light: #16302a;
+      --card: #1c1c28;
+      --border: #2c2c3a;
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+  header {
+    padding: 64px 0 48px;
+    text-align: center;
+  }
+  .logo {
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .logo .bot { color: var(--accent); }
+  .tagline {
+    font-size: 1.25rem;
+    color: var(--muted);
+    margin-top: 12px;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .badge {
+    display: inline-block;
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 600;
+    font-size: 0.85rem;
+    padding: 6px 14px;
+    border-radius: 999px;
+    margin-bottom: 18px;
+  }
+  section { padding: 36px 0; }
+  h2 {
+    font-size: 1.5rem;
+    margin-bottom: 20px;
+    letter-spacing: -0.01em;
+  }
+  .stores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: center;
+  }
+  .store {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-weight: 600;
+    font-size: 0.95rem;
+  }
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 16px;
+  }
+  .feature {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px;
+  }
+  .feature .emoji { font-size: 1.8rem; }
+  .feature h3 { font-size: 1.05rem; margin: 10px 0 6px; }
+  .feature p { color: var(--muted); font-size: 0.95rem; }
+  .steps { counter-reset: step; }
+  .step {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    padding: 14px 0;
+  }
+  .step-num {
+    counter-increment: step;
+    background: var(--accent);
+    color: #fff;
+    font-weight: 700;
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .step-num::before { content: counter(step); }
+  .step h3 { font-size: 1.05rem; }
+  .step p { color: var(--muted); font-size: 0.95rem; }
+  .contact-box {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 26px;
+    text-align: center;
+  }
+  .contact-box a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .contact-box a:hover { text-decoration: underline; }
+  .disclosure {
+    font-size: 0.85rem;
+    color: var(--muted);
+    border-left: 3px solid var(--accent);
+    padding: 10px 16px;
+    background: var(--card);
+    border-radius: 0 10px 10px 0;
+    margin-top: 28px;
+  }
+  footer {
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+    padding: 28px 0 40px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="badge">🇮🇳 Made for Indian shoppers</div>
+    <div class="logo">OneCart<span class="bot">Bot</span> 🤖</div>
+    <p class="tagline">One search. Eight stores. Best price — right inside WhatsApp. No app to install.</p>
+  </header>
+
+  <section>
+    <h2 style="text-align:center">Compares prices across</h2>
+    <div class="stores">
+      <span class="store">🛒 Amazon</span>
+      <span class="store">🛍️ Flipkart</span>
+      <span class="store">👗 Myntra</span>
+      <span class="store">🏷️ Meesho</span>
+      <span class="store">💄 Nykaa</span>
+      <span class="store">👔 Ajio</span>
+      <span class="store">⚡ Zepto</span>
+      <span class="store">🥦 Instamart</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>What OneCartBot does</h2>
+    <div class="features">
+      <div class="feature">
+        <div class="emoji">🔍</div>
+        <h3>Search in plain language</h3>
+        <p>Just message "find me running shoes under ₹2000" — in English or Hindi — and get real prices from all major stores in seconds.</p>
+      </div>
+      <div class="feature">
+        <div class="emoji">📊</div>
+        <h3>Instant comparison</h3>
+        <p>See which store is cheapest and which is the best value (price + ratings + discount), side by side in one message.</p>
+      </div>
+      <div class="feature">
+        <div class="emoji">📉</div>
+        <h3>Price-drop alerts</h3>
+        <p>Save products to your wishlist and get a WhatsApp alert when the price drops 10% or more. Never miss a deal.</p>
+      </div>
+      <div class="feature">
+        <div class="emoji">💳</div>
+        <h3>One-tap checkout</h3>
+        <p>Tap "Buy Now" and go straight to the store's secure checkout. Payment always happens on the store's own website or app.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it works</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num"></div>
+        <div>
+          <h3>Message the bot on WhatsApp</h3>
+          <p>Send what you're looking for, like you'd ask a friend.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div>
+          <h3>Get compared prices instantly</h3>
+          <p>Real products, real prices, ratings and discounts from up to 8 stores — with the cheapest and best-value picks highlighted.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num"></div>
+        <div>
+          <h3>Tap Buy Now</h3>
+          <p>You're taken directly to the store to complete your purchase securely. OneCartBot never handles your payment.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <div class="contact-box">
+      <p>Questions, feedback, or partnership enquiries?</p>
+      <p style="margin-top:8px">📧 <a href="mailto:biranjan15@gmail.com">biranjan15@gmail.com</a></p>
+    </div>
+    <p class="disclosure">
+      <strong>Affiliate disclosure:</strong> OneCartBot is a free service. Some product links are affiliate links,
+      which means we may earn a small commission from the store — at no extra cost to you — when you make a
+      qualifying purchase. This is how we keep the service free.
+    </p>
+  </section>
+
+  <footer>
+    <p>© 2026 OneCartBot · <a href="privacy.html">Privacy Policy</a></p>
+    <p style="margin-top:6px">OneCartBot is an independent service and is not affiliated with Amazon, Flipkart, Myntra, Meesho, Nykaa, Ajio, Zepto, Swiggy Instamart, or WhatsApp.</p>
+  </footer>
+
+</div>
+</body>
+</html>
