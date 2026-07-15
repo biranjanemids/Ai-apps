@@ -4,6 +4,8 @@ const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_MESSAGES = 12; // keeps Groq token usage per turn in check
 
 const sessions = new Map<string, UserSession>();
+const clickAnalytics = new Map<string, { platform: string; timestamp: number; productId: string }[]>();
+const priceHistory = new Map<string, { productId: string; platform: string; price: number; timestamp: number }[]>();
 
 export function getSession(userId: string): UserSession {
   const existing = sessions.get(userId);
@@ -86,12 +88,70 @@ export function clearSession(userId: string): void {
   sessions.delete(userId);
 }
 
+// ── Analytics & Monetization ──────────────────────────────────────────────────
+
+export function recordBuyClick(userId: string, platform: string, productId: string): void {
+  if (!clickAnalytics.has(userId)) clickAnalytics.set(userId, []);
+  clickAnalytics.get(userId)!.push({ platform, timestamp: Date.now(), productId });
+}
+
+export function getClickStats(userId: string): { platform: string; count: number }[] {
+  const clicks = clickAnalytics.get(userId) ?? [];
+  const grouped = new Map<string, number>();
+  for (const click of clicks) {
+    grouped.set(click.platform, (grouped.get(click.platform) ?? 0) + 1);
+  }
+  return Array.from(grouped).map(([platform, count]) => ({ platform, count }));
+}
+
+export function recordProductPrice(userId: string, productId: string, platform: string, price: number): void {
+  const key = `${productId}__${platform}`;
+  if (!priceHistory.has(key)) priceHistory.set(key, []);
+  priceHistory.get(key)!.push({ productId, platform, price, timestamp: Date.now() });
+}
+
+export function getPriceHistory(productId: string, platform: string): { price: number; timestamp: number }[] {
+  const key = `${productId}__${platform}`;
+  return (priceHistory.get(key) ?? []).map(({ price, timestamp }) => ({ price, timestamp }));
+}
+
+export function checkPriceDrop(productId: string, platform: string, newPrice: number, dropPercent = 10): boolean {
+  const history = getPriceHistory(productId, platform);
+  if (history.length < 2) return false;
+  const oldPrice = history[history.length - 2].price;
+  const drop = ((oldPrice - newPrice) / oldPrice) * 100;
+  return drop >= dropPercent;
+}
+
+export function getAffiliateMetrics(): {
+  totalClicks: number;
+  clicksByPlatform: Record<string, number>;
+  totalUsers: number;
+  avgClicksPerUser: number;
+} {
+  let totalClicks = 0;
+  const clicksByPlatform: Record<string, number> = {};
+
+  for (const clicks of clickAnalytics.values()) {
+    for (const click of clicks) {
+      totalClicks++;
+      clicksByPlatform[click.platform] = (clicksByPlatform[click.platform] ?? 0) + 1;
+    }
+  }
+
+  const totalUsers = sessions.size;
+  const avgClicksPerUser = totalUsers > 0 ? totalClicks / totalUsers : 0;
+
+  return { totalClicks, clicksByPlatform, totalUsers, avgClicksPerUser };
+}
+
 // Clean up expired sessions every 5 minutes (unref'd so it never blocks exit)
 setInterval(() => {
   const now = Date.now();
   for (const [userId, session] of sessions.entries()) {
     if (now - session.lastActivity.getTime() > SESSION_TTL_MS) {
       sessions.delete(userId);
+      clickAnalytics.delete(userId);
     }
   }
 }, 5 * 60 * 1000).unref();

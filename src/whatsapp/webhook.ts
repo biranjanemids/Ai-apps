@@ -12,6 +12,11 @@ import {
   setBuyIntent,
   clearBuyIntent,
   addToWishlist,
+  recordBuyClick,
+  recordProductPrice,
+  checkPriceDrop,
+  getClickStats,
+  getAffiliateMetrics,
 } from '../agent/sessionManager.js';
 
 export const webhookRouter = Router();
@@ -182,6 +187,44 @@ async function handleMessage(
 
   console.log(`[Webhook] Message from ${from}: ${text}`);
 
+  // Check for monetization commands
+  const lowerText = text.toLowerCase().trim();
+  if (lowerText === 'stats' || lowerText === 'my stats' || lowerText === 'show stats') {
+    const clickStats = getClickStats(from);
+    if (clickStats.length === 0) {
+      await sendTextMessage(from, '📊 No purchase clicks yet. Search for products and tap Buy Now to start earning rewards!');
+    } else {
+      const lines = ['📊 *Your Shopping Stats*\n'];
+      let totalClicks = 0;
+      for (const { platform, count } of clickStats) {
+        const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
+        lines.push(`  ${platformName}: ${count} clicks`);
+        totalClicks += count;
+      }
+      lines.push(`\n💡 Total: ${totalClicks} purchases initiated`);
+      lines.push('🎁 Exclusive offers on next purchase!');
+      await sendTextMessage(from, lines.join('\n'));
+    }
+    return;
+  }
+
+  if (lowerText === 'metrics' && from === process.env.ADMIN_PHONE_NUMBER) {
+    const metrics = getAffiliateMetrics();
+    const lines = [
+      '📈 *Affiliate Metrics*\n',
+      `👥 Total Users: ${metrics.totalUsers}`,
+      `🔗 Total Clicks: ${metrics.totalClicks}`,
+      `📊 Avg Clicks/User: ${metrics.avgClicksPerUser.toFixed(2)}`,
+      '\n*Clicks by Platform:*',
+    ];
+    for (const [platform, count] of Object.entries(metrics.clicksByPlatform)) {
+      const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
+      lines.push(`  ${platformName}: ${count}`);
+    }
+    await sendTextMessage(from, lines.join('\n'));
+    return;
+  }
+
   // Check if we're mid-buy-flow (collecting address/phone)
   const intent = getBuyIntent(from);
   if (intent) {
@@ -269,8 +312,20 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
         return;
       }
 
+      // Record click analytics
+      recordBuyClick(from, platform, productId);
+
       // Fetch checkout URL
       const linkResult = await getBuyLink(productId, platform);
+
+      // Track product price
+      recordProductPrice(from, productId, platform, linkResult.price);
+
+      // Check for price drops
+      const hasPriceDrop = checkPriceDrop(productId, platform, linkResult.price, 10);
+      if (hasPriceDrop) {
+        console.log(`[Analytics] Price drop detected for ${productId} on ${platform}`);
+      }
 
       // Start the buy flow — collect delivery address first
       setBuyIntent(from, {
@@ -333,6 +388,11 @@ async function handleInteractive(from: string, buttonId: string): Promise<void> 
 
     if (action === 'open') {
       // open__productId__platform — user tapped "Open Checkout"
+      const productId = parts[1];
+      const platform = parts[2];
+      if (productId && platform) {
+        recordBuyClick(from, platform, productId);
+      }
       await sendTextMessage(
         from,
         '✅ Redirecting you to checkout! Complete your purchase on the platform and your order will be confirmed there.'

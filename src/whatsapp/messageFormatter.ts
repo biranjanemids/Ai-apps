@@ -74,6 +74,10 @@ export function formatSearchResults(
     lines.push(`🔍 _No matches on: ${noResults.join(' · ')}_`);
   }
 
+  // Add affiliate CTA
+  lines.push('');
+  lines.push('💡 *Tap "Buy Now"* to support this service & unlock exclusive deals!');
+
   return { text: lines.join('\n').trim(), allProducts };
 }
 

@@ -21,6 +21,17 @@ const PLATFORM_EMOJI: Record<string, string> = {
   instamart: '🥦',
 };
 
+const PLATFORM_BENEFITS: Record<string, string> = {
+  amazon: 'Fast Prime delivery available',
+  flipkart: 'Easy returns & exchanges',
+  myntra: 'Fashion specials & styling',
+  meesho: 'Direct from sellers',
+  nykaa: 'Authentic beauty products',
+  ajio: 'Latest fashion trends',
+  zepto: '10-minute delivery',
+  instamart: 'Instant grocery delivery',
+};
+
 function discountTag(product: Product): string {
   const disc = discountPercent(product);
   return disc >= 5 ? `🔥 *${disc}% off* MRP` : '';
@@ -97,16 +108,18 @@ export async function sendProductCardWithLink(
   const price = product.price > 0 ? `₹${product.price.toLocaleString('en-IN')}` : 'Price N/A';
   const rating = product.rating > 0 ? ` · ⭐${product.rating}` : '';
   const disc = discountTag(product);
+  const benefit = PLATFORM_BENEFITS[product.platform] ?? 'Great deals available';
 
   const body = [
     `*${index}. ${product.title}*`,
     `💰 *${price}*${rating}`,
     disc,
+    `✨ ${benefit}`,
   ]
     .filter(Boolean)
     .join('\n');
 
-  const footer = `${emoji} Sold on ${platformName}`;
+  const footer = `${emoji} Tap to buy on ${platformName}`;
   const headerImage = await resolveHeaderImage(product.imageUrl);
   const buyUrl = product.productUrl;
 

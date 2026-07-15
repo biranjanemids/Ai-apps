@@ -9,6 +9,13 @@ import { getInstamartProduct } from '../../platforms/instamart.js';
 import { getLiveProduct } from '../../platforms/liveRegistry.js';
 import { getMockProduct } from '../../platforms/mock.js';
 
+// Add UTM tracking for analytics
+function addTrackingParams(url: string, platform: string, productId: string): string {
+  const separator = url.includes('?') ? '&' : '?';
+  const utm = `utm_source=whatsapp_bot&utm_medium=product_card&utm_campaign=${platform}&utm_content=${productId}`;
+  return `${url}${separator}${utm}`;
+}
+
 export interface BuyLinkResult {
   platform: string;
   productId: string;
@@ -20,12 +27,16 @@ export interface BuyLinkResult {
 }
 
 function buildAmazonCheckoutUrl(asin: string): string {
-  return `https://www.amazon.in/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`;
+  const baseUrl = `https://www.amazon.in/gp/aws/cart/add.html?ASIN.1=${asin}&Quantity.1=1`;
+  const tag = process.env.AMAZON_AFFILIATE_TAG || '';
+  return tag ? `${baseUrl}&tag=${tag}` : baseUrl;
 }
 
 function buildFlipkartCheckoutUrl(productUrl: string, pid: string): string {
   const base = productUrl.split('?')[0];
-  return `${base}?param=buyNow&pid=${pid}`;
+  const url = `${base}?param=buyNow&pid=${pid}`;
+  const affId = process.env.FLIPKART_AFFILIATE_ID || '';
+  return affId ? `${url}&affId=${affId}` : url;
 }
 
 function buildMyntraCheckoutUrl(productUrl: string, productId: string): string {
@@ -155,10 +166,13 @@ export async function getBuyLink(
         checkoutUrl = productUrl;
     }
 
-    return { platform, productId, title, price, imageUrl, productUrl, checkoutUrl };
+    const trackedCheckoutUrl = addTrackingParams(checkoutUrl, platform, productId);
+    return { platform, productId, title, price, imageUrl, productUrl, checkoutUrl: trackedCheckoutUrl };
   } catch {
     const p = fallback;
     const productUrl = p?.productUrl ?? '';
+    const fallbackUrl = buildCheckoutFallback(platform, productId, productUrl);
+    const trackedUrl = addTrackingParams(fallbackUrl, platform, productId);
     return {
       platform,
       productId,
@@ -166,7 +180,7 @@ export async function getBuyLink(
       price: p?.price ?? 0,
       imageUrl: p?.imageUrl ?? '',
       productUrl,
-      checkoutUrl: buildCheckoutFallback(platform, productId, productUrl),
+      checkoutUrl: trackedUrl,
     };
   }
 }
