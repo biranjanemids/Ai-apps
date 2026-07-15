@@ -1,6 +1,8 @@
 import axios from 'axios';
 
-const BASE_URL = 'https://graph.facebook.com/v18.0';
+// Keep this current: old versions reject newer payload shapes (v18 returns
+// 131008 "header image must contain link" for media-id headers on cta_url)
+const BASE_URL = 'https://graph.facebook.com/v23.0';
 
 function getHeaders() {
   return {

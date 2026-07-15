@@ -93,6 +93,40 @@ export class AllProvidersFailedError extends Error {
   }
 }
 
+// Providers decorate responses with nonstandard fields — e.g. Gemini adds
+// `extra_content` to tool_calls — which the NEXT provider in the chain then
+// rejects when the conversation history is replayed to it (Cerebras 400s with
+// "wrong_api_format"). Reduce every response to bare OpenAI shape.
+function sanitizeChoice(choice: {
+  finish_reason?: string;
+  message?: {
+    content?: string | null;
+    tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+  };
+}): LlmChoice {
+  const msg = choice.message ?? {};
+  const toolCalls = Array.isArray(msg.tool_calls)
+    ? msg.tool_calls
+        .filter((tc) => tc?.function?.name)
+        .map((tc, i) => ({
+          id: tc.id ?? `call_${i}`,
+          type: 'function' as const,
+          function: {
+            name: tc.function!.name!,
+            arguments: tc.function!.arguments ?? '{}',
+          },
+        }))
+    : [];
+  return {
+    finish_reason: choice.finish_reason ?? 'stop',
+    message: {
+      role: 'assistant',
+      content: msg.content ?? null,
+      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    },
+  };
+}
+
 function enabledProviders(): ProviderDef[] {
   return PROVIDERS.filter((p) => Boolean(process.env[p.keyEnv]));
 }
@@ -166,7 +200,7 @@ async function tryProviders(
       );
       const choice = data?.choices?.[0];
       if (!choice?.message) throw new Error(`empty response from ${provider.name}`);
-      return { choice: choice as LlmChoice };
+      return { choice: sanitizeChoice(choice) };
     } catch (err) {
       // Malformed tool call (Groq-specific 400) — don't rotate providers, the
       // caller can usually salvage the intended call from failed_generation

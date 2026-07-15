@@ -136,14 +136,16 @@ export async function sendProductCardWithLink(
       await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, headerImage, footer);
       return;
     } catch {
-      // Retry without the image before giving up on the link button
-      if (headerImage) {
+      // Keep the PHOTO over the link button: reply-button cards accept
+      // media-id image headers on every API version, so fall through to
+      // sendProductCard (its Buy Now starts the buy flow, which still ends
+      // in a checkout link). Only if we had no image at all, retry the CTA
+      // bare — nothing to lose then.
+      if (!headerImage) {
         try {
           await sendCtaUrlMessage(to, body, '🛒 Buy Now', buyUrl, undefined, footer);
           return;
-        } catch {
-          // fall through to the reply-button card
-        }
+        } catch { /* fall through */ }
       }
       console.warn(`[WhatsApp] CTA card failed for ${product.id} — falling back to button card`);
     }
