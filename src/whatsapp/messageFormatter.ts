@@ -179,7 +179,8 @@ export function formatWishlist(products: Product[]): string {
     const price = p.price > 0 ? `₹${p.price.toLocaleString('en-IN')}` : 'Price N/A';
     const disc = discountPercent(p);
     const discTag = disc >= 5 ? ` 🔥${disc}% off` : '';
-    lines.push(`${i + 1}. ${p.title}\n   ${emoji} ${price}${discTag} ⭐${p.rating}`);
+    const rating = p.rating > 0 ? ` ⭐${p.rating}` : '';
+    lines.push(`${i + 1}. ${p.title}\n   ${emoji} ${price}${discTag}${rating}`);
   });
   return lines.join('\n');
 }

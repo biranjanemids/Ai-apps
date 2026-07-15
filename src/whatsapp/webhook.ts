@@ -4,7 +4,7 @@ import { processMessage, AgentReply } from '../agent/claudeAgent.js';
 import { sendTextMessage, markAsRead } from './client.js';
 import { sendOrderSummary, sendCheckoutLink, sendProductCardWithLink } from './interactiveMessages.js';
 import { formatSearchResults } from './messageFormatter.js';
-import { getBuyLink } from '../mcp/tools/getBuyLink.js';
+import { getBuyLink, buildBuyLinkFromProduct } from '../mcp/tools/getBuyLink.js';
 import { Platform, Product } from '../types/index.js';
 import {
   getSearchResults,
@@ -236,6 +236,27 @@ async function handleMessage(
     return;
   }
 
+  // Button TITLES occasionally arrive as plain text instead of interactive
+  // replies — never let them reach the LLM, which re-runs a search (observed:
+  // "🛒 Open Checkout" as text triggered a duplicate results dump)
+  const normalized = text.replace(/[^\p{L}\p{N} ]/gu, '').trim().toLowerCase();
+  if (normalized === 'open checkout') {
+    await sendTextMessage(from, '✅ Tap the checkout link above 👆 to complete your purchase on the store!');
+    return;
+  }
+  if (normalized === 'new search') {
+    clearBuyIntent(from);
+    await sendTextMessage(from, '🔍 Sure! What would you like to buy next?');
+    return;
+  }
+  if (['buy now', 'save', 'compare'].includes(normalized)) {
+    await sendTextMessage(
+      from,
+      'Please tap that button on a specific product card above 👆 — or reply *buy 2* using the product number.'
+    );
+    return;
+  }
+
   // "buy 3" / "send me the link" — handled deterministically, never by the LLM
   if (await handleBuyLinkCommand(from, text)) return;
 
@@ -394,8 +415,15 @@ async function startBuyFlow(from: string, productId: string, platform: string): 
   // Record click analytics
   recordBuyClick(from, platform, productId);
 
-  // Fetch checkout URL
-  const linkResult = await getBuyLink(productId, platform);
+  // Prefer the product from this user's session: for live (serp_*) products
+  // it holds the REAL store URL — the generic lookup runs in a different
+  // process and would fabricate a broken checkout link from the internal id
+  const sessionProduct = getSearchResults(from).find(
+    (p) => p.id === productId && p.platform === platform
+  );
+  const linkResult = sessionProduct
+    ? buildBuyLinkFromProduct(sessionProduct)
+    : await getBuyLink(productId, platform);
 
   // Track product price
   recordProductPrice(from, productId, platform, linkResult.price);
@@ -475,8 +503,22 @@ async function handleBuyFlowText(
   intent: ReturnType<typeof getBuyIntent> & object
 ): Promise<void> {
   try {
+    // Escape hatch at any stage
+    if (/^(cancel|stop|band karo)$/i.test(text.trim())) {
+      clearBuyIntent(from);
+      await sendTextMessage(from, '❌ Order cancelled. Search anytime to start again!');
+      return;
+    }
+
     if (intent.stage === 'awaiting_address') {
-      // Save address, ask for phone
+      // A real delivery address is never 1-2 characters — re-prompt on junk
+      if (text.trim().length < 10) {
+        await sendTextMessage(
+          from,
+          '📍 That looks too short for a delivery address. Please share your *full address* (house/flat, street, city, PIN code) — or type *cancel* to stop.'
+        );
+        return;
+      }
       setBuyIntent(from, { ...intent, stage: 'awaiting_phone', address: text.trim() });
       await sendTextMessage(
         from,
@@ -486,7 +528,16 @@ async function handleBuyFlowText(
     }
 
     if (intent.stage === 'awaiting_phone') {
-      const phone = text.trim();
+      // Accept 10-digit Indian mobiles, with optional +91/91/0 prefix
+      const digits = text.replace(/\D/g, '').replace(/^(91|0)(?=[6-9]\d{9}$)/, '');
+      if (!/^[6-9]\d{9}$/.test(digits)) {
+        await sendTextMessage(
+          from,
+          '📱 That doesn\'t look like a valid mobile number. Please send a *10-digit mobile number* (e.g. 98765 43210) — or type *cancel* to stop.'
+        );
+        return;
+      }
+      const phone = digits;
       const address = intent.address ?? '';
 
       // Show full order summary then checkout link

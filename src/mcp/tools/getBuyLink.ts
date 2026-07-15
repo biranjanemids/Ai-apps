@@ -9,6 +9,7 @@ import { getInstamartProduct } from '../../platforms/instamart.js';
 import { getLiveProduct } from '../../platforms/liveRegistry.js';
 import { getMockProduct } from '../../platforms/mock.js';
 import { wrapAffiliateLink } from '../../monetization/affiliateLinks.js';
+import { Product } from '../../types/index.js';
 
 // Add UTM tracking for analytics
 function addTrackingParams(url: string, platform: string, productId: string): string {
@@ -60,6 +61,25 @@ function buildNykaaCheckoutUrl(productId: string): string {
 // Ajio: add to bag redirect
 function buildAjioCheckoutUrl(productUrl: string): string {
   return productUrl;
+}
+
+// Build a buy link directly from a product we already hold (e.g. from the
+// user's session search results). Live-registry lookups only work inside the
+// MCP server process — the webhook runs in the main process, so for serp_*
+// products the session copy is the ONLY source of the real product URL.
+// Without this, live products fall through to the scraper path and produce
+// broken links like amazon cart-add with ASIN.1=serp_167_6.
+export function buildBuyLinkFromProduct(product: Product): BuyLinkResult {
+  const tracked = addTrackingParams(product.productUrl, product.platform, product.id);
+  return {
+    platform: product.platform,
+    productId: product.id,
+    title: product.title,
+    price: product.price,
+    imageUrl: product.imageUrl,
+    productUrl: product.productUrl,
+    checkoutUrl: wrapAffiliateLink(tracked, product.platform),
+  };
 }
 
 export async function getBuyLink(
