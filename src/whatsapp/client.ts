@@ -37,10 +37,19 @@ async function post(body: Record<string, unknown>): Promise<void> {
     }
   }
 
+  const status = axios.isAxiosError(lastErr) ? lastErr.response?.status : undefined;
   const detail = axios.isAxiosError(lastErr)
     ? JSON.stringify(lastErr.response?.data ?? lastErr.message)
     : lastErr;
   console.error('[WhatsApp] Send failed after retries:', detail);
+  if (status === 401) {
+    console.error(
+      '[WhatsApp] ⚠️  ACCESS TOKEN EXPIRED OR INVALID (401). Temporary tokens from ' +
+        'the API Setup page die after ~24h. Fix: business.facebook.com → Business ' +
+        'Settings → Users → System Users → Add → assign your app → Generate Token ' +
+        'with whatsapp_business_messaging — then update WHATSAPP_ACCESS_TOKEN in .env and restart.'
+    );
+  }
   throw lastErr;
 }
 

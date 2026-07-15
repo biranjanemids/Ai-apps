@@ -424,7 +424,14 @@ export async function processMessage(
       search: lastSearch,
     };
   } catch (err) {
-    console.error('[Agent] processMessage error:', err);
+    console.error('[Agent] processMessage error:', err instanceof Error ? err.message : err);
+
+    // The search itself SUCCEEDED — deliver its results deterministically even
+    // though the AI couldn't write a closing remark. Users care about the
+    // products, not the commentary.
+    if (lastSearch && lastSearch.results.some((r) => r.products.length > 0)) {
+      return { text: '', search: lastSearch };
+    }
 
     // Every configured AI provider is rate-limited — tell the user when to retry
     if (

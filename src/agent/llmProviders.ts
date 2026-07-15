@@ -31,14 +31,16 @@ const PROVIDERS: ProviderDef[] = [
     baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
     keyEnv: 'GEMINI_API_KEY',
     modelEnv: 'GEMINI_MODEL',
-    defaultModel: 'gemini-2.0-flash',
+    defaultModel: 'gemini-2.5-flash',
   },
   {
+    // NOTE: Cerebras model ids have no dash after "llama" — 'llama3.3-70b',
+    // not 'llama-3.3-70b' (the latter 404s on every call)
     name: 'cerebras',
     baseUrl: 'https://api.cerebras.ai/v1',
     keyEnv: 'CEREBRAS_API_KEY',
     modelEnv: 'CEREBRAS_MODEL',
-    defaultModel: 'llama-3.3-70b',
+    defaultModel: 'llama3.3-70b',
   },
   {
     name: 'openrouter',
@@ -108,6 +110,29 @@ export async function chatCompletion(
     throw new AllProvidersFailedError(undefined, 'No LLM provider API key configured (set GROQ_API_KEY or GEMINI_API_KEY)');
   }
 
+  // Two passes: per-minute rate limits often clear within seconds, so if the
+  // whole chain was rate-limited, wait briefly and sweep it once more before
+  // giving up. Meta already got its 200, so a slow reply beats no reply.
+  for (let pass = 1; pass <= 2; pass++) {
+    const result = await tryProviders(providers, messages, tools, opts);
+    if ('choice' in result) return result.choice;
+    const rateLimitedOnly = result.status === 429;
+    if (pass === 1 && rateLimitedOnly) {
+      console.warn('[LLM] Whole chain rate-limited — waiting 15s for per-minute quotas to clear');
+      await new Promise((r) => setTimeout(r, 15_000));
+      continue;
+    }
+    throw new AllProvidersFailedError(result.status, result.message);
+  }
+  throw new AllProvidersFailedError(undefined, 'unreachable');
+}
+
+async function tryProviders(
+  providers: ProviderDef[],
+  messages: unknown[],
+  tools: unknown[] | undefined,
+  opts: { temperature?: number; maxTokens?: number }
+): Promise<{ choice: LlmChoice } | { status: number | undefined; message: string }> {
   let sawNonRateLimit = false;
   let lastMessage = 'all providers failed';
 
@@ -138,7 +163,7 @@ export async function chatCompletion(
       );
       const choice = data?.choices?.[0];
       if (!choice?.message) throw new Error(`empty response from ${provider.name}`);
-      return choice as LlmChoice;
+      return { choice: choice as LlmChoice };
     } catch (err) {
       // Malformed tool call (Groq-specific 400) — don't rotate providers, the
       // caller can usually salvage the intended call from failed_generation
@@ -152,7 +177,10 @@ export async function chatCompletion(
       }
 
       const status = axios.isAxiosError(err) ? err.response?.status : undefined;
-      if (status !== undefined && status !== 429 && status < 500) sawNonRateLimit = true;
+      // Only bad-request/auth failures disqualify the "everything was just
+      // rate-limited" classification — a 404 from one misconfigured model or
+      // a 5xx outage must not hide the friendly rate-limit message
+      if (status === 400 || status === 401 || status === 403) sawNonRateLimit = true;
       lastMessage = err instanceof Error ? err.message : String(err);
       console.warn(
         `[LLM] ${provider.name}/${model} failed (${status ?? 'network'}) — ${
@@ -162,5 +190,5 @@ export async function chatCompletion(
     }
   }
 
-  throw new AllProvidersFailedError(sawNonRateLimit ? undefined : 429, lastMessage);
+  return { status: sawNonRateLimit ? undefined : 429, message: lastMessage };
 }

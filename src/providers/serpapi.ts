@@ -73,7 +73,7 @@ export async function searchViaSerpApi(
 
   const { data } = await axios.get<{ shopping_results?: SerpShoppingItem[] }>(SERPAPI_URL, {
     params: query,
-    timeout: 10_000,
+    timeout: 25_000, // primary data source — a slow answer beats "no results"
   });
 
   const items = data?.shopping_results ?? [];

@@ -83,7 +83,11 @@ const userQueues = new Map<string, Promise<void>>();
 function enqueueForUser(userId: string, task: () => Promise<void>): void {
   const prev = userQueues.get(userId) ?? Promise.resolve();
   const next = prev.then(task).catch((err) => {
-    console.error(`[Webhook] Task failed for ${userId}:`, err);
+    // Log a concise line only — dumping raw axios errors leaks the
+    // Authorization header (WhatsApp access token) into the logs
+    const status = (err as { response?: { status?: number } })?.response?.status;
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[Webhook] Task failed for ${userId}: ${msg}${status ? ` (HTTP ${status})` : ''}`);
   });
   userQueues.set(userId, next);
   void next.finally(() => {
