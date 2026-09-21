@@ -13,13 +13,15 @@ public sealed class PolicyService : Ltsc.Mgmt.V1.PolicyService.PolicyServiceBase
     private readonly DeviceRegistry _devices;
     private readonly PolicyRegistry _policies;
     private readonly Ca.CertAuthority _ca;
+    private readonly Metrics _metrics;
     private readonly ILogger<PolicyService> _log;
 
-    public PolicyService(DeviceRegistry devices, PolicyRegistry policies, Ca.CertAuthority ca, ILogger<PolicyService> log)
+    public PolicyService(DeviceRegistry devices, PolicyRegistry policies, Ca.CertAuthority ca, Metrics metrics, ILogger<PolicyService> log)
     {
         _devices = devices;
         _policies = policies;
         _ca = ca;
+        _metrics = metrics;
         _log = log;
     }
 
@@ -30,6 +32,7 @@ public sealed class PolicyService : Ltsc.Mgmt.V1.PolicyService.PolicyServiceBase
         if (!_devices.TryGet(request.DeviceId, out var dev))
             return Task.FromResult(new PolicySnapshot { Version = "0", ContentHash = "0" });
         var snap = _policies.ForGroup(dev.TenantId, dev.GroupId);
+        _metrics.Inc(Metrics.PolicyPulls);
         _log.LogInformation("GetPolicy {Device} tenant={Tenant} group={Group} version={Version} ({Profiles} profiles)",
             request.DeviceId, dev.TenantId, dev.GroupId, snap.Version, snap.Profiles.Count);
         return Task.FromResult(snap);

@@ -41,10 +41,27 @@ provide." It is a living document — status reflects what is actually in the re
 | RBAC + audit | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (token roles Viewer/Operator/Admin + persisted audit log) |
 | Alerting / health monitoring | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ (rule engine: overlay-critical, command-failed, error events, revocation; tenant-scoped feed) |
 | **Predictive health / risk scoring** | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ (0–100 score + risk reasons: disk-exhaustion, overlay pressure, reachability, repeated failures) |
+| Published scale benchmark | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ (reproducible harness + numbers) |
+| Migration from competitor | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | ✅ (WMS / HPDM / IGEL importer) |
+| Prometheus metrics + probes | 🟡 | 🟡 | 🟡 | ✅ | ✅ | ✅ |
+| Built-in hardened baselines | 🟡 | 🟡 | ✅ | 🟡 | ✅ | ✅ (CIS-flavoured, one call) |
 | Multi-tenant / HA scale | ✅ | 🟡 | ✅ | ✅ | ✅ | ✅ (PostgreSQL + Redis multi-node + tenant isolation across devices/policy/audit) |
 | OEM-agnostic (mixed fleets) | ❌ | ❌ | 🟡 | ✅ | ✅ | ✅ (by design) |
 | Modern typed API (gRPC) | ❌ | ❌ | 🟡 | 🟡 | ✅ | ✅ |
 | Container-native on-prem | 🟡 | ❌ | 🟡 | 🟡 | n/a | ✅ |
+
+## What turns parity into leadership
+Feature parity makes an alternative; these make a leader:
+- **Proven scale, published** — `docs/BENCHMARK.md`: 500 devices enrolled and held
+  on one node, 0 failures, 53 enrollments/s, 99 MB RSS, reproducible via
+  `scripts/loadtest-run.sh`. Incumbents publish sizing guides, not reproducible harnesses.
+- **Zero switching cost** — `POST /api/import/{wms|hpdm|igel}` maps an incumbent
+  export into native groups, policies and app packages (dry-run first, unmapped
+  settings reported, never silently dropped). The top reason fleets don't migrate.
+- **Operable by an NOC** — `/metrics` (Prometheus), `/healthz`, `/readyz`. A control
+  plane that can't be alerted on fails procurement regardless of features.
+- **Day-one hardening** — built-in CIS/STIG-flavoured baselines (kiosk, thin client,
+  lab) applied in one call, so a locked-down fleet takes minutes, not a policy project.
 
 ## Futuristic capabilities (beyond current incumbents)
 - **AI ops copilot** — natural language → typed, auditable fleet action plan

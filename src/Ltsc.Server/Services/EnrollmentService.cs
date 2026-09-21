@@ -19,13 +19,15 @@ public sealed class EnrollmentService : Enrollment.EnrollmentBase
     private readonly CertAuthority _ca;
     private readonly DeviceRegistry _devices;
     private readonly Registry.IServerStore _store;
+    private readonly Registry.Metrics _metrics;
     private readonly ILogger<EnrollmentService> _log;
 
-    public EnrollmentService(CertAuthority ca, DeviceRegistry devices, Registry.IServerStore store, ILogger<EnrollmentService> log)
+    public EnrollmentService(CertAuthority ca, DeviceRegistry devices, Registry.IServerStore store, Registry.Metrics metrics, ILogger<EnrollmentService> log)
     {
         _ca = ca;
         _devices = devices;
         _store = store;
+        _metrics = metrics;
         _log = log;
     }
 
@@ -49,6 +51,7 @@ public sealed class EnrollmentService : Enrollment.EnrollmentBase
         }
 
         var device = _devices.Enroll(request.Facts, tenantId, groupId, deviceCert.Thumbprint);
+        _metrics.Inc(Registry.Metrics.Enrollments);
         _store.AddAudit(tenantId, $"device:{device.DeviceId}", "enroll", device.DeviceId, $"tenant {tenantId}, group {groupId}, cert {deviceCert.Thumbprint}");
         _log.LogInformation("Enrolled device {DeviceId} (model={Model}) into {Tenant}/{Group}, cert {Thumb} valid to {NotAfter:u}",
             device.DeviceId, request.Facts?.Model, tenantId, groupId, deviceCert.Thumbprint, notAfter);

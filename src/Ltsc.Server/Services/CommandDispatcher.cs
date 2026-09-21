@@ -14,12 +14,14 @@ public sealed class CommandDispatcher
 {
     private readonly DeviceRouter _router;
     private readonly CertAuthority _ca;
+    private readonly Metrics _metrics;
     private readonly ILogger<CommandDispatcher> _log;
 
-    public CommandDispatcher(DeviceRouter router, CertAuthority ca, ILogger<CommandDispatcher> log)
+    public CommandDispatcher(DeviceRouter router, CertAuthority ca, Metrics metrics, ILogger<CommandDispatcher> log)
     {
         _router = router;
         _ca = ca;
+        _metrics = metrics;
         _log = log;
     }
 
@@ -36,6 +38,7 @@ public sealed class CommandDispatcher
         cmd.Signature = ByteString.CopyFrom(_ca.SignCommandPayload(key => CommandSigning.Sign(cmd, key)));
 
         var sent = _router.Send(deviceId, new ServerMessage { Command = cmd });
+        if (sent) _metrics.Inc(Metrics.CommandsDispatched);
         _log.LogInformation("Dispatch {Cap}/{Action} to {Device}: {Sent}", capability, action, deviceId, sent ? "sent" : "offline");
         return (sent, cmd.CommandId);
     }

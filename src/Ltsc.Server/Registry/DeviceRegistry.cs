@@ -26,6 +26,7 @@ public sealed class DeviceRegistry
     }
 
     private readonly ConcurrentDictionary<string, DeviceRecord> _devices = new();
+    private readonly ConcurrentDictionary<string, byte> _dirty = new();
     private readonly IServerStore? _store;
 
     public DeviceRegistry(IServerStore? store = null)
@@ -58,8 +59,25 @@ public sealed class DeviceRegistry
         {
             rec.LastSeen = DateTimeOffset.UtcNow;
             update(rec);
-            _store?.UpsertDevice(rec);
+            // Write-behind: heartbeats arrive at fleet scale (N devices / interval).
+            // Persisting each one synchronously serialises the whole control plane
+            // behind the store lock, so mark dirty and let the flusher batch it.
+            // Enrollment stays synchronous — identity must be durable immediately.
+            _dirty[deviceId] = 0;
         }
+    }
+
+    /// <summary>Persists devices touched since the last flush. Returns the count written.</summary>
+    public int FlushDirty()
+    {
+        if (_store is null) { _dirty.Clear(); return 0; }
+        var written = 0;
+        foreach (var id in _dirty.Keys)
+        {
+            if (!_dirty.TryRemove(id, out _)) continue;
+            if (_devices.TryGetValue(id, out var rec)) { _store.UpsertDevice(rec); written++; }
+        }
+        return written;
     }
 
     public IReadOnlyCollection<DeviceRecord> All() => _devices.Values.ToArray();

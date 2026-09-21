@@ -25,6 +25,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
     private readonly Ca.CertAuthority _ca;
     private readonly ILogger<DeviceLinkService> _log;
 
+    private readonly Metrics _metrics;
     private readonly AppCatalog _catalog;
     private readonly CommandDispatcher _dispatcher;
 
@@ -40,6 +41,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         AlertStore alerts,
         AppCatalog catalog,
         CommandDispatcher dispatcher,
+        Metrics metrics,
         Ca.CertAuthority ca,
         ILogger<DeviceLinkService> log)
     {
@@ -54,6 +56,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         _alerts = alerts;
         _catalog = catalog;
         _dispatcher = dispatcher;
+        _metrics = metrics;
         _ca = ca;
         _log = log;
     }
@@ -85,6 +88,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
 
         var outbound = _connections.Connect(deviceId);
         _presence.Online(deviceId);   // publish presence (shared in Redis for multi-node)
+        _metrics.Inc(Metrics.Connects);
         _log.LogInformation("Device {DeviceId} connected", deviceId);
 
         try
@@ -126,6 +130,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         {
             _presence.Offline(deviceId);
             _connections.Disconnect(deviceId);
+            _metrics.Inc(Metrics.Disconnects);
             _log.LogInformation("Device {DeviceId} disconnected", deviceId);
         }
     }
@@ -144,8 +149,11 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
         var wasQuarantined = d.Quarantined;
         _devices.Touch(deviceId, r => { r.Quarantined = !posture.Compliant; r.PostureViolations = posture.Violations; });
         if (!posture.Compliant && !wasQuarantined)
+        {
+            _metrics.Inc(Metrics.PostureViolations);
             _alerts.Add(new Alert(d.TenantId, deviceId, "error", "posture.violation",
                 string.Join("; ", posture.Violations), DateTimeOffset.UtcNow));
+        }
     }
 
     private void HandleAgentMessage(string deviceId, AgentMessage msg)
@@ -160,6 +168,7 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
                 });
                 _log.LogDebug("Heartbeat from {DeviceId} (uwf={Uwf}, policy={Policy})",
                     deviceId, msg.Heartbeat.Health?.UwfEnabled, msg.Heartbeat.PolicyVersion);
+                _metrics.Inc(Metrics.Heartbeats);
                 _inventory.SetHealth(deviceId, msg.Heartbeat.Health);
                 if (AlertRules.FromHeartbeat(TenantOf(deviceId), deviceId, msg.Heartbeat.Health) is { } ha) _alerts.Add(ha);
                 EvaluatePosture(deviceId, msg.Heartbeat);
@@ -177,6 +186,8 @@ public sealed class DeviceLinkService : DeviceLink.DeviceLinkBase
 
             case AgentMessage.PayloadOneofCase.Result:
                 _inventory.AddResult(deviceId, msg.Result);
+                _metrics.Inc(Metrics.CommandResults);
+                if (msg.Result.Status is "Failed" or "RolledBack") _metrics.Inc(Metrics.CommandFailures);
                 if (AlertRules.FromResult(TenantOf(deviceId), deviceId, msg.Result) is { } ra) _alerts.Add(ra);
                 _log.LogInformation("[{DeviceId}] {Cmd} RESULT status={Status} exit={Exit} reboot={Reboot} uwf_reenabled={Uwf}",
                     deviceId, msg.Result.CommandId, msg.Result.Status,

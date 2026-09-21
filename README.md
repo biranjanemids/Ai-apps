@@ -130,6 +130,16 @@ parity matrix vs. Dell WMS, HP Device Manager, IGEL UMS, Workspace ONE, and Intu
 - **Alerting** — a rule engine raises tenant-scoped alerts from device signals
   (overlay-critical, command failure, error events, revocation); feed at
   `/api/alerts` and the console **Alerts** tab.
+- **Operability** — `/metrics` (Prometheus counters + fleet gauges), `/healthz`,
+  `/readyz`. Left unauthenticated for probes/scrapers; restrict at the ingress.
+- **Hardened baselines** — `GET /api/baselines`, `POST /api/groups/{g}/baseline/{id}`
+  apply a CIS/STIG-flavoured kiosk / thin-client / lab policy in one call.
+- **Migration from incumbents** — `POST /api/import/{wms|hpdm|igel}` maps a Dell WMS,
+  HP Device Manager or IGEL UMS export into native groups, policies and app packages
+  (`?apply=true` to commit; unmapped settings are reported, not dropped).
+- **Scale benchmark** — `scripts/loadtest-run.sh` + `tools/Ltsc.LoadTest`: 500 real
+  mTLS devices on one node, 0 failures, 53 enrollments/s, 99 MB RSS. See
+  [`docs/BENCHMARK.md`](docs/BENCHMARK.md).
 - **Predictive fleet health** — a transparent 0–100 risk score per device from its
   telemetry (disk-exhaustion, UWF overlay pressure, reachability, repeated
   failures) with human-readable risk reasons; `GET /api/devices/{id}/health`,

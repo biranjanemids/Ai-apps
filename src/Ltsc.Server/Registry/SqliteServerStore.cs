@@ -17,6 +17,12 @@ public sealed class SqliteServerStore : IServerStore, IDisposable
     {
         _conn = new SqliteConnection($"Data Source={path}");
         _conn.Open();
+        // WAL keeps readers from blocking the writer under fleet-scale churn.
+        using (var pragma = _conn.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA busy_timeout=5000;";
+            pragma.ExecuteNonQuery();
+        }
         using var cmd = _conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS devices (

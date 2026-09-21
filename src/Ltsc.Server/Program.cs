@@ -10,6 +10,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddGrpc();
 
 var stateDir = builder.Configuration["Ltsc:StateDir"] ?? "server-state";
+Directory.CreateDirectory(stateDir);   // first run: the store opens before the CA does
 
 // Durable state: PostgreSQL when Ltsc:Postgres is set (multi-node shared state),
 // else SQLite (single-node). Same IServerStore contract either way (design §12.3).
@@ -47,6 +48,8 @@ builder.Services.AddSingleton<AgentRelease>();
 builder.Services.AddSingleton<AlertStore>();
 builder.Services.AddSingleton<AppCatalog>();
 builder.Services.AddSingleton<IIntentTranslator, RuleIntentTranslator>();
+builder.Services.AddSingleton<Metrics>();
+builder.Services.AddHostedService<DeviceStateFlusher>();
 
 // TLS 1.2+ with the CA-issued server certificate. Client certificates are
 // requested and validated against the internal CA; Enrollment is the only
@@ -189,7 +192,7 @@ app.MapGet("/api/audit", (IServerStore store, AdminAuth auth, HttpContext http) 
 // Revoke a device's certificate (Admin, tenant-scoped). The device is locked out
 // on its next mTLS call; revocation persists in the CRL (design §13).
 app.MapPost("/api/devices/{id}/revoke", (string id, DeviceRegistry devices, CertAuthority ca,
-    AdminAuth auth, IServerStore store, AlertStore alerts, HttpContext http) =>
+    AdminAuth auth, IServerStore store, AlertStore alerts, Metrics metrics, HttpContext http) =>
 {
     var who = auth.Require(http, Role.Admin);
     if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
@@ -198,6 +201,7 @@ app.MapPost("/api/devices/{id}/revoke", (string id, DeviceRegistry devices, Cert
     if (string.IsNullOrEmpty(dev.CertThumbprint)) return Results.BadRequest(new { error = "no certificate on record" });
 
     ca.Revoke(dev.CertThumbprint);
+    metrics.Inc(Metrics.CertsRevoked);
     store.AddAudit(tenant, actor, "device:revoke", id, $"cert {dev.CertThumbprint}");
     alerts.Add(new Alert(tenant, id, "warn", "device.revoked", $"certificate {dev.CertThumbprint} revoked by {actor}", DateTimeOffset.UtcNow));
     return Results.Ok(new { id, revoked = dev.CertThumbprint });
@@ -270,6 +274,87 @@ app.MapPost("/api/groups/{group}/apps/{appId}", (string group, string appId, App
         dispatched++;
     }
     return Results.Ok(new { appId, group, dispatched });
+});
+
+// ---- Operability: probes + Prometheus metrics ----
+// Left unauthenticated on purpose (kubelet probes and Prometheus scrape them);
+// restrict them at the network/ingress layer in production.
+app.MapGet("/healthz", () => Results.Text("ok"));
+
+app.MapGet("/readyz", (IServerStore store, IPresence presence) =>
+{
+    try
+    {
+        _ = store.LoadRevokedCerts();            // durable store reachable
+        _ = presence.IsOnline("readyz-probe");   // presence backend reachable
+        return Results.Text("ready");
+    }
+    catch (Exception ex)
+    {
+        return Results.Text($"not ready: {ex.Message}", statusCode: 503);
+    }
+});
+
+app.MapGet("/metrics", (Metrics m, DeviceRegistry devices, DeviceRouter router, InventoryStore inv, AlertStore alerts) =>
+    Results.Text(m.Render(devices, router, inv, alerts), "text/plain; version=0.0.4"));
+
+// ---- Hardened baselines: day-one locked-down fleet ----
+app.MapGet("/api/baselines", (AdminAuth auth, HttpContext http) =>
+    auth.Require(http, Role.Viewer) is null ? Results.Unauthorized() : Results.Json(Baselines.All()));
+
+app.MapPost("/api/groups/{group}/baseline/{baselineId}", (string group, string baselineId,
+    PolicyRegistry policies, DeviceRegistry devices, DeviceRouter router,
+    AdminAuth auth, IServerStore store, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+
+    var snap = Baselines.Build(baselineId);
+    if (snap is null) return Results.NotFound(new { error = "unknown baseline" });
+
+    var applied = policies.SetGroupPolicy(tenant, group, snap);
+    store.AddAudit(tenant, actor, "baseline:apply", $"{group}/{baselineId}", $"version {applied.Version} hash {applied.ContentHash}");
+
+    var nudged = 0;
+    foreach (var d in devices.ForTenant(tenant).Where(x => x.GroupId == group && router.IsOnline(x.DeviceId)))
+    { router.Send(d.DeviceId, new ServerMessage { Sync = new SyncPolicy { ExpectedPolicyVersion = applied.ContentHash } }); nudged++; }
+
+    return Results.Ok(new { baselineId, group, applied.Version, applied.ContentHash, profiles = applied.Profiles.Count, nudged });
+});
+
+// ---- Migration: import an incumbent fleet (WMS / HPDM / IGEL) ----
+app.MapPost("/api/import/{vendor}", async (string vendor, bool? apply, PolicyRegistry policies,
+    AppCatalog catalog, AdminAuth auth, IServerStore store, HttpContext http) =>
+{
+    var who = auth.Require(http, Role.Admin);
+    if (who is null) return Results.StatusCode(auth.Resolve(http).role == Role.None ? 401 : 403);
+    var (actor, tenant) = who.Value;
+
+    using var reader = new StreamReader(http.Request.Body);
+    FleetImporter.ImportPlan plan;
+    try { plan = FleetImporter.Parse(vendor, await reader.ReadToEndAsync()); }
+    catch (Exception ex) { return Results.BadRequest(new { error = $"import failed: {ex.Message}" }); }
+
+    var committed = apply == true;
+    if (committed)
+    {
+        foreach (var g in plan.Groups)
+        {
+            policies.SetGroupPolicy(tenant, g.Name, g.Policy);
+            foreach (var a in g.Apps) catalog.Register(tenant, a.AppId, a.Version, a);
+        }
+        store.AddAudit(tenant, actor, $"import:{plan.Vendor}", tenant,
+            $"{plan.Groups.Count} group(s), {plan.Groups.Sum(g => g.Apps.Count)} app(s)");
+    }
+
+    return Results.Json(new
+    {
+        plan.Vendor,
+        applied = committed,
+        groups = plan.Groups.Select(g => new { g.Name, profiles = g.Policy.Profiles.Count, apps = g.Apps.Count }),
+        plan.Warnings,
+    });
 });
 
 // ---- Zero-trust posture (Viewer, tenant-scoped) ----
