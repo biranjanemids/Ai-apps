@@ -16,3 +16,17 @@ export async function notify(title: string, message: string, url?: string): Prom
   if (url) headers.Click = url;
   await fetch(`https://ntfy.sh/${encodeURIComponent(env.ntfyTopic)}`, { method: 'POST', body: message, headers }).catch(() => {});
 }
+
+/** Pinned "what I'm doing" notification on Android, so you can see progress without the dashboard. */
+export function progress(text: string | null): void {
+  if (process.platform !== 'android') return;
+  if (text === null) {
+    execFile('termux-notification-remove', ['job-agent-progress'], () => {});
+    return;
+  }
+  execFile(
+    'termux-notification',
+    ['--id', 'job-agent-progress', '--ongoing', '--priority', 'low', '--title', 'LinkedIn job agent', '--content', text],
+    () => {},
+  );
+}

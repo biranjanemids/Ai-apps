@@ -1,4 +1,5 @@
 import type { BrowserContext, Page } from 'playwright';
+import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, env, loadAnswers, loadSettings, type Settings } from './config.js';
 import { exclusionReason, isBangalore, normalizeCompany, scoreJob, titleExcluded, type JobDetails } from './matching.js';
@@ -14,10 +15,22 @@ import { externalApply } from './linkedin/externalApply.js';
 import { splitName, type Applicant } from './answers.js';
 import { aiAnswer, aiCoverNote, aiEnabled, aiFit, aiKeywords } from './ai.js';
 import type { QuestionContext } from './answers.js';
-import { notify } from './notify.js';
+import { notify, progress } from './notify.js';
 
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
+
+/** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
+export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
+const LAST_RUN = path.join(DATA_DIR, 'last-run.json');
+
+export function lastRunEndedAt(): number {
+  try {
+    return Date.parse(JSON.parse(fs.readFileSync(LAST_RUN, 'utf8')).at) || 0;
+  } catch {
+    return 0;
+  }
+}
 
 export const LAST_ERROR_SHOT = path.join(DATA_DIR, 'last-error.png');
 
@@ -137,6 +150,15 @@ class Agent {
     if (this.running) return 'Already running';
     this.running = true;
     this.stopRequested = false;
+    // Count resumes so a run that keeps getting killed doesn't loop forever
+    let attempts = 1;
+    try {
+      attempts = (JSON.parse(fs.readFileSync(RUN_STATE, 'utf8')).attempts ?? 0) + 1;
+    } catch {
+      // fresh run
+    }
+    fs.writeFileSync(RUN_STATE, JSON.stringify({ startedAt: new Date().toISOString(), attempts }));
+    progress('Starting…');
     try {
       try {
         return await this.runInner();
@@ -154,6 +176,9 @@ class Agent {
       return msg;
     } finally {
       this.running = false;
+      fs.rmSync(RUN_STATE, { force: true });
+      fs.writeFileSync(LAST_RUN, JSON.stringify({ at: new Date().toISOString() }));
+      progress(null);
     }
   }
 
@@ -240,6 +265,7 @@ class Agent {
             externalApply: rec.job?.externalApply ?? true, externalUrl: rec.job?.externalUrl, alreadyApplied: false,
           };
           tried++;
+          progress(`Applying ${tried}/${Math.min(limit, queue.length)}: ${job.title} @ ${job.company}`);
           this.log(`Applying (${tried}/${limit}): ${job.title} @ ${job.company} — ${job.easyApply ? 'Easy Apply' : 'company website'}`);
           // Belt and braces: re-check exclusion right before submitting.
           const ex = exclusionReason(job, exclusions);
@@ -304,6 +330,7 @@ class Agent {
             continue;
           }
           seen.add(id);
+          progress(`Checking "${kw}" jobs: ${i}/${ids.length} · ${matches} matches so far`);
           const job = await onPage((p) => jobDetails(p, id)).catch((e: Error) => {
             this.log(`Couldn't open job ${id}: ${e.message.split('\n')[0]}`);
             return null;

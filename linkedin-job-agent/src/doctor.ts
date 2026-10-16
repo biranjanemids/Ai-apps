@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, VERSION, env, loadAnswers, loadSettings } from './config.js';
@@ -44,6 +45,25 @@ export async function doctor(): Promise<void> {
     line('warn', 'Dashboard not running', 'start it with: bash termux/start.sh');
   }
   if (env.dashboardToken.length < 16) line('fail', 'DASHBOARD_TOKEN missing or too short in .env');
+
+  // Staying alive in the background (Android)
+  if (process.platform === 'android') {
+    const sh = (cmd: string, args: string[]) => {
+      try {
+        return execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000 }).trim();
+      } catch {
+        return '';
+      }
+    };
+    const supervised = sh('pgrep', ['-f', 'termux/supervise.sh']) !== '';
+    line(supervised ? 'ok' : 'warn', supervised ? 'Auto-restart is on (agent comes back if Android kills it)' : 'Auto-restart is off', supervised ? '' : 'start the agent with: bash termux/start.sh');
+    const android = Number(sh('getprop', ['ro.build.version.release']).split('.')[0]) || 0;
+    if (android >= 12) {
+      console.log(`   Android ${android}: if runs stop in the background, turn off "phantom process" killing — see README "Keep it running"`);
+    }
+    const hours = loadSettings().autoRunHours;
+    console.log(`   automatic runs: ${hours ? `every ${hours} h` : 'off (Settings → Run automatically)'}`);
+  }
 
   // Browser
   const chrome = env.chromePath;

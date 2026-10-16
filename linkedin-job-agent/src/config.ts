@@ -74,6 +74,8 @@ export interface Settings {
   dryRun: boolean;
   /** r86400 = 24h, r604800 = week, r2592000 = month */
   postedWithin: 'r86400' | 'r604800' | 'r2592000';
+  /** Start a run by itself every N hours (0 = only when you tap Run). */
+  autoRunHours: number;
   /** Use AI (when a Groq key is set) for scoring, open questions, keywords and cover notes. */
   useAI: boolean;
   /** 'all' = Easy Apply + company-site jobs; 'easy' = LinkedIn Easy Apply only. */
@@ -98,6 +100,7 @@ function defaults(): Settings {
     yearsExperience: years ? Number(years) : null,
     applyMode: process.env.APPLY_MODE === 'easy' ? 'easy' : 'all',
     useAI: bool(process.env.USE_AI, true),
+    autoRunHours: num(process.env.RUN_EVERY_MINUTES, 0) / 60,
   };
 }
 

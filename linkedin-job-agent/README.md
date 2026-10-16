@@ -72,6 +72,26 @@ Everything runs on the phone itself: the agent, its browser, your LinkedIn login
 5. Android may kill apps running in the background. Go to *Settings → Apps → Termux → Battery* and set it to **Unrestricted**.
    `start.sh` holds a wake lock, so runs keep going with the screen off. To stop the agent, use `termux/stop.sh` or the **Stop Job Agent** widget.
 
+### Keep it running in the background
+
+The agent runs inside **Termux**, not in your browser, so you can close the browser. The dashboard is only a remote control.
+Android may still pause or kill Termux in the background, so do these once:
+
+1. **Battery:** Settings → Apps → Termux → Battery → **Unrestricted**. On Xiaomi/Redmi/POCO also turn on **Autostart**; on Samsung, add Termux to **Never sleeping apps**; on Oppo/Vivo/Realme allow **background activity**.
+2. **Keep Termux in Recents:** don't swipe Termux away. Lock it in the recent-apps screen if your phone offers that (long-press its card → Lock).
+3. **Android 12 and newer:** Android kills apps that run many background processes, and Chromium does. To stop that:
+   - **Android 14+:** Settings → About phone → tap *Build number* 7 times → Developer options → turn on **Disable child process restrictions**.
+   - **Android 12–13:** from a computer with ADB:
+     `adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent; /system/bin/device_config put activity_manager max_phantom_processes 2147483647"`
+4. Optional: install **Termux:Boot** from F-Droid and open it once. The agent then starts by itself when the phone reboots.
+5. Optional: install **Termux:API** from F-Droid to get a pinned notification showing progress ("Applying 3/15: …").
+
+The agent also protects itself:
+- If it's killed, it restarts within 5 seconds.
+- An interrupted run resumes by itself.
+- Matches waiting to be applied are kept.
+- With **Settings → Run automatically**, it searches and applies every few hours without you opening anything.
+
 To update later, run the same `curl … | bash` line again. Your data and `.env` are kept.
 
 **Is it working?** Run `bash ~/Ai-apps/linkedin-job-agent/termux/check.sh`, or tap the **Check Job Agent** widget.

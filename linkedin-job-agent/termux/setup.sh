@@ -41,11 +41,19 @@ cp termux/stop.sh "$HOME/.shortcuts/Stop Job Agent"
 cp termux/check.sh "$HOME/.shortcuts/Check Job Agent"
 chmod +x "$HOME/.shortcuts/"*
 
+# Start automatically when the phone boots (needs the Termux:Boot app, opened once)
+mkdir -p "$HOME/.termux/boot"
+cat > "$HOME/.termux/boot/job-agent" <<'BOOT'
+#!/data/data/com.termux/files/usr/bin/bash
+termux-wake-lock
+bash "$HOME/Ai-apps/linkedin-job-agent/termux/start.sh" --no-open
+BOOT
+chmod +x "$HOME/.termux/boot/job-agent"
+
 # A dashboard left running from before would keep using the old code
-if pkill -f "dist/cli.js serve"; then
+if pgrep -f "dist/cli.js serve" > /dev/null; then
   echo "==> Restarting the agent with the new version…"
-  sleep 2
-  bash termux/start.sh
+  bash termux/start.sh --no-open
 fi
 
 echo

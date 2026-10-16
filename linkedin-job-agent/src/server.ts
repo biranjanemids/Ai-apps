@@ -5,7 +5,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import fs from 'node:fs';
 import { aiEnabled } from './ai.js';
 import { DATA_DIR, VERSION, env, saveGroqKey, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
-import { agent, effectiveExclusions, LAST_ERROR_SHOT, searchKeywords } from './agent.js';
+import { agent, effectiveExclusions, LAST_ERROR_SHOT, lastRunEndedAt, RUN_STATE, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
 import { store, type JobStatus } from './store.js';
@@ -41,6 +41,10 @@ export function startServer() {
       linkedin: getSession(),
       resume: env.resumePath ? path.basename(env.resumePath) : null,
       ai: { configured: Boolean(env.groqApiKey), enabled: aiEnabled(), keywords: readAiKeywords() },
+      nextRunAt: (() => {
+        const h = loadSettings().autoRunHours;
+        return h ? new Date(Math.max(Date.now(), lastRunEndedAt() + h * 3600_000)).toISOString() : null;
+      })(),
       lastErrorShot: fs.existsSync(LAST_ERROR_SHOT) ? fs.statSync(LAST_ERROR_SHOT).mtime.toISOString() : null,
       lastRun: agent.lastRun,
       appliedToday: store.appliedToday(),
@@ -121,6 +125,7 @@ export function startServer() {
     if (Number.isFinite(b.minScore)) patch.minScore = Math.max(0, Math.min(100, Number(b.minScore)));
     if (Number.isFinite(b.maxPerRun)) patch.maxPerRun = Math.max(1, Math.min(50, Number(b.maxPerRun)));
     if (b.yearsExperience === null || Number.isFinite(b.yearsExperience)) patch.yearsExperience = b.yearsExperience ?? null;
+    if (Number.isFinite(b.autoRunHours)) patch.autoRunHours = Math.max(0, Math.min(48, Number(b.autoRunHours)));
     if (b.applyMode === 'all' || b.applyMode === 'easy') patch.applyMode = b.applyMode;
     if (b.postedWithin && ['r86400', 'r604800', 'r2592000'].includes(b.postedWithin)) patch.postedWithin = b.postedWithin;
     res.json(saveSettings(patch));
@@ -187,12 +192,31 @@ export function startServer() {
     console.log(`Job agent ${VERSION} — dashboard: http://${env.host === '0.0.0.0' ? '<this-device-ip>' : env.host}:${env.port}/#token=${env.dashboardToken}`);
   });
 
-  if (env.runEveryMinutes > 0) {
-    console.log(`Auto-run every ${env.runEveryMinutes} min`);
-    setInterval(() => {
+  // Runs by itself: resume a run Android interrupted, and the "every N hours" schedule
+  const interrupted = (() => {
+    try {
+      return JSON.parse(fs.readFileSync(RUN_STATE, 'utf8')) as { attempts?: number };
+    } catch {
+      return null;
+    }
+  })();
+  if (interrupted && (interrupted.attempts ?? 1) >= 3) {
+    agent.log('A run was interrupted 3 times in a row — not resuming automatically. Check the phone settings in the README, then tap Find.');
+    fs.rmSync(RUN_STATE, { force: true });
+  } else if (interrupted) {
+    agent.log('A run was interrupted (the app was closed or killed) — resuming it in 15 seconds');
+    setTimeout(() => {
       if (!agent.busy && !login.loginActive()) void agent.run();
-    }, env.runEveryMinutes * 60_000);
+    }, 15_000);
   }
+  setInterval(() => {
+    const hours = loadSettings().autoRunHours;
+    if (!hours || agent.busy || login.loginActive()) return;
+    if (Date.now() - lastRunEndedAt() >= hours * 3600_000) {
+      agent.log(`Scheduled run (every ${hours} h)`);
+      void agent.run();
+    }
+  }, 60_000);
 }
 
 function readAiKeywords(): string[] {
