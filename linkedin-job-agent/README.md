@@ -20,9 +20,10 @@ Everything runs on the phone itself: the agent, its browser, your LinkedIn login
 
 1. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/). The Play Store version is outdated and won't work.
    Optional: also install **Termux:API** (phone notifications) and **Termux:Widget** (a home-screen start button), both from F-Droid.
-2. Open Termux and paste:
+2. Open Termux and paste this. It updates Termux first; on a fresh install `curl` can fail with
+   `cannot locate symbol "SSL_..."` until the update has run.
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/biranjanemids/Ai-apps/claude/linkedin-bangalore-job-agent-x13ndj/linkedin-job-agent/termux/setup.sh | bash
+   pkg upgrade -y && curl -fsSL https://raw.githubusercontent.com/biranjanemids/Ai-apps/claude/linkedin-bangalore-job-agent-x13ndj/linkedin-job-agent/termux/setup.sh | bash
    ```
    This takes about 5–10 minutes. It installs Node.js and Chromium, downloads the agent and creates a private dashboard password.
 3. Start it with `bash ~/Ai-apps/linkedin-job-agent/termux/start.sh` or the **Job Agent** widget.
