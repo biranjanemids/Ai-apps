@@ -14,9 +14,34 @@ ranks them best match first and applies. It **never applies to your own company*
 | Score 0–100 | Skills overlap (50 points) + how close the title is to your roles (30) + experience fit against "5+ yrs" or "3-6 yrs" in the posting (20). If you set `GROQ_API_KEY`, an LLM also rates the job against your resume and the two scores are averaged. |
 | Apply | Highest scores first, up to `MAX_APPLICATIONS_PER_RUN` and `MAX_APPLICATIONS_PER_DAY`, waiting 20–45 s between applications. Screening questions are answered from your profile and `answers.json`. **If a question can't be answered truthfully** (for example, years with a skill you don't list), the job goes to **"Needs you"** on the phone instead of the agent guessing. |
 
-## Setup (once, on a laptop, PC or small server)
+## Run it on your Android phone (no computer needed)
 
-The browser runs on a computer, because phones can't run Playwright. You control it from your phone.
+Everything runs on the phone itself: the agent, its browser, your LinkedIn login and your job history.
+
+1. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/). The Play Store version is outdated and won't work.
+   Optional: also install **Termux:API** (phone notifications) and **Termux:Widget** (a home-screen start button), both from F-Droid.
+2. Open Termux and paste:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/biranjanemids/Ai-apps/claude/linkedin-bangalore-job-agent-x13ndj/linkedin-job-agent/termux/setup.sh | bash
+   ```
+   This takes about 5–10 minutes. It installs Node.js and Chromium, downloads the agent and creates a private dashboard password.
+3. Start it with `bash ~/Ai-apps/linkedin-job-agent/termux/start.sh` or the **Job Agent** widget.
+   The dashboard opens in your phone's browser, and you can use **Add to Home Screen** there.
+4. In the dashboard:
+   1. **Connect LinkedIn**: the agent's browser appears on screen. Tap the email box, type, press Enter, and do the same
+      for the password and any OTP code. Your password isn't saved; only the login session is.
+   2. **Upload your resume** (PDF) in the Profile card.
+   3. Fill in **My answers** (phone, notice period, CTC).
+   4. Check **Never apply to**. Your current company is added automatically from your profile. Add the parent or group name too.
+   5. Tap **Find jobs (dry run)**, review the matches, then turn on **Live mode**.
+5. Android may kill apps running in the background. Go to *Settings → Apps → Termux → Battery* and set it to **Unrestricted**.
+   `start.sh` holds a wake lock, so runs keep going with the screen off. To stop the agent, use `termux/stop.sh` or the **Stop Job Agent** widget.
+
+To update later, run the same `curl … | bash` line again. Your data and `.env` are kept.
+
+## Setup on a laptop, PC or server (alternative)
+
+Here the browser runs on the computer and you open the dashboard from your phone.
 
 ```bash
 cd linkedin-job-agent

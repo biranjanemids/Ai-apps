@@ -2,10 +2,13 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
-import { env, loadSettings, saveSettings, type Settings } from './config.js';
+import fs from 'node:fs';
+import { DATA_DIR, env, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile } from './profile.js';
 import { store, type JobStatus } from './store.js';
+import { getSession } from './linkedin/browser.js';
+import * as login from './linkedin/remoteLogin.js';
 
 const PUBLIC = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
 
@@ -31,6 +34,9 @@ export function startServer() {
     const profile = loadProfile();
     res.json({
       running: agent.running,
+      busy: agent.busy || login.loginActive(),
+      linkedin: getSession(),
+      resume: env.resumePath ? path.basename(env.resumePath) : null,
       lastRun: agent.lastRun,
       appliedToday: store.appliedToday(),
       maxPerDay: env.maxPerDay,
@@ -58,7 +64,7 @@ export function startServer() {
   });
 
   app.post('/api/run', (_req, res) => {
-    if (agent.running) return res.status(409).json({ error: 'already running' });
+    if (agent.busy || login.loginActive()) return res.status(409).json({ error: 'busy' });
     void agent.run();
     res.json({ ok: true });
   });
@@ -69,7 +75,7 @@ export function startServer() {
   });
 
   app.post('/api/sync-profile', (_req, res) => {
-    if (agent.running) return res.status(409).json({ error: 'agent is running' });
+    if (agent.busy || login.loginActive()) return res.status(409).json({ error: 'busy' });
     agent.syncProfile().catch((e) => agent.log(`Profile sync failed: ${(e as Error).message}`));
     res.json({ ok: true });
   });
@@ -90,12 +96,66 @@ export function startServer() {
     res.json(saveSettings(patch));
   });
 
-  app.listen(env.port, '0.0.0.0', () => {
-    console.log(`Dashboard on http://0.0.0.0:${env.port} — open it on your phone (same Wi-Fi, Tailscale or a tunnel).`);
+  // ── Log in to LinkedIn from the phone (remote screen) ──
+  const wrap = (fn: (req: Request) => Promise<unknown>) => (req: Request, res: Response) =>
+    fn(req).then((r) => res.json(r ?? { ok: true }), (e: Error) => res.status(400).json({ error: e.message }));
+  app.post('/api/login/start', wrap(async () => {
+    if (agent.busy) throw new Error('Agent is running — stop it first');
+    await login.start();
+  }));
+  app.get('/api/login/screen', (_req, res) => {
+    login.screenshot().then(
+      (img) => res.type('image/jpeg').set('Cache-Control', 'no-store').send(img),
+      (e: Error) => res.status(400).json({ error: e.message }),
+    );
+  });
+  app.post('/api/login/tap', wrap((req) => login.tap(Number(req.body.x), Number(req.body.y))));
+  app.post('/api/login/type', wrap((req) => login.type(String(req.body.text ?? ''))));
+  app.post('/api/login/key', wrap((req) => login.press(String(req.body.key))));
+  app.post('/api/login/scroll', wrap((req) => login.scroll(Number(req.body.dy) || 0)));
+  app.post('/api/login/finish', wrap(async () => {
+    const ok = await login.finish();
+    if (ok && !loadProfile()) agent.syncProfile().catch((e) => agent.log(`Profile sync failed: ${(e as Error).message}`));
+    return { ok };
+  }));
+  app.post('/api/login/cancel', wrap(() => login.stop()));
+
+  // ── Resume upload ──
+  app.post('/api/resume', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {
+    const body = req.body as Buffer;
+    if (!Buffer.isBuffer(body) || !body.length) return res.status(400).json({ error: 'empty file' });
+    const isPdf = body.subarray(0, 5).toString() === '%PDF-';
+    for (const f of ['resume.pdf', 'resume.txt']) fs.rmSync(path.join(DATA_DIR, f), { force: true });
+    fs.writeFileSync(path.join(DATA_DIR, isPdf ? 'resume.pdf' : 'resume.txt'), body);
+    agent.refreshResume().then(() => res.json({ ok: true }), (e: Error) => res.status(400).json({ error: e.message }));
+  });
+
+  // ── Screening-question answers ──
+  app.get('/api/answers', (_req, res) => res.json(loadAnswers()));
+  app.post('/api/answers', (req, res) => {
+    const b = req.body as Answers;
+    const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined);
+    const n = (v: unknown) => (v === '' || v === null || v === undefined || !Number.isFinite(Number(v)) ? undefined : Number(v));
+    const flag = (v: unknown) => (typeof v === 'boolean' ? v : undefined);
+    const next: Answers = {
+      ...loadAnswers(),
+      phone: str(b.phone), email: str(b.email), city: str(b.city), linkedinUrl: str(b.linkedinUrl), portfolioUrl: str(b.portfolioUrl),
+      noticePeriodDays: n(b.noticePeriodDays), currentCtcLakhs: n(b.currentCtcLakhs), expectedCtcLakhs: n(b.expectedCtcLakhs),
+      authorizedToWorkInIndia: flag(b.authorizedToWorkInIndia), requiresSponsorship: flag(b.requiresSponsorship),
+      willingToRelocate: flag(b.willingToRelocate), comfortableOnsite: flag(b.comfortableOnsite),
+    };
+    saveAnswers(next);
+    res.json(next);
+  });
+
+  app.listen(env.port, env.host, () => {
+    console.log(`Dashboard: http://${env.host === '0.0.0.0' ? '<this-device-ip>' : env.host}:${env.port}/#token=${env.dashboardToken}`);
   });
 
   if (env.runEveryMinutes > 0) {
     console.log(`Auto-run every ${env.runEveryMinutes} min`);
-    setInterval(() => void agent.run(), env.runEveryMinutes * 60_000);
+    setInterval(() => {
+      if (!agent.busy && !login.loginActive()) void agent.run();
+    }, env.runEveryMinutes * 60_000);
   }
 }

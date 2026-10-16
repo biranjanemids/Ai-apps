@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { DATA_DIR, env } from '../config.js';
@@ -5,14 +6,19 @@ import { DATA_DIR, env } from '../config.js';
 const USER_DATA = path.join(DATA_DIR, 'browser-profile');
 
 /** Persistent Chromium profile so your LinkedIn login survives restarts. */
-export async function openBrowser(opts: { headless?: boolean } = {}): Promise<BrowserContext> {
+export async function openBrowser(
+  opts: { headless?: boolean; viewport?: { width: number; height: number } } = {},
+): Promise<BrowserContext> {
+  const args = ['--disable-blink-features=AutomationControlled'];
+  // Termux's Chromium can't use the Linux sandbox and has a tiny /dev/shm
+  if (process.platform === 'android') args.push('--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu');
   const ctx = await chromium.launchPersistentContext(USER_DATA, {
     headless: opts.headless ?? env.headless,
     executablePath: env.chromePath,
-    viewport: { width: 1280, height: 900 },
+    viewport: opts.viewport ?? { width: 1280, height: 900 },
     locale: 'en-IN',
     timezoneId: 'Asia/Kolkata',
-    args: ['--disable-blink-features=AutomationControlled'],
+    args,
   });
   if (env.liAt) {
     await ctx.addCookies([
@@ -25,7 +31,24 @@ export async function openBrowser(opts: { headless?: boolean } = {}): Promise<Br
 export async function isLoggedIn(page: Page): Promise<boolean> {
   await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
-  return !/\/(login|authwall|checkpoint|uas)/.test(page.url());
+  const ok = !/\/(login|authwall|checkpoint|uas|signup)/.test(page.url());
+  setSession(ok);
+  return ok;
+}
+
+const SESSION_FILE = path.join(DATA_DIR, 'session.json');
+
+/** Last known LinkedIn login state, so the dashboard can show it without opening a browser. */
+export function getSession(): { loggedIn: boolean; at: string } | null {
+  try {
+    return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+export function setSession(loggedIn: boolean): void {
+  fs.writeFileSync(SESSION_FILE, JSON.stringify({ loggedIn, at: new Date().toISOString() }));
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

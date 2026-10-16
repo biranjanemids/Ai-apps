@@ -56,6 +56,13 @@
   pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: var(--muted); }
   .warn { background: color-mix(in srgb, var(--warn) 12%, var(--card)); border-color: var(--warn); }
   #login { display: none; }
+  #screen { width: 100%; border-radius: 8px; border: 1px solid var(--line); touch-action: manipulation; display: block; background: #fff; min-height: 200px; }
+  .keys { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 8px; }
+  .keys button { padding: 10px 4px; font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .grid2 label, .stack label { display: block; font-size: 13px; color: var(--muted); }
+  .grid2 input, .stack input { margin-top: 4px; }
+  .ok { color: var(--ok); font-weight: 600; } .bad { color: var(--warn); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -68,6 +75,20 @@
   </section>
 
   <div id="app" hidden>
+    <section class="card" id="licard" style="margin-bottom:12px">
+      <h2>LinkedIn</h2>
+      <div id="listatus" class="muted"></div>
+      <div id="lipanel" hidden>
+        <p class="muted" style="margin:6px 0 8px">This is the agent's browser. Tap a box on the screen, type below, then press Enter. Codes, app approvals and captchas work here as well. Your password isn't saved.</p>
+        <img id="screen" alt="LinkedIn login screen">
+        <div class="row" style="margin-top:8px"><input type="text" id="litext" autocomplete="off" autocapitalize="off" placeholder="Type into the selected box"><button class="ghost" style="flex:0" onclick="liType()">Type</button></div>
+        <div class="keys">
+          <button class="ghost" onclick="liKey('Enter')">Enter</button><button class="ghost" onclick="liKey('Backspace')">⌫</button>
+          <button class="ghost" onclick="liKey('Tab')">Tab</button><button class="ghost" onclick="liScroll(-400)">▲</button><button class="ghost" onclick="liScroll(400)">▼</button>
+        </div>
+        <div class="row" style="margin-top:8px"><button class="ghost" onclick="liCancel()">Cancel</button><button class="primary" onclick="liFinish()">I'm logged in</button></div>
+      </div>
+    </section>
     <section class="card" style="margin-bottom:12px">
       <div class="stats">
         <div><b id="st-today">0</b><span>applied today</span></div>
@@ -105,7 +126,33 @@
     <section class="card" style="margin-bottom:12px">
       <h2>Profile</h2>
       <div id="profile" class="muted">Not synced yet.</div>
+      <p class="muted" style="margin:10px 0 4px">Resume (PDF): <span id="resname">none</span></p>
+      <input type="file" id="resume" accept=".pdf,.txt,application/pdf,text/plain" onchange="uploadResume(this)">
       <button class="ghost" style="width:100%;margin-top:10px" onclick="post('/api/sync-profile').then(refresh)">Re-sync from LinkedIn + resume</button>
+    </section>
+
+    <section class="card" style="margin-bottom:12px">
+      <h2>My answers for application forms</h2>
+      <form id="ans" onsubmit="saveAnswers(event)">
+        <div class="grid2">
+          <label>Mobile number<input type="text" name="phone" inputmode="tel"></label>
+          <label>Email<input type="text" name="email" inputmode="email"></label>
+          <label>Notice period (days)<input type="number" name="noticePeriodDays"></label>
+          <label>City<input type="text" name="city" placeholder="Bengaluru"></label>
+          <label>Current CTC (LPA)<input type="number" step="0.1" name="currentCtcLakhs"></label>
+          <label>Expected CTC (LPA)<input type="number" step="0.1" name="expectedCtcLakhs"></label>
+        </div>
+        <div class="stack" style="margin-top:10px">
+          <label>LinkedIn URL<input type="text" name="linkedinUrl" inputmode="url"></label>
+          <label style="margin-top:8px">Portfolio / GitHub URL<input type="text" name="portfolioUrl" inputmode="url"></label>
+        </div>
+        <label class="toggle"><span class="muted">Authorised to work in India</span><input type="checkbox" name="authorizedToWorkInIndia"></label>
+        <label class="toggle"><span class="muted">Need visa sponsorship</span><input type="checkbox" name="requiresSponsorship"></label>
+        <label class="toggle"><span class="muted">Willing to relocate</span><input type="checkbox" name="willingToRelocate"></label>
+        <label class="toggle"><span class="muted">OK with office / hybrid</span><input type="checkbox" name="comfortableOnsite"></label>
+        <button class="ghost" style="width:100%">Save answers</button>
+        <p class="muted" id="anssaved" style="margin:6px 0 0"></p>
+      </form>
     </section>
 
     <section class="card" style="margin-bottom:12px">
@@ -153,6 +200,69 @@ function removeEx(name) {
   set({ excludedCompanies: status.settings.excludedCompanies.filter((c) => c !== name) });
 }
 
+// ── LinkedIn login via the agent's browser ──
+let liTimer = null, liBusy = false;
+async function liShot() {
+  if (liBusy) return;
+  liBusy = true;
+  try {
+    const r = await fetch('/api/login/screen', { headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) { const old = $('screen').src; $('screen').src = URL.createObjectURL(await r.blob()); if (old) URL.revokeObjectURL(old); }
+  } finally { liBusy = false; }
+}
+async function liStart() {
+  $('lipanel').hidden = false; $('listatus').textContent = 'Opening LinkedIn…';
+  const r = await post('/api/login/start');
+  if (r.error) { $('listatus').textContent = r.error; $('lipanel').hidden = true; return; }
+  $('listatus').textContent = '';
+  liShot(); clearInterval(liTimer); liTimer = setInterval(liShot, 2000);
+}
+const liAct = (path, body) => post(path, body).then((r) => { if (r.error) alert(r.error); liShot(); });
+$('screen').addEventListener('click', (e) => {
+  const b = e.target.getBoundingClientRect();
+  liAct('/api/login/tap', { x: (e.clientX - b.left) / b.width, y: (e.clientY - b.top) / b.height });
+});
+function liType() { const t = $('litext').value; $('litext').value = ''; if (t) liAct('/api/login/type', { text: t }); }
+$('litext').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); liType(); setTimeout(() => liKey('Enter'), 300); } });
+const liKey = (key) => liAct('/api/login/key', { key });
+const liScroll = (dy) => liAct('/api/login/scroll', { dy });
+async function liFinish() {
+  clearInterval(liTimer);
+  $('listatus').textContent = 'Checking…';
+  const r = await post('/api/login/finish');
+  $('lipanel').hidden = true;
+  $('listatus').innerHTML = r.ok ? '<span class="ok">Connected ✓</span> Reading your profile…' : '<span class="bad">Not logged in yet.</span> Try again.';
+  refresh();
+}
+async function liCancel() { clearInterval(liTimer); await post('/api/login/cancel'); $('lipanel').hidden = true; refresh(); }
+
+async function uploadResume(el) {
+  const f = el.files[0]; if (!f) return;
+  $('resname').textContent = 'uploading…';
+  const r = await fetch('/api/resume', { method: 'POST', body: f, headers: { Authorization: 'Bearer ' + token, 'Content-Type': f.type || 'application/octet-stream' } });
+  $('resname').textContent = r.ok ? f.name + ' ✓' : 'upload failed';
+  el.value = ''; refresh();
+}
+
+let answersLoaded = false;
+async function loadAnswersForm() {
+  const a = await api('/api/answers'); const f = $('ans');
+  for (const el of f.elements) {
+    if (!el.name) continue;
+    if (el.type === 'checkbox') el.checked = a[el.name] ?? (el.name !== 'requiresSponsorship');
+    else el.value = a[el.name] ?? '';
+  }
+  answersLoaded = true;
+}
+async function saveAnswers(e) {
+  e.preventDefault();
+  const body = {};
+  for (const el of $('ans').elements) if (el.name) body[el.name] = el.type === 'checkbox' ? el.checked : el.value;
+  await post('/api/answers', body);
+  $('anssaved').textContent = 'Saved ✓';
+  setTimeout(() => ($('anssaved').textContent = ''), 2500);
+}
+
 const TABS = [['applied', 'Applied'], ['needs_attention', 'Needs you'], ['dry_run', 'Dry run'], ['excluded', 'Blocked'], ['skipped', 'Skipped'], ['failed', 'Failed']];
 
 async function refresh() {
@@ -166,7 +276,9 @@ async function refresh() {
   $('st-attn').textContent = c.needs_attention || 0;
   $('st-ex').textContent = c.excluded || 0;
   $('last').textContent = status.lastRun ? 'Last run: ' + status.lastRun.summary : 'Searching ' + status.location + ' for: ' + (status.keywords.join(' / ') || '—');
-  $('runbox').innerHTML = status.running
+  $('runbox').innerHTML = !status.running && status.busy
+    ? '<button class="ghost" style="width:100%" disabled>Busy…</button>'
+    : status.running
     ? '<button class="danger" onclick="post(\'/api/stop\').then(refresh)">Stop</button>'
     : '<button class="primary" onclick="post(\'/api/run\').then(refresh)">' + (s.dryRun ? 'Find jobs (dry run)' : 'Find & apply now') + '</button>';
 
@@ -184,6 +296,15 @@ async function refresh() {
   if (document.activeElement !== $('kw')) $('kw').value = s.keywords.join(', ');
   for (const [id, v] of [['minScore', s.minScore], ['maxPerRun', s.maxPerRun], ['posted', s.postedWithin]]) if (document.activeElement !== $(id)) $(id).value = v;
   if (document.activeElement !== $('years')) $('years').value = s.yearsExperience ?? '';
+
+  if ($('lipanel').hidden) {
+    const li = status.linkedin;
+    $('listatus').innerHTML = li && li.loggedIn
+      ? '<span class="ok">Connected ✓</span> <button class="ghost" style="padding:6px 10px;margin-left:6px" onclick="liStart()">Reconnect</button>'
+      : '<span class="bad">Not connected.</span><button class="primary" style="margin-top:10px" onclick="liStart()">Connect LinkedIn</button>';
+  }
+  $('resname').textContent = status.resume || 'none — upload it below';
+  if (!answersLoaded) loadAnswersForm();
 
   const p = status.profile;
   $('profile').innerHTML = p

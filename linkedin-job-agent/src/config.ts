@@ -17,13 +17,18 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 /** Static config from .env. Values the phone dashboard can change live are in `Settings`. */
 export const env = {
   port: num(process.env.PORT, 8787),
+  host: process.env.HOST ?? '0.0.0.0',
   dashboardToken: process.env.DASHBOARD_TOKEN ?? '',
   headless: bool(process.env.HEADLESS, true),
   chromePath: process.env.CHROME_PATH || undefined,
   liAt: process.env.LINKEDIN_LI_AT || undefined,
   location: process.env.JOB_LOCATION ?? 'Bengaluru, Karnataka, India',
   geoId: process.env.JOB_GEO_ID ?? '105214831', // LinkedIn geoId for Bengaluru
-  resumePath: process.env.RESUME_PATH || undefined,
+  /** RESUME_PATH, else a resume uploaded from the phone dashboard. */
+  get resumePath(): string | undefined {
+    if (process.env.RESUME_PATH && fs.existsSync(process.env.RESUME_PATH)) return process.env.RESUME_PATH;
+    return ['resume.pdf', 'resume.txt'].map((f) => path.join(DATA_DIR, f)).find((f) => fs.existsSync(f));
+  },
   groqApiKey: process.env.GROQ_API_KEY || undefined,
   groqModel: process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
   ntfyTopic: process.env.NTFY_TOPIC || undefined,
@@ -101,6 +106,10 @@ export interface Answers {
   comfortableOnsite?: boolean;
   /** Extra rules: if the question contains `match` (case-insensitive regex), answer `answer`. */
   custom?: { match: string; answer: string }[];
+}
+
+export function saveAnswers(a: Answers): void {
+  fs.writeFileSync(env.answersPath, JSON.stringify(a, null, 2));
 }
 
 export function loadAnswers(): Answers {

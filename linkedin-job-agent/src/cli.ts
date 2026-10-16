@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import './platform.js';
 import { openBrowser, isLoggedIn, sleep } from './linkedin/browser.js';
 import { agent } from './agent.js';
 import { startServer } from './server.js';

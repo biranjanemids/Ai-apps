@@ -61,7 +61,7 @@ class Agent {
     try {
       const page = ctx.pages()[0] ?? (await ctx.newPage());
       if (!(await isLoggedIn(page))) {
-        throw new Error('Not logged in to LinkedIn. Run `npm run login` on the computer once (or set LINKEDIN_LI_AT).');
+        throw new Error('Not logged in to LinkedIn. Tap "Connect LinkedIn" on the dashboard (or run `npm run login` on a computer).');
       }
       return await fn(page, ctx);
     } finally {
@@ -69,9 +69,17 @@ class Agent {
     }
   }
 
+  syncing = false;
+
+  get busy() {
+    return this.running || this.syncing;
+  }
+
   async syncProfile(): Promise<Profile> {
     this.log('Reading your LinkedIn profile…');
-    const scraped = await this.withPage((page) => scrapeOwnProfile(page));
+    const wasSyncing = this.syncing;
+    this.syncing = true;
+    const scraped = await this.withPage((page) => scrapeOwnProfile(page)).finally(() => (this.syncing = wasSyncing));
     const profile = mergeResume({ ...scraped, resumeText: '' }, await readResumeText());
     saveProfile(profile);
     this.log(
@@ -79,6 +87,15 @@ class Agent {
         `current employer: ${currentEmployers(profile).join(', ') || 'none detected'}`,
     );
     return profile;
+  }
+
+  /** Re-read the resume (e.g. after uploading a new one) without opening LinkedIn. */
+  async refreshResume(): Promise<void> {
+    const p = loadProfile();
+    if (!p) return;
+    const next = mergeResume(p, await readResumeText());
+    saveProfile(next);
+    this.log(`Resume loaded: ${next.skills.length} skills total`);
   }
 
   async run(): Promise<string> {
