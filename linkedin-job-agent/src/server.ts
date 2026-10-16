@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
-import { aiEnabled } from './ai.js';
+import { aiEnabled, aiHealth } from './ai.js';
 import { DATA_DIR, VERSION, env, saveGroqKey, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, LAST_ERROR_SHOT, lastRunEndedAt, RUN_STATE, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
@@ -94,6 +94,8 @@ export function startServer() {
     if (typeof useAI === 'boolean') saveSettings({ useAI });
     res.json({ configured: Boolean(env.groqApiKey), enabled: aiEnabled() });
   });
+
+  app.get('/api/ai/test', async (_req, res) => res.json(await aiHealth()));
 
   app.post('/api/jobs/recheck', (_req, res) => {
     if (agent.busy) return res.status(409).json({ error: 'busy' });

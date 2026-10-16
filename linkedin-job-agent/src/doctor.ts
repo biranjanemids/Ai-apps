@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, VERSION, env, loadAnswers, loadSettings } from './config.js';
 import { effectiveExclusions } from './agent.js';
+import { aiHealth } from './ai.js';
 import { getSession, isLoggedIn, openBrowser, userAgent } from './linkedin/browser.js';
 import { currentEmployers, loadProfile, readResumeText } from './profile.js';
 import { store } from './store.js';
@@ -105,6 +106,12 @@ export async function doctor(): Promise<void> {
       if (s) console.log(`   last known LinkedIn login: ${s.loggedIn ? 'yes' : 'no'} (${s.at})`);
     }
   }
+
+  // AI (Groq)
+  const ai = await aiHealth();
+  if (!env.groqApiKey) line('warn', 'AI (Groq) not set up', 'optional — add a free key on the dashboard');
+  else line(ai.ok ? 'ok' : 'fail', ai.ok ? 'AI (Groq) is up' : 'AI (Groq) not working', ai.detail);
+  if (ai.limits) console.log(`   ${ai.limits}`);
 
   // Profile & resume
   const profile = loadProfile();

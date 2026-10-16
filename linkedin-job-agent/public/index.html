@@ -149,6 +149,8 @@
         <p class="muted" style="margin:0 0 6px">Free key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> (sign in with Google → Create API key → copy).</p>
         <div class="row"><input type="password" id="aikey" placeholder="gsk_…" autocomplete="off"><button class="ghost" style="flex:0" onclick="saveAiKey()">Save</button></div>
       </div>
+      <button class="ghost" id="aitestbtn" style="width:100%;margin-top:8px" onclick="testAi()">Test AI</button>
+      <p class="muted" id="aitest" style="margin:6px 0 0"></p>
       <label class="toggle"><span class="muted">Use AI for scoring, open questions, search titles and cover notes</span><input type="checkbox" id="useai" onchange="post('/api/ai',{useAI:this.checked}).then(refresh)"></label>
       <p class="muted" style="margin:0;font-size:12px">AI answers only from your resume and profile, and never answers salary, notice period, visa or personal questions. Everything it writes is shown on each job below.</p>
     </section>
@@ -323,6 +325,12 @@ async function saveAnswers(e) {
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
 
+async function testAi() {
+  $('aitest').textContent = 'Asking Groq…';
+  const r = await api('/api/ai/test');
+  $('aitest').innerHTML = (r.ok ? '<span class="ok">✓ Working</span> — ' : '<span class="bad">✗ Not working</span> — ') + esc(r.detail) + (r.limits ? '<br>' + esc(r.limits) : '');
+}
+
 async function saveAiKey() {
   const key = $('aikey').value.trim(); if (!key) return;
   $('aistatus').textContent = 'Checking key…';
@@ -406,6 +414,7 @@ async function refresh() {
     ? '<span class="ok">AI is on ✓</span>' + (ai.keywords && ai.keywords.length ? '<br>Suggested search titles: ' + esc(ai.keywords.join(', ')) : '')
     : ai.configured ? 'AI is switched off.' : 'Add a free Groq key to turn on AI.';
   $('aikeybox').hidden = !!ai.configured;
+  $('aitestbtn').hidden = !ai.configured;
   $('useai').checked = !!s.useAI;
   $('useai').disabled = !ai.configured;
 

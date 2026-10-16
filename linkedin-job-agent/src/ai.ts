@@ -173,3 +173,44 @@ export async function aiCoverNote(ctx: AiAnswerContext): Promise<string | null> 
   const note = typeof out?.note === 'string' ? out.note.trim() : '';
   return note.length > 80 ? note : null;
 }
+
+// ── Health check ─────────────────────────────────────────────────────────────
+
+export interface AiHealth {
+  ok: boolean;
+  detail: string;
+  /** e.g. "13,950 of 14,400 requests left today" */
+  limits?: string;
+}
+
+/** Sends a tiny real request to Groq to prove the key, model and network all work. */
+export async function aiHealth(): Promise<AiHealth> {
+  const key = env.groqApiKey;
+  if (!key) return { ok: false, detail: 'no Groq key — add one on the dashboard (AI assistant card)' };
+  if (!loadSettings().useAI) return { ok: false, detail: 'AI is switched off on the dashboard' };
+  const started = Date.now();
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: env.groqModel,
+        max_tokens: 5,
+        messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
+      }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const n = (h: string) => Number(res.headers.get(h) ?? NaN);
+    const reqLeft = n('x-ratelimit-remaining-requests');
+    const reqMax = n('x-ratelimit-limit-requests');
+    const limits = Number.isFinite(reqLeft) && Number.isFinite(reqMax) ? `${reqLeft.toLocaleString()} of ${reqMax.toLocaleString()} requests left today` : undefined;
+    if (res.status === 401) return { ok: false, detail: 'Groq rejected the key — create a new one at console.groq.com/keys' };
+    if (res.status === 429) return { ok: false, detail: "free limit reached for now — the agent uses rules until it resets", limits };
+    if (!res.ok) return { ok: false, detail: `Groq answered HTTP ${res.status} (${(await res.text()).slice(0, 80)})`, limits };
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+    const reply = data.choices?.[0]?.message?.content?.trim() ?? '';
+    return { ok: true, detail: `${env.groqModel} answered "${reply.slice(0, 20)}" in ${((Date.now() - started) / 1000).toFixed(1)}s`, limits };
+  } catch (e) {
+    return { ok: false, detail: `can't reach api.groq.com (${(e as Error).message})` };
+  }
+}
