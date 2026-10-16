@@ -202,3 +202,10 @@ test('AI answers: grounded, never sensitive, validated, rules first', async () =
   ai.setChatForTests(null);
   delete process.env.GROQ_API_KEY;
 });
+
+test('a job with an unrelated title cannot pass on skills alone', () => {
+  const me = { titles: ['Principal Software Engineer', 'Senior Software Engineer'], skills: ['Java', 'Kafka', 'AWS', 'Kubernetes', 'Microservices'], years: 14.7 };
+  const desc = 'Experience selling Java, Kafka, AWS, Kubernetes and microservices solutions. 10+ years. ' + 'x'.repeat(200);
+  assert.ok(scoreJob({ title: 'Regional Sales Manager', description: desc }, me).score < 55);
+  assert.ok(scoreJob({ title: 'Staff Engineer, Platform', description: desc }, me).score >= 55, 'related title still passes');
+});

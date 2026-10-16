@@ -3,6 +3,7 @@ import path from 'node:path';
 import { DATA_DIR } from './config.js';
 
 export type JobStatus =
+  | 'queued' // good match, waiting to be applied to (survives crashes/restarts)
   | 'applied'
   | 'dry_run'
   | 'excluded' // employer / parent company — never applied
@@ -22,6 +23,8 @@ export interface JobRecord {
   note?: string;
   /** Company application page, for jobs you finish yourself */
   applyUrl?: string;
+  /** What the apply step needs, kept while the job is queued */
+  job?: { easyApply: boolean; externalApply: boolean; externalUrl?: string; description: string };
   /** Answers the AI wrote on this application, for you to review */
   aiAnswers?: { q: string; a: string }[];
   /** Scoring version that produced `score`; older low-match skips get re-checked */

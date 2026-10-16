@@ -342,7 +342,7 @@ async function recheck() {
   refresh();
 }
 
-const TABS = [['applied', 'Applied'], ['needs_attention', 'Needs you'], ['dry_run', 'Dry run'], ['excluded', 'Blocked'], ['skipped', 'Skipped'], ['failed', 'Failed']];
+const TABS = [['queued', 'Queued'], ['applied', 'Applied'], ['needs_attention', 'Needs you'], ['dry_run', 'Dry run'], ['excluded', 'Blocked'], ['skipped', 'Skipped'], ['failed', 'Failed']];
 
 async function refresh() {
   if (!token) { $('login').style.display = 'block'; return; }

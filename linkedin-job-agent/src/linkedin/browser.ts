@@ -26,6 +26,10 @@ export function userAgent(): string {
   return cachedUA;
 }
 
+let contextHook: ((ctx: BrowserContext) => Promise<void>) | null = null;
+/** Tests use this to serve mock LinkedIn pages to the agent's browser. */
+export const setContextHookForTests = (fn: typeof contextHook) => (contextHook = fn);
+
 /** Persistent Chromium profile so your LinkedIn login survives restarts. */
 export async function openBrowser(
   opts: { headless?: boolean; viewport?: { width: number; height: number }; lite?: boolean } = {},
@@ -57,6 +61,7 @@ export async function openBrowser(
       return t === 'image' || t === 'media' || t === 'font' ? route.abort() : route.continue();
     });
   }
+  if (contextHook) await contextHook(ctx);
   if (env.liAt) {
     await ctx.addCookies([
       { name: 'li_at', value: env.liAt, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' },
@@ -93,7 +98,10 @@ export function setSession(loggedIn: boolean): void {
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Human-ish pause; LinkedIn rate-limits accounts that act too fast. */
-export const pause = (minMs: number, maxMs: number) => sleep(minMs + Math.random() * (maxMs - minMs));
+export const pause = (minMs: number, maxMs: number) => sleep((minMs + Math.random() * (maxMs - minMs)) * pauseScale);
+let pauseScale = 1;
+/** Tests shrink the human-like pauses. */
+export const setPauseScaleForTests = (f: number) => (pauseScale = f);
 
 /** De-duplicated visible lines of an element (LinkedIn repeats text for screen readers). */
 export function cleanLines(text: string): string[] {

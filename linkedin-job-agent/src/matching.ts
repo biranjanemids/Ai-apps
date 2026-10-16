@@ -171,7 +171,13 @@ export function scoreJob(job: Pick<JobDetails, 'title' | 'description'>, me: Mat
     }
   }
 
-  return { score: skillPts + titlePts + expPts, reasons };
+  let score = skillPts + titlePts + expPts;
+  if (best === 0 && me.titles.length) {
+    // e.g. a sales or HR role whose description happens to mention your tech stack
+    score = Math.min(score, 40);
+    reasons.push('title unrelated to your roles');
+  }
+  return { score, reasons };
 }
 
 export function titleExcluded(title: string, words: string[]): string | null {

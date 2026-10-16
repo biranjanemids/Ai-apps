@@ -200,15 +200,86 @@ class Agent {
       currentTitle: current?.title,
     };
 
-    return this.withPage(async (page, ctx) => {
-      // 1. Find and rank
-      const candidates: { job: JobDetails; score: number; reasons: string[] }[] = [];
+    return this.withPage(async (firstPage, ctx) => {
+      // On a phone LinkedIn tabs slowly eat memory and can crash. Recycle the tab every few
+      // jobs, and if it crashes open a fresh one and carry on.
+      let page = firstPage;
+      let uses = 0;
+      const freshTab = async () => {
+        await page.close().catch(() => {});
+        page = await ctx.newPage();
+        uses = 0;
+      };
+      const onPage = async <T>(fn: (p: Page) => Promise<T>): Promise<T> => {
+        if (++uses > 8) await freshTab();
+        try {
+          return await fn(page);
+        } catch (e) {
+          if (!/crash|closed|detached|Target/i.test((e as Error).message)) throw e;
+          this.log('Browser tab crashed (low memory) — opening a fresh tab and continuing');
+          await freshTab();
+          return fn(page);
+        }
+      };
+
+      let applied = 0;
+      let attention = 0;
+      let tried = 0;
+      const limit = settings.dryRun ? Math.max(settings.maxPerRun, 1) : budget;
+
+      /** Apply to queued jobs, best score first, until the run's limit. */
+      const applyQueue = async () => {
+        const queue = store.list('queued').sort((a, b) => b.score - a.score);
+        if (!queue.length || tried >= limit) return;
+        this.log(`${queue.length} matches queued; applying to the top ${Math.min(limit - tried, queue.length)}`);
+        for (const rec of queue) {
+          if (this.stopRequested || tried >= limit) break;
+          const job: JobDetails = {
+            id: rec.id, url: rec.url, title: rec.title, company: rec.company, location: rec.location,
+            description: rec.job?.description ?? '', easyApply: rec.job?.easyApply ?? false,
+            externalApply: rec.job?.externalApply ?? true, externalUrl: rec.job?.externalUrl, alreadyApplied: false,
+          };
+          tried++;
+          this.log(`Applying (${tried}/${limit}): ${job.title} @ ${job.company} — ${job.easyApply ? 'Easy Apply' : 'company website'}`);
+          // Belt and braces: re-check exclusion right before submitting.
+          const ex = exclusionReason(job, exclusions);
+          if (ex) {
+            this.save(job, rec.score, rec.reasons, 'excluded', ex);
+            continue;
+          }
+          const aiCtx = { profile, years, job };
+          const jobQctx: QuestionContext = {
+            ...qctx,
+            ai: aiEnabled() ? (q, kind, options) => aiAnswer(q, kind, options, aiCtx) : undefined,
+            coverNote: aiEnabled() ? () => aiCoverNote(aiCtx) : undefined,
+            aiLog: [],
+          };
+          const res: ApplyResult = await onPage(async (p) => {
+            await p.goto(job.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+            await pause(1500, 2500);
+            return job.easyApply
+              ? easyApply(p, jobQctx, settings.dryRun)
+              : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl);
+          }).catch((e) => ({ status: 'failed' as const, note: (e as Error).message.split('\n')[0] }));
+          if (jobQctx.aiLog?.length) this.log(`AI wrote ${jobQctx.aiLog.length} answer(s): ${jobQctx.aiLog.map((x) => x.q).join(' | ').slice(0, 150)}`);
+          this.save(job, rec.score, rec.reasons, res.status, res.note, res.applyUrl, jobQctx.aiLog);
+          if (res.status === 'applied') applied++;
+          if (res.status === 'needs_attention') attention++;
+          await pause(20000, 45000);
+        }
+      };
+
+      // 0. Matches left over from a run that crashed or was stopped go first
+      await applyQueue();
+
+      // 1. Find and score; good matches are queued (saved) immediately
       const seen = new Set<string>();
       const tally: Record<string, number> = {};
       let found = 0;
+      let matches = 0;
       for (const kw of keywords) {
         if (this.stopRequested) break;
-        const { ids, source } = await searchJobIds(page, kw, settings, env.maxJobsScannedPerKeyword);
+        const { ids, source } = await onPage((p) => searchJobIds(p, kw, settings, env.maxJobsScannedPerKeyword));
         found += ids.length;
         const kind = settings.applyMode === 'easy' ? 'Easy Apply jobs' : 'jobs';
         this.log(`"${kw}": ${ids.length} ${kind} in ${env.location} (from ${source})`);
@@ -233,7 +304,7 @@ class Agent {
             continue;
           }
           seen.add(id);
-          const job = await jobDetails(page, id).catch((e: Error) => {
+          const job = await onPage((p) => jobDetails(p, id)).catch((e: Error) => {
             this.log(`Couldn't open job ${id}: ${e.message.split('\n')[0]}`);
             return null;
           });
@@ -253,61 +324,26 @@ class Agent {
               : note.replace(/\d+/g, 'N');
             tally[why] = (tally[why] ?? 0) + 1;
           } else {
-            candidates.push({ job, score: verdict.score, reasons: verdict.reasons });
-            this.log(`MATCH ${verdict.score}%: ${job.title} @ ${job.company} (${i}/${ids.length})`);
+            matches++;
+            this.save(job, verdict.score, verdict.reasons, 'queued', 'waiting to apply');
+            this.log(`MATCH ${verdict.score}%: ${job.title} @ ${job.company} (${i}/${ids.length}) — queued`);
           }
           await pause(1500, 3500);
         }
       }
       if (this.stopRequested) this.log('Search stopped early from the dashboard.');
       const breakdown = Object.entries(tally).map(([k, v]) => `${v} ${k}`).join(', ');
-      this.log(`Checked ${found} jobs → ${candidates.length} good matches${breakdown ? `; skipped: ${breakdown}` : ''}`);
+      this.log(`Checked ${found} jobs → ${matches} good matches${breakdown ? `; skipped: ${breakdown}` : ''}`);
 
-      // 2. Apply best matches first
-      candidates.sort((a, b) => b.score - a.score);
-      const limit = settings.dryRun ? Math.max(settings.maxPerRun, 1) : budget;
-      this.log(`${candidates.length} jobs passed filters; applying to top ${Math.min(limit, candidates.length)}`);
-      let applied = 0;
-      let attention = 0;
-      let tried = 0;
-      for (const c of candidates.slice(0, limit)) {
-        if (this.stopRequested) break;
-        tried++;
-        this.log(`Applying (${tried}/${Math.min(limit, candidates.length)}): ${c.job.title} @ ${c.job.company} — ${c.job.easyApply ? 'Easy Apply' : 'company website'}`);
-        // Belt and braces: re-check exclusion right before submitting.
-        const ex = exclusionReason(c.job, exclusions);
-        if (ex) {
-          this.save(c.job, c.score, c.reasons, 'excluded', ex);
-          continue;
-        }
-        const opened = await page.goto(c.job.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).then(() => true, () => false);
-        if (!opened) {
-          this.save(c.job, c.score, c.reasons, 'failed', "couldn't open the job page");
-          continue;
-        }
-        await pause(1500, 2500);
-        const aiCtx = { profile, years, job: c.job };
-        const jobQctx: QuestionContext = {
-          ...qctx,
-          ai: aiEnabled() ? (q, kind, options) => aiAnswer(q, kind, options, aiCtx) : undefined,
-          coverNote: aiEnabled() ? () => aiCoverNote(aiCtx) : undefined,
-          aiLog: [],
-        };
-        const res: ApplyResult = await (c.job.easyApply
-          ? easyApply(page, jobQctx, settings.dryRun)
-          : externalApply(page, ctx, applicant, jobQctx, settings.dryRun, c.job.externalUrl)
-        ).catch((e) => ({ status: 'failed' as const, note: (e as Error).message.split('\n')[0] }));
-        if (jobQctx.aiLog?.length) this.log(`AI wrote ${jobQctx.aiLog.length} answer(s): ${jobQctx.aiLog.map((x) => x.q).join(' | ').slice(0, 150)}`);
-        this.save(c.job, c.score, c.reasons, res.status, res.note, res.applyUrl, jobQctx.aiLog);
-        if (res.status === 'applied') applied++;
-        if (res.status === 'needs_attention') attention++;
-        await pause(20000, 45000);
-      }
+      // 2. Apply to the queue, best matches first
+      await applyQueue();
 
+      const left = store.list('queued').length;
       const stopped = this.stopRequested ? ' (stopped early from the dashboard)' : '';
+      const rest = left ? ` ${left} more queued for the next run.` : '';
       const summary = settings.dryRun
-        ? `Dry run done: ${candidates.length} matches found, forms checked for ${tried}${stopped}.`
-        : `Applied to ${applied} jobs in ${env.location}. ${attention} need your input${stopped}.`;
+        ? `Dry run done: ${matches} new matches, forms checked for ${tried}${stopped}.${rest}`
+        : `Applied to ${applied} jobs in ${env.location}. ${attention} need your input${stopped}.${rest}`;
       this.lastRun = { at: new Date().toISOString(), summary };
       this.log(summary);
       await notify('LinkedIn job agent', summary);
@@ -348,6 +384,9 @@ class Agent {
     store.save({
       id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl,
       aiAnswers: aiAnswers?.length ? aiAnswers : undefined, v: SCORING_VERSION, at: new Date().toISOString(),
+      job: status === 'queued'
+        ? { easyApply: job.easyApply, externalApply: job.externalApply, externalUrl: job.externalUrl, description: job.description.slice(0, 6000) }
+        : undefined,
     });
     this.log(`${status.toUpperCase()}: ${job.title} @ ${job.company} (${score})${note ? ` — ${note}` : ''}`);
   }
