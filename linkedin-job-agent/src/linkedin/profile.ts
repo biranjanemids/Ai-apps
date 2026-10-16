@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { Page } from 'playwright';
+import { DATA_DIR } from '../config.js';
 import type { Experience, Profile } from '../profile.js';
 import { yearsFromExperiences } from '../profile.js';
 import { cleanLines, pause, setSession } from './browser.js';
@@ -15,21 +18,28 @@ export async function scrapeOwnProfile(page: Page): Promise<Omit<Profile, 'resum
     setSession(false);
     throw new Error(`LinkedIn asked to log in again (${page.url().split('?')[0]}). Tap "Connect LinkedIn" on the dashboard.`);
   }
-  const h1 = page.locator('main h1, h1').first();
-  if (!(await h1.waitFor({ timeout: 60000 }).then(() => true, () => false))) {
-    const title = await page.title().catch(() => '');
-    throw new Error(`Profile page didn't load (at ${page.url().split('?')[0]}, page title "${title}")`);
+  // LinkedIn's newer profile layout has no <h1>; the tab title ("Name | LinkedIn") always has the name
+  await page.waitForLoadState('load', { timeout: 30000 }).catch(() => {});
+  const titleName = (await page.title().catch(() => '')).replace(/^\(\d+\+?\)\s*/, '').replace(/\s*\|\s*LinkedIn.*$/i, '').trim();
+  const heading = await page.locator('main h1, h1').first().innerText({ timeout: 15000 }).catch(() => '');
+  const name = (heading.trim().length > 1 && heading.trim().length < 80 ? heading : titleName).trim();
+  if (!name) {
+    throw new Error(`Profile page didn't load (at ${page.url().split('?')[0]}, page title "${await page.title().catch(() => '')}")`);
   }
   const profileUrl = page.url().split('?')[0].replace(/\/$/, '');
-  const name = (await h1.innerText()).trim();
   const headline = (
     (await page.locator('main .text-body-medium, .text-body-medium').first().innerText({ timeout: 5000 }).catch(() => '')) || ''
   ).trim();
 
-  const experiences = parseExperience(await detailsItems(page, `${profileUrl}/details/experience/`));
-  const skills = (await detailsItems(page, `${profileUrl}/details/skills/`))
+  const exp = await detailsPage(page, `${profileUrl}/details/experience/`);
+  let experiences = parseExperience(exp.items);
+  if (!experiences.length) experiences = parseExperienceText(exp.lines);
+  fs.writeFileSync(path.join(DATA_DIR, 'debug-experience.txt'), exp.lines.join('\n'));
+
+  const sk = await detailsPage(page, `${profileUrl}/details/skills/`);
+  const skills = sk.items
     .map((lines) => lines[0])
-    .filter((s) => s && s.length < 60 && !/endorse/i.test(s));
+    .filter((x) => x && x.length < 60 && !/endorse/i.test(x));
 
   return {
     name,
@@ -42,10 +52,13 @@ export async function scrapeOwnProfile(page: Page): Promise<Omit<Profile, 'resum
   };
 }
 
-/** Top-level list items of a /details/* page, each as cleaned text lines. */
-async function detailsItems(page: Page, url: string): Promise<string[][]> {
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('main ul li', { timeout: 20000 }).catch(() => {});
+/**
+ * A /details/* page as list items (each as cleaned text lines) plus the page's whole visible
+ * text, so parsing still works if LinkedIn changes its list markup.
+ */
+async function detailsPage(page: Page, url: string): Promise<{ items: string[][]; lines: string[] }> {
+  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  await page.waitForSelector('main ul li, main li, li', { timeout: 30000 }).catch(() => {});
   for (let i = 0; i < 8; i++) {
     await page.mouse.wheel(0, 3000);
     await pause(500, 900);
@@ -56,7 +69,43 @@ async function detailsItems(page: Page, url: string): Promise<string[][]> {
       .filter((li) => !li.parentElement?.closest('li'))
       .map((li) => (li as HTMLElement).innerText),
   );
-  return texts.map(cleanLines).filter((l) => l.length > 0);
+  const all = await page.locator('main').first().innerText({ timeout: 5000 }).catch(() => page.locator('body').innerText().catch(() => ''));
+  return { items: texts.map(cleanLines).filter((l) => l.length > 0), lines: cleanLines(all) };
+}
+
+const DATE_RANGE = /((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(19|20)\d{2}\s*(-|–|—)\s*(present|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+)?(19|20)\d{2})/i;
+const GROUP_SUMMARY = /^((full-time|part-time|contract|internship|freelance|self-employed)\s*·\s*)?\d+\s*(yrs?|mos?)\b/i;
+
+/**
+ * Layout-independent fallback: find each "Mar 2021 - Present" line in the page text and read
+ * the role/company from the lines just above it.
+ */
+export function parseExperienceText(lines: string[]): Experience[] {
+  const out: Experience[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (!DATE_RANGE.test(lines[i])) continue;
+    const above = lines[i - 1];
+    let title = '';
+    let company = '';
+    if (above.includes(' · ') && !EMPLOYMENT_TYPE.test(above)) {
+      // single role: Title / "Company · Full-time" / dates
+      company = above.split(' · ')[0];
+      title = lines[i - 2] ?? '';
+    } else {
+      // grouped roles: Company / "Full-time · 6 yrs" / Title / [Full-time] / dates
+      title = EMPLOYMENT_TYPE.test(above) ? (lines[i - 2] ?? '') : above;
+      for (let j = i - 1; j > 0; j--) {
+        if (GROUP_SUMMARY.test(lines[j])) {
+          company = lines[j - 1];
+          break;
+        }
+      }
+    }
+    if (title && company && !DATE_RANGE.test(title)) {
+      out.push({ title: title.trim(), company: company.trim(), dates: lines[i], current: /present/i.test(lines[i]) });
+    }
+  }
+  return out;
 }
 
 /**

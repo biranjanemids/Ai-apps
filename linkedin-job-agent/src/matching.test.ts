@@ -115,3 +115,18 @@ test('resume parsing: role, years and skills', () => {
   assert.deepEqual(p.skills, ['Java', 'Kafka', 'AWS']);
   assert.equal(p.profileUrl, '', 'resume-only profile must not count as synced from LinkedIn');
 });
+
+test('parseExperienceText reads roles from plain page text (layout-independent)', async () => {
+  const { parseExperienceText } = await import('./linkedin/profile.js');
+  const lines = [
+    'Experience',
+    'Principal Engineer', 'Dell Technologies · Full-time', 'Apr 2019 - Present · 7 yrs 7 mos', 'Bengaluru, Karnataka, India',
+    'Infosys', 'Full-time · 5 yrs 2 mos', 'Technology Lead', 'Jan 2016 - Mar 2019 · 3 yrs 3 mos',
+    'Senior Engineer', 'Full-time', 'Feb 2014 - Dec 2015 · 1 yr 11 mos',
+  ];
+  assert.deepEqual(parseExperienceText(lines).map((e) => [e.title, e.company, e.current]), [
+    ['Principal Engineer', 'Dell Technologies', true],
+    ['Technology Lead', 'Infosys', false],
+    ['Senior Engineer', 'Infosys', false],
+  ]);
+});

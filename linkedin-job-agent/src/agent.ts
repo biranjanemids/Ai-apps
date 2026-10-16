@@ -96,6 +96,7 @@ class Agent {
     const resume = await readResumeText();
     const profile = mergeResume({ ...scraped, resumeText: '' }, resume);
     if (!profile.totalYears) profile.totalYears = yearsFromResume(resume);
+    if (!profile.headline) profile.headline = roleFromResume(resume);
     saveProfile(profile);
     this.log(
       `Profile: ${profile.name} — ${profile.headline}; ${profile.totalYears} yrs; ${profile.skills.length} skills; ` +
