@@ -157,3 +157,14 @@ test('extractJobIds finds job IDs in any LinkedIn markup', async () => {
     <li data-occludable-job-id="4011111111"></li> {"*jobPosting":"urn:li:fsd_jobPosting:4022222222"} ?currentJobId=4033333333&`;
   assert.deepEqual(extractJobIds(html).sort(), ['4011111111', '4012345678', '4022222222', '4033333333', '4087654321']);
 });
+
+test('a matching title is not sunk by an unreadable description', () => {
+  const me = { titles: ['Principal Software Engineer'], skills: ['Java', 'Kafka', 'AWS', 'Kubernetes', 'Microservices'], years: 14.7 };
+  const noDesc = scoreJob({ title: 'Principal Software Engineer', description: '' }, me);
+  assert.ok(noDesc.score >= 55, `no description: ${noDesc.score}`);
+  assert.ok(noDesc.reasons.includes('job description not readable'));
+  const full = scoreJob({ title: 'Principal Software Engineer', description: 'Java, Kafka, AWS, Kubernetes, microservices. 12+ years of experience. ' + 'x'.repeat(200) }, me);
+  assert.ok(full.score > noDesc.score, `full ${full.score} vs none ${noDesc.score}`);
+  const unrelated = scoreJob({ title: 'Sales Manager', description: '' }, me);
+  assert.ok(unrelated.score < 55, `unrelated: ${unrelated.score}`);
+});

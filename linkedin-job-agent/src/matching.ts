@@ -138,8 +138,12 @@ export function scoreJob(job: Pick<JobDetails, 'title' | 'description'>, me: Mat
   const text = `${job.title}\n${job.description}`;
 
   const matched = [...new Set(me.skills)].filter((s) => mentions(text, s));
-  const skillPts = Math.min(50, matched.length * 7);
-  reasons.push(matched.length ? `skills: ${matched.slice(0, 8).join(', ')}` : 'no profile skills mentioned');
+  // Without a readable description, skills can't be judged — score them as neutral, not zero
+  const unreadable = job.description.trim().length < 150;
+  const skillPts = unreadable ? 25 : Math.min(50, matched.length * 7);
+  reasons.push(
+    matched.length ? `skills: ${matched.slice(0, 8).join(', ')}` : unreadable ? 'job description not readable' : 'no profile skills mentioned',
+  );
 
   const jt = tokens(job.title);
   let best = 0;

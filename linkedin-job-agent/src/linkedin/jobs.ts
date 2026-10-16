@@ -157,11 +157,22 @@ export async function jobDetails(page: Page, id: string): Promise<JobDetails> {
     '.job-details-jobs-unified-top-card__tertiary-description-container',
     '.jobs-unified-top-card__subtitle-primary-grouping',
   ]);
-  const description =
+  let description =
     (guest?.description && guest.description.length > 200 ? guest.description : '') ||
     (await firstText(page, ['#job-details', '.jobs-description__content', '.jobs-box__html-content', '.description__text', '[class*="jobs-description"]'])) ||
     guest?.description ||
     '';
+  if (description.length < 200) {
+    // Layout-proof fallback: the page's visible text from "About the job" onwards
+    const text = await page
+      .locator('main')
+      .first()
+      .innerText({ timeout: 5000 })
+      .catch(() => page.locator('body').innerText().catch(() => ''));
+    const at = text.search(/about the job|job description|about the role|about this role|responsibilities/i);
+    const fromPage = (at >= 0 ? text.slice(at) : text).slice(0, 15000);
+    if (fromPage.length > description.length) description = fromPage;
+  }
 
   const applyBtn = applyButton(page);
   const applyText = (await applyBtn.count())

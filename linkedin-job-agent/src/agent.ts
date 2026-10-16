@@ -15,6 +15,9 @@ import { splitName, type Applicant } from './answers.js';
 import { llmFit } from './llm.js';
 import { notify } from './notify.js';
 
+/** Bump when scoring changes so jobs skipped as "low match" are scored again. */
+const SCORING_VERSION = 2;
+
 export const LAST_ERROR_SHOT = path.join(DATA_DIR, 'last-error.png');
 
 export interface LogLine {
@@ -212,7 +215,11 @@ class Agent {
           const prev = store.get(id);
           // dry-run results are re-evaluated in live mode, and jobs skipped only for not being
           // Easy Apply are re-checked now that company sites are supported
-          const retry = !prev || prev.status === 'dry_run' || (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? ''));
+          const retry =
+            !prev ||
+            prev.status === 'dry_run' ||
+            (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? '')) ||
+            (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION);
           if (seen.has(id) || !retry) {
             tally['seen before'] = (tally['seen before'] ?? 0) + 1;
             continue;
@@ -311,7 +318,7 @@ class Agent {
   }
 
   private save(job: JobDetails, score: number, reasons: string[], status: JobRecord['status'], note?: string, applyUrl?: string) {
-    store.save({ id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl, at: new Date().toISOString() });
+    store.save({ id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl, v: SCORING_VERSION, at: new Date().toISOString() });
     this.log(`${status.toUpperCase()}: ${job.title} @ ${job.company} (${score})${note ? ` — ${note}` : ''}`);
   }
 }

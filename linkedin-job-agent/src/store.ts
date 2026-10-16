@@ -22,6 +22,8 @@ export interface JobRecord {
   note?: string;
   /** Company application page, for jobs you finish yourself */
   applyUrl?: string;
+  /** Scoring version that produced `score`; older low-match skips get re-checked */
+  v?: number;
   at: string;
 }
 
