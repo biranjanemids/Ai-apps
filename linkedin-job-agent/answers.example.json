@@ -1,0 +1,20 @@
+{
+  "phone": "9876543210",
+  "email": "you@example.com",
+  "city": "Bengaluru",
+  "noticePeriodDays": 30,
+  "currentCtcLakhs": 18,
+  "expectedCtcLakhs": 26,
+  "linkedinUrl": "https://www.linkedin.com/in/your-handle",
+  "portfolioUrl": "https://github.com/your-handle",
+  "authorizedToWorkInIndia": true,
+  "requiresSponsorship": false,
+  "willingToRelocate": true,
+  "comfortableOnsite": true,
+  "custom": [
+    { "match": "gender", "answer": "Prefer not to say" },
+    { "match": "disabilit", "answer": "No" },
+    { "match": "highest (level of )?education|degree", "answer": "Bachelor's Degree" },
+    { "match": "immediate(ly)? join", "answer": "No" }
+  ]
+}

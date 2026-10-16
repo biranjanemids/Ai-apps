@@ -1,5 +1,7 @@
 # WhatsApp Shopping Aggregator
 
+> Also in this repo: [`linkedin-job-agent/`](linkedin-job-agent/README.md), a phone-controlled agent that applies to matching Bengaluru jobs on LinkedIn and never to your own company.
+
 An AI shopping assistant on WhatsApp that searches, compares, and helps buy products across **6 Indian e-commerce platforms**: Amazon, Flipkart, Myntra, Meesho, Nykaa, and Ajio.
 
 Built on the **Model Context Protocol (MCP)** — the product tools (search, compare, details, buy link) run as an MCP server, and a Groq-powered LLM agent (free tier) calls them to answer WhatsApp messages.

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a66c2">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>Job Agent</title>
+<style>
+  :root {
+    --bg: #f3f2ef; --card: #fff; --text: #1d2226; --muted: #5e6670; --line: #e3e6e8;
+    --brand: #0a66c2; --ok: #057642; --warn: #b24020; --amber: #915907; --chip: #eef3f8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0b1220; --card: #141c2b; --text: #e8edf3; --muted: #9aa6b4; --line: #243044;
+      --brand: #4a9fe8; --ok: #3fbf7f; --warn: #ff7a59; --amber: #e0a43a; --chip: #1c2638; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 24px); }
+  header { position: sticky; top: 0; z-index: 2; background: var(--brand); color: #fff; padding: 14px 16px; display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 17px; margin: 0; flex: 1; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: rgba(255,255,255,.2); }
+  main { max-width: 640px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 12px; }
+  #app, .card, .tabs { min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; text-align: center; }
+  .stats b { display: block; font-size: 22px; }
+  .stats span { font-size: 11px; color: var(--muted); }
+  button { font: inherit; border: 0; border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+  .primary { background: var(--brand); color: #fff; width: 100%; font-weight: 600; font-size: 16px; }
+  .danger { background: var(--warn); color: #fff; width: 100%; font-weight: 600; font-size: 16px; }
+  .ghost { background: var(--chip); color: var(--text); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row > * { flex: 1; }
+  .toggle { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; }
+  .toggle input { width: 46px; height: 26px; accent-color: var(--brand); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .chip { background: var(--chip); border-radius: 99px; padding: 5px 6px 5px 12px; display: inline-flex; align-items: center; gap: 4px; font-size: 14px; }
+  .chip button { padding: 2px 8px; background: transparent; color: var(--muted); font-size: 16px; }
+  .chip.auto { padding-right: 12px; border: 1px dashed var(--muted); }
+  input[type=text], input[type=number], input[type=password], select { font: inherit; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 6px; overflow-x: auto; margin-bottom: 8px; }
+  .tabs button { padding: 7px 12px; font-size: 13px; white-space: nowrap; background: var(--chip); color: var(--text); }
+  .tabs button.on { background: var(--brand); color: #fff; }
+  .job { padding: 10px 0; border-top: 1px solid var(--line); }
+  .job:first-child { border-top: 0; }
+  .job a { color: var(--text); font-weight: 600; text-decoration: none; }
+  .job .meta { font-size: 13px; color: var(--muted); }
+  .score { float: right; font-weight: 700; font-size: 13px; padding: 2px 8px; border-radius: 6px; background: var(--chip); }
+  .s-applied { color: var(--ok); } .s-excluded { color: var(--warn); } .s-needs_attention { color: var(--amber); }
+  pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: var(--muted); }
+  .warn { background: color-mix(in srgb, var(--warn) 12%, var(--card)); border-color: var(--warn); }
+  #login { display: none; }
+</style>
+</head>
+<body>
+<header><h1>LinkedIn Job Agent</h1><span class="pill" id="mode">…</span></header>
+<main>
+  <section class="card" id="login">
+    <h2>Connect</h2>
+    <p class="muted">Enter the DASHBOARD_TOKEN from your agent's .env.</p>
+    <div class="row"><input type="password" id="tok" placeholder="Dashboard token"><button class="ghost" style="flex:0" onclick="saveToken()">Save</button></div>
+  </section>
+
+  <div id="app" hidden>
+    <section class="card" style="margin-bottom:12px">
+      <div class="stats">
+        <div><b id="st-today">0</b><span>applied today</span></div>
+        <div><b id="st-applied">0</b><span>applied total</span></div>
+        <div><b id="st-attn">0</b><span>need you</span></div>
+        <div><b id="st-ex">0</b><span>blocked</span></div>
+      </div>
+      <p class="muted" id="last" style="margin:10px 0 12px"></p>
+      <div id="runbox"></div>
+    </section>
+
+    <section class="card" id="excard" style="margin-bottom:12px">
+      <h2>Never apply to</h2>
+      <div class="chips" id="excl"></div>
+      <div class="row"><input type="text" id="newex" placeholder="Add company (e.g. parent / group name)"><button class="ghost" style="flex:0" onclick="addEx()">Add</button></div>
+      <label class="toggle"><span class="muted">Auto-block my current employer from LinkedIn</span><input type="checkbox" id="autoex" onchange="set({autoExcludeCurrentEmployer:this.checked})"></label>
+    </section>
+
+    <section class="card" style="margin-bottom:12px">
+      <h2>Settings</h2>
+      <label class="toggle"><span><b>Live mode</b><br><span class="muted">Off = fill forms but don't submit</span></span><input type="checkbox" id="live" onchange="toggleLive(this)"></label>
+      <p class="muted" style="margin:8px 0 4px">Search keywords (comma separated, blank = from my profile)</p>
+      <input type="text" id="kw" onchange="set({keywords:this.value.split(',')})">
+      <div class="row" style="margin-top:10px">
+        <div><p class="muted" style="margin:0 0 4px">Min match %</p><input type="number" id="minScore" min="0" max="100" onchange="set({minScore:+this.value})"></div>
+        <div><p class="muted" style="margin:0 0 4px">Max per run</p><input type="number" id="maxPerRun" min="1" max="50" onchange="set({maxPerRun:+this.value})"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><p class="muted" style="margin:0 0 4px">Posted within</p>
+          <select id="posted" onchange="set({postedWithin:this.value})"><option value="r86400">24 hours</option><option value="r604800">1 week</option><option value="r2592000">1 month</option></select></div>
+        <div><p class="muted" style="margin:0 0 4px">My years of exp.</p><input type="number" id="years" step="0.5" min="0" onchange="set({yearsExperience:this.value===''?null:+this.value})"></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-bottom:12px">
+      <h2>Profile</h2>
+      <div id="profile" class="muted">Not synced yet.</div>
+      <button class="ghost" style="width:100%;margin-top:10px" onclick="post('/api/sync-profile').then(refresh)">Re-sync from LinkedIn + resume</button>
+    </section>
+
+    <section class="card" style="margin-bottom:12px">
+      <h2>Jobs</h2>
+      <div class="tabs" id="tabs"></div>
+      <div id="jobs" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <h2>Activity</h2>
+      <pre id="logs"></pre>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const tokenFromHash = new URLSearchParams(location.hash.slice(1)).get('token');
+if (tokenFromHash) { try { localStorage.setItem('token', tokenFromHash); } catch {} history.replaceState(null, '', location.pathname); }
+let token = tokenFromHash || (() => { try { return localStorage.getItem('token'); } catch { return null; } })();
+let status = null, tab = 'applied';
+
+function saveToken() { token = $('tok').value.trim(); try { localStorage.setItem('token', token); } catch {} refresh(); }
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token } });
+  if (r.status === 401) { $('login').style.display = 'block'; $('app').hidden = true; throw new Error('auth'); }
+  return r.json();
+}
+const post = (path, body) => api(path, { method: 'POST', body: JSON.stringify(body ?? {}) });
+const set = (patch) => post('/api/settings', patch).then(refresh);
+
+function toggleLive(el) {
+  if (el.checked && !status.exclusions.length) { alert('Add your company to "Never apply to" first.'); el.checked = false; return; }
+  if (el.checked && !confirm('Go live? The agent will SUBMIT applications.\n\nNever applying to: ' + status.exclusions.join(', '))) { el.checked = false; return; }
+  set({ dryRun: !el.checked });
+}
+function addEx() {
+  const v = $('newex').value.trim(); if (!v) return;
+  $('newex').value = '';
+  set({ excludedCompanies: [...status.settings.excludedCompanies, v] });
+}
+function removeEx(name) {
+  if (!confirm('Allow applying to "' + name + '" again?')) return;
+  set({ excludedCompanies: status.settings.excludedCompanies.filter((c) => c !== name) });
+}
+
+const TABS = [['applied', 'Applied'], ['needs_attention', 'Needs you'], ['dry_run', 'Dry run'], ['excluded', 'Blocked'], ['skipped', 'Skipped'], ['failed', 'Failed']];
+
+async function refresh() {
+  if (!token) { $('login').style.display = 'block'; return; }
+  try { status = await api('/api/status'); } catch { return; }
+  $('login').style.display = 'none'; $('app').hidden = false;
+  const s = status.settings, c = status.counts;
+  $('mode').textContent = status.running ? 'Running…' : s.dryRun ? 'Dry run' : 'Live';
+  $('st-today').textContent = status.appliedToday + '/' + status.maxPerDay;
+  $('st-applied').textContent = c.applied || 0;
+  $('st-attn').textContent = c.needs_attention || 0;
+  $('st-ex').textContent = c.excluded || 0;
+  $('last').textContent = status.lastRun ? 'Last run: ' + status.lastRun.summary : 'Searching ' + status.location + ' for: ' + (status.keywords.join(' / ') || '—');
+  $('runbox').innerHTML = status.running
+    ? '<button class="danger" onclick="post(\'/api/stop\').then(refresh)">Stop</button>'
+    : '<button class="primary" onclick="post(\'/api/run\').then(refresh)">' + (s.dryRun ? 'Find jobs (dry run)' : 'Find & apply now') + '</button>';
+
+  const detected = new Set(status.detectedEmployers.map((x) => x.toLowerCase()));
+  $('excl').innerHTML =
+    s.excludedCompanies.map((x) => '<span class="chip">' + esc(x) + '<button aria-label="remove" data-x="' + esc(x) + '">×</button></span>').join('') +
+    (s.autoExcludeCurrentEmployer ? status.detectedEmployers.filter((x) => !s.excludedCompanies.some((e) => e.toLowerCase() === x.toLowerCase()))
+      .map((x) => '<span class="chip auto" title="from your LinkedIn profile">' + esc(x) + ' · auto</span>').join('') : '');
+  $('excl').querySelectorAll('button[data-x]').forEach((b) => (b.onclick = () => removeEx(b.dataset.x)));
+  $('excard').classList.toggle('warn', !status.exclusions.length);
+  if (!status.exclusions.length) $('excl').innerHTML = '<span class="muted">Empty — add your company before going live.</span>';
+  $('autoex').checked = s.autoExcludeCurrentEmployer;
+
+  $('live').checked = !s.dryRun;
+  if (document.activeElement !== $('kw')) $('kw').value = s.keywords.join(', ');
+  for (const [id, v] of [['minScore', s.minScore], ['maxPerRun', s.maxPerRun], ['posted', s.postedWithin]]) if (document.activeElement !== $(id)) $(id).value = v;
+  if (document.activeElement !== $('years')) $('years').value = s.yearsExperience ?? '';
+
+  const p = status.profile;
+  $('profile').innerHTML = p
+    ? '<b style="color:var(--text)">' + esc(p.name) + '</b><br>' + esc(p.headline) + '<br>' + esc(p.years) + ' yrs experience · resume ' + (p.hasResume ? 'loaded' : 'not set') +
+      '<br><span style="font-size:12px">' + esc(p.skills.slice(0, 20).join(', ')) + '</span>'
+    : 'Not synced yet.';
+
+  $('tabs').innerHTML = TABS.map(([k, l]) => '<button class="' + (k === tab ? 'on' : '') + '" data-t="' + k + '">' + l + ' ' + (c[k] || 0) + '</button>').join('');
+  $('tabs').querySelectorAll('button').forEach((b) => (b.onclick = () => { tab = b.dataset.t; refresh(); }));
+  const jobs = await api('/api/jobs?status=' + tab);
+  $('jobs').innerHTML = jobs.length ? jobs.map((j) =>
+    '<div class="job"><span class="score">' + j.score + '%</span><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.title) + '</a>' +
+    '<div class="meta">' + esc(j.company) + ' · ' + esc(j.location) + ' · ' + new Date(j.at).toLocaleString() + '</div>' +
+    (j.note ? '<div class="meta s-' + j.status + '">' + esc(j.note) + '</div>' : '') +
+    (j.reasons.length ? '<div class="meta">' + esc(j.reasons.join(' · ')) + '</div>' : '') + '</div>').join('') : 'Nothing here yet.';
+
+  $('logs').textContent = status.logs.slice().reverse().map((l) => new Date(l.at).toLocaleTimeString() + '  ' + l.msg).join('\n');
+}
+
+refresh();
+setInterval(() => { if (!document.hidden) refresh(); }, 5000);
+</script>
+</body>
+</html>
