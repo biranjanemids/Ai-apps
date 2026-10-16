@@ -1,9 +1,30 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { chromium, type BrowserContext, type Page } from 'playwright';
 import { DATA_DIR, env } from '../config.js';
 
 const USER_DATA = path.join(DATA_DIR, 'browser-profile');
+
+let cachedUA: string | undefined;
+
+/**
+ * Headless Chromium announces itself as "HeadlessChrome", which LinkedIn may answer with
+ * a blank or blocked page. Present the same browser as regular desktop Chrome instead.
+ */
+export function userAgent(): string {
+  if (cachedUA) return cachedUA;
+  let version = '130.0.0.0';
+  try {
+    const exe = env.chromePath ?? chromium.executablePath();
+    const out = execFileSync(exe, ['--version'], { timeout: 15000, encoding: 'utf8' });
+    version = out.match(/(\d+\.\d+\.\d+\.\d+)/)?.[1] ?? version;
+  } catch {
+    // keep the fallback version
+  }
+  cachedUA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${version} Safari/537.36`;
+  return cachedUA;
+}
 
 /** Persistent Chromium profile so your LinkedIn login survives restarts. */
 export async function openBrowser(
@@ -18,6 +39,7 @@ export async function openBrowser(
     viewport: opts.viewport ?? { width: 1280, height: 900 },
     locale: 'en-IN',
     timezoneId: 'Asia/Kolkata',
+    userAgent: userAgent(),
     args,
   });
   if (env.liAt) {
@@ -31,7 +53,9 @@ export async function openBrowser(
 export async function isLoggedIn(page: Page): Promise<boolean> {
   await page.goto('https://www.linkedin.com/feed/', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(2000);
-  const ok = !/\/(login|authwall|checkpoint|uas|signup)/.test(page.url());
+  // Need both: the session cookie, and LinkedIn not bouncing us to a login/checkpoint page
+  const hasCookie = (await page.context().cookies('https://www.linkedin.com')).some((c) => c.name === 'li_at');
+  const ok = hasCookie && !/\/(login|authwall|checkpoint|uas|signup)/.test(page.url());
   setSession(ok);
   return ok;
 }

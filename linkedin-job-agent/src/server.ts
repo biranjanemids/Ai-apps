@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
 import { DATA_DIR, env, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
-import { agent, effectiveExclusions, searchKeywords } from './agent.js';
+import { agent, effectiveExclusions, LAST_ERROR_SHOT, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
 import { store, type JobStatus } from './store.js';
@@ -38,6 +38,7 @@ export function startServer() {
       busy: agent.busy || login.loginActive(),
       linkedin: getSession(),
       resume: env.resumePath ? path.basename(env.resumePath) : null,
+      lastErrorShot: fs.existsSync(LAST_ERROR_SHOT) ? fs.statSync(LAST_ERROR_SHOT).mtime.toISOString() : null,
       lastRun: agent.lastRun,
       appliedToday: store.appliedToday(),
       maxPerDay: env.maxPerDay,
@@ -123,6 +124,11 @@ export function startServer() {
     return { ok };
   }));
   app.post('/api/login/cancel', wrap(() => login.stop()));
+
+  app.get('/api/debug/last-error.png', (_req, res) => {
+    if (!fs.existsSync(LAST_ERROR_SHOT)) return res.status(404).json({ error: 'none' });
+    res.type('image/png').set('Cache-Control', 'no-store').send(fs.readFileSync(LAST_ERROR_SHOT));
+  });
 
   // ── Resume upload ──
   app.post('/api/resume', express.raw({ type: '*/*', limit: '10mb' }), (req, res) => {

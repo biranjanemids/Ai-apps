@@ -1,19 +1,29 @@
 import type { Page } from 'playwright';
 import type { Experience, Profile } from '../profile.js';
 import { yearsFromExperiences } from '../profile.js';
-import { cleanLines, pause } from './browser.js';
+import { cleanLines, pause, setSession } from './browser.js';
 
 const EMPLOYMENT_TYPE = /^(full-time|part-time|contract|internship|freelance|self-employed|apprenticeship|seasonal|trainee)/i;
 const DATE_LINE = /((19|20)\d{2}|present)/i;
 
 /** Reads your own LinkedIn profile: headline, experience (incl. current employer) and skills. */
 export async function scrapeOwnProfile(page: Page): Promise<Omit<Profile, 'resumeText'>> {
-  await page.goto('https://www.linkedin.com/in/me/', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('main h1', { timeout: 30000 });
+  await page.goto('https://www.linkedin.com/in/me/', { waitUntil: 'domcontentloaded', timeout: 60000 });
+  // /in/me/ redirects to /in/<your-handle>/; slow phones can take a while
+  await page.waitForURL(/linkedin\.com\/(in\/(?!me\/)[^/]+|authwall|login|checkpoint|uas)/, { timeout: 45000 }).catch(() => {});
+  if (/\/(authwall|login|checkpoint|uas)/.test(page.url())) {
+    setSession(false);
+    throw new Error(`LinkedIn asked to log in again (${page.url().split('?')[0]}). Tap "Connect LinkedIn" on the dashboard.`);
+  }
+  const h1 = page.locator('main h1, h1').first();
+  if (!(await h1.waitFor({ timeout: 60000 }).then(() => true, () => false))) {
+    const title = await page.title().catch(() => '');
+    throw new Error(`Profile page didn't load (at ${page.url().split('?')[0]}, page title "${title}")`);
+  }
   const profileUrl = page.url().split('?')[0].replace(/\/$/, '');
-  const name = (await page.locator('main h1').first().innerText()).trim();
+  const name = (await h1.innerText()).trim();
   const headline = (
-    (await page.locator('main .text-body-medium').first().innerText({ timeout: 5000 }).catch(() => '')) || ''
+    (await page.locator('main .text-body-medium, .text-body-medium').first().innerText({ timeout: 5000 }).catch(() => '')) || ''
   ).trim();
 
   const experiences = parseExperience(await detailsItems(page, `${profileUrl}/details/experience/`));

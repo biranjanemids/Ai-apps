@@ -180,6 +180,10 @@
     </section>
     <section class="card">
       <h2>Activity</h2>
+      <div id="errshot" hidden style="margin-bottom:10px">
+        <button class="ghost" style="width:100%" onclick="showShot()">What the browser saw at the last error</button>
+        <img id="shotimg" alt="Browser screenshot at the last error" hidden style="width:100%;margin-top:8px;border-radius:8px;border:1px solid var(--line)">
+      </div>
       <pre id="logs"></pre>
     </section>
     </div>
@@ -254,13 +258,21 @@ async function liFinish() {
 }
 async function liCancel() { clearInterval(liTimer); await post('/api/login/cancel'); $('lipanel').hidden = true; refresh(); }
 
+async function showShot() {
+  const r = await fetch('/api/debug/last-error.png', { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) return;
+  $('shotimg').src = URL.createObjectURL(await r.blob());
+  $('shotimg').hidden = false;
+}
+
 async function uploadResume(f) {
   if (!f) return;
   if (f.size > 10e6) return alert('That file is over 10 MB.');
   if (!/\.(pdf|txt)$/i.test(f.name)) return alert('Please upload a PDF (or .txt) resume.');
   $('droptext').textContent = 'Reading ' + f.name + '…';
   const r = await fetch('/api/resume', { method: 'POST', body: f, headers: { Authorization: 'Bearer ' + token, 'Content-Type': f.type || 'application/octet-stream' } });
-  $('droptext').textContent = r.ok ? f.name + ' uploaded ✓  Tap to replace.' : 'Upload failed. Try again.';
+  const body = await r.json().catch(() => ({}));
+  $('droptext').textContent = r.ok ? f.name + ' uploaded ✓  Tap to replace.' : 'Upload failed: ' + (body.error || 'try again');
   refresh();
 }
 const drop = $('drop');
@@ -352,6 +364,7 @@ async function refresh() {
     (j.note ? '<div class="meta s-' + j.status + '">' + esc(j.note) + '</div>' : '') +
     (j.reasons.length ? '<div class="meta">' + esc(j.reasons.join(' · ')) + '</div>' : '') + '</div>').join('') : 'Nothing here yet.';
 
+  $('errshot').hidden = !status.lastErrorShot;
   $('logs').textContent = status.logs.slice().reverse().map((l) => new Date(l.at).toLocaleTimeString() + '  ' + l.msg).join('\n');
 }
 

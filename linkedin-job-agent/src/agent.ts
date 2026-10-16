@@ -1,5 +1,6 @@
 import type { BrowserContext, Page } from 'playwright';
-import { env, loadAnswers, loadSettings, type Settings } from './config.js';
+import path from 'node:path';
+import { DATA_DIR, env, loadAnswers, loadSettings, type Settings } from './config.js';
 import { exclusionReason, isBangalore, normalizeCompany, scoreJob, titleExcluded, type JobDetails } from './matching.js';
 import {
   currentEmployers, loadProfile, mergeResume, profileFromResume, profileTitles, readResumeText, roleFromResume, saveProfile, yearsFromResume, type Profile,
@@ -11,6 +12,8 @@ import { jobDetails, searchJobIds } from './linkedin/jobs.js';
 import { easyApply } from './linkedin/easyApply.js';
 import { llmFit } from './llm.js';
 import { notify } from './notify.js';
+
+export const LAST_ERROR_SHOT = path.join(DATA_DIR, 'last-error.png');
 
 export interface LogLine {
   at: string;
@@ -66,6 +69,14 @@ class Agent {
         throw new Error('Not logged in to LinkedIn. Tap "Connect LinkedIn" on the dashboard (or run `npm run login` on a computer).');
       }
       return await fn(page, ctx);
+    } catch (e) {
+      // Save what the browser was showing so the problem can be seen from the dashboard
+      const page = ctx.pages()[0];
+      if (page) {
+        await page.screenshot({ path: LAST_ERROR_SHOT, fullPage: false }).catch(() => {});
+        this.log(`Browser was at: ${page.url().split('?')[0]} — screenshot saved (Activity → "What the browser saw")`);
+      }
+      throw e;
     } finally {
       await ctx.close();
     }
@@ -95,7 +106,14 @@ class Agent {
 
   /** Re-read the resume (e.g. after uploading a new one) without opening LinkedIn. */
   async refreshResume(): Promise<void> {
-    const text = await readResumeText();
+    const text = await readResumeText().catch((e: Error) => {
+      this.log(`Couldn't read the resume: ${e.message}`);
+      throw new Error(`Couldn't read the resume: ${e.message}`);
+    });
+    if (!text.trim()) {
+      this.log('Resume has no readable text (is it a scanned image?). Upload a text-based PDF or a .txt file.');
+      throw new Error('No readable text in the resume — upload a text-based PDF or a .txt file');
+    }
     const p = loadProfile();
     // No LinkedIn yet: the resume alone is enough to search and score jobs
     const next = p ? mergeResume(p, text) : profileFromResume(text);

@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, env, loadAnswers, loadSettings } from './config.js';
 import { effectiveExclusions } from './agent.js';
-import { getSession, isLoggedIn, openBrowser } from './linkedin/browser.js';
-import { currentEmployers, loadProfile } from './profile.js';
+import { getSession, isLoggedIn, openBrowser, userAgent } from './linkedin/browser.js';
+import { currentEmployers, loadProfile, readResumeText } from './profile.js';
 import { store } from './store.js';
 
 type Level = 'ok' | 'warn' | 'fail';
@@ -90,7 +90,16 @@ export async function doctor(): Promise<void> {
     line(profile.profileUrl ? 'ok' : 'warn', profile.profileUrl ? `Profile read from LinkedIn: ${profile.name}` : 'Profile only from resume', profile.profileUrl ? profile.headline : 'connect LinkedIn so your company is detected');
     console.log(`   ${profile.skills.length} skills, ${profile.totalYears} yrs experience, updated ${profile.updatedAt.slice(0, 16).replace('T', ' ')}`);
   }
-  line(env.resumePath ? 'ok' : 'warn', env.resumePath ? 'Resume uploaded' : 'No resume', env.resumePath ? (profile?.resumeText ? `${profile.resumeText.length} characters read` : 'not read yet') : 'upload it on the Resume card');
+  if (!env.resumePath) line('warn', 'No resume', 'upload it on the Resume card');
+  else if (profile?.resumeText) line('ok', 'Resume read', `${profile.resumeText.length} characters`);
+  else {
+    try {
+      const text = await readResumeText();
+      line(text.trim() ? 'warn' : 'fail', text.trim() ? `Resume readable (${text.length} characters) but not loaded yet` : 'Resume has no readable text', text.trim() ? 'upload it again on the Resume card' : 'scanned image? upload a text-based PDF');
+    } catch (e) {
+      line('fail', 'Resume could not be read', (e as Error).message.split('\n')[0]);
+    }
+  }
 
   // Company blocking
   const settings = loadSettings();
@@ -123,6 +132,11 @@ export async function doctor(): Promise<void> {
       errors.forEach((l) => console.log(`     ${l.slice(0, 200)}`));
     }
   }
+
+  if (fs.existsSync(path.join(DATA_DIR, 'last-error.png'))) {
+    console.log('   a screenshot of the last error is on the dashboard: Activity → "What the browser saw"');
+  }
+  console.log(`   browser identifies as: ${userAgent().replace(/^Mozilla\/5\.0 /, '')}`);
 
   const fails = results.filter((r) => r === 'fail').length;
   const warns = results.filter((r) => r === 'warn').length;
