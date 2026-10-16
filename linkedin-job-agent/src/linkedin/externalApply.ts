@@ -1,6 +1,8 @@
 import type { BrowserContext, Locator, Page } from 'playwright';
-import { env } from '../config.js';
-import { identityAnswer, resolveAnswer, type Applicant, type FieldKind, type QuestionContext } from '../answers.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DATA_DIR, env } from '../config.js';
+import { answerQuestion, identityAnswer, type Applicant, type FieldKind, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
 import { applyButton } from './jobs.js';
 import type { ApplyResult } from './easyApply.js';
@@ -178,7 +180,9 @@ async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Question
     const label = await labelOf(file);
     const meta = `${label} ${(await file.getAttribute('name')) ?? ''} ${(await file.getAttribute('id')) ?? ''}`;
     if (/cover/i.test(meta)) {
-      if (await isRequired(file, label)) unanswered.push('cover letter upload');
+      const pdf = (await isRequired(file, label)) ? await coverLetterPdf(site, qctx) : null;
+      if (pdf) await file.setInputFiles(pdf).catch(() => unanswered.push('cover letter upload'));
+      else if (await isRequired(file, label)) unanswered.push('cover letter upload');
       continue;
     }
     if (!/resume|cv|attach/i.test(meta) && (await form.locator('input[type="file"]').count()) > 1) continue;
@@ -198,7 +202,10 @@ async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Question
     if (ans === undefined) {
       const tag = await el.evaluate((n) => n.tagName.toLowerCase());
       const kind: FieldKind = type === 'number' ? 'number' : tag === 'textarea' ? 'textarea' : 'text';
-      ans = /cover letter|additional information|anything else/i.test(label) ? null : resolveAnswer(label, kind, [], qctx);
+      if (/cover (letter|note)/i.test(label)) ans = qctx.coverNote ? await qctx.coverNote() : null;
+      else if (/additional information|anything else/i.test(label)) ans = null;
+      else ans = await answerQuestion(label, kind, [], qctx);
+      if (ans && /cover (letter|note)/i.test(label)) qctx.aiLog?.push({ q: 'Cover note', a: ans });
     }
     if (ans) {
       await el.fill(ans);
@@ -219,7 +226,7 @@ async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Question
     if (chosen) continue;
     const label = await labelOf(sel);
     const options = await sel.evaluate((s: HTMLSelectElement) => Array.from(s.options).map((o) => o.text.trim()));
-    const ans = resolveAnswer(label, 'select', options.slice(1), qctx);
+    const ans = await answerQuestion(label, 'select', options.slice(1), qctx);
     if (ans) await sel.selectOption({ label: ans }).catch(() => unanswered.push(label));
     else if (await isRequired(sel, label)) unanswered.push(label);
   }
@@ -238,7 +245,7 @@ async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Question
     const options = await radios.evaluateAll((els) =>
       els.map((e) => ((e.id && (document.querySelector(`label[for="${CSS.escape(e.id)}"]`) as HTMLElement | null)?.innerText) || (e.closest('label') as HTMLElement | null)?.innerText || (e as HTMLInputElement).value || '').trim()),
     );
-    const ans = resolveAnswer(question, 'radio', options, qctx);
+    const ans = await answerQuestion(question, 'radio', options, qctx);
     const idx = ans ? options.indexOf(ans) : -1;
     if (idx >= 0) await radios.nth(idx).check({ force: true }).catch(() => unanswered.push(question));
     else if ((await first.evaluate((n) => (n as HTMLInputElement).required)) || /\*/.test(question)) unanswered.push(question);
@@ -263,4 +270,27 @@ async function hasBlockingCaptcha(site: Page): Promise<boolean> {
     if (box && box.width > 50 && box.height > 30) return true;
   }
   return false;
+}
+
+/** Turns the AI cover note into a PDF for forms that want a cover-letter file. */
+async function coverLetterPdf(site: Page, qctx: QuestionContext): Promise<string | null> {
+  const note = qctx.coverNote ? await qctx.coverNote() : null;
+  if (!note) return null;
+  qctx.aiLog?.push({ q: 'Cover letter (PDF)', a: note });
+  const dir = path.join(DATA_DIR, 'cover-letters');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `cover-letter-${Date.now()}.pdf`);
+  const tmp = await site.context().newPage();
+  try {
+    const esc = (t: string) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+    await tmp.setContent(
+      `<html><body style="font:12pt/1.5 Georgia,serif;margin:2cm">${note.split(/\n+/).map((p) => `<p>${esc(p)}</p>`).join('')}</body></html>`,
+    );
+    await tmp.pdf({ path: file, format: 'A4' });
+    return file;
+  } catch {
+    return null;
+  } finally {
+    await tmp.close().catch(() => {});
+  }
 }

@@ -142,6 +142,17 @@
         <p class="muted" id="anssaved" style="margin:6px 0 0"></p>
       </form>
     </section>
+    <section class="card" id="aicard">
+      <h2>AI assistant</h2>
+      <div id="aistatus" class="muted"></div>
+      <div id="aikeybox" style="margin-top:8px">
+        <p class="muted" style="margin:0 0 6px">Free key from <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a> (sign in with Google → Create API key → copy).</p>
+        <div class="row"><input type="password" id="aikey" placeholder="gsk_…" autocomplete="off"><button class="ghost" style="flex:0" onclick="saveAiKey()">Save</button></div>
+      </div>
+      <label class="toggle"><span class="muted">Use AI for scoring, open questions, search titles and cover notes</span><input type="checkbox" id="useai" onchange="post('/api/ai',{useAI:this.checked}).then(refresh)"></label>
+      <p class="muted" style="margin:0;font-size:12px">AI answers only from your resume and profile, and never answers salary, notice period, visa or personal questions. Everything it writes is shown on each job below.</p>
+    </section>
+
     <section class="card">
       <h2>Settings</h2>
       <label class="toggle"><span><b>Live mode</b><br><span class="muted">Off = fill forms but don't submit</span></span><input type="checkbox" id="live" onchange="toggleLive(this)"></label>
@@ -305,6 +316,14 @@ async function saveAnswers(e) {
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
 
+async function saveAiKey() {
+  const key = $('aikey').value.trim(); if (!key) return;
+  $('aistatus').textContent = 'Checking key…';
+  const r = await post('/api/ai', { key });
+  if (r.error) { $('aistatus').innerHTML = '<span class="bad">' + esc(r.error) + '</span>'; return; }
+  $('aikey').value = ''; refresh();
+}
+
 let runStartedAt = 0;
 function startRun() {
   runStartedAt = Date.now();
@@ -374,6 +393,14 @@ async function refresh() {
   $('rescard').classList.toggle('warn', !status.resume);
   if (!answersLoaded) loadAnswersForm();
 
+  const ai = status.ai || {};
+  $('aistatus').innerHTML = ai.enabled
+    ? '<span class="ok">AI is on ✓</span>' + (ai.keywords && ai.keywords.length ? '<br>Suggested search titles: ' + esc(ai.keywords.join(', ')) : '')
+    : ai.configured ? 'AI is switched off.' : 'Add a free Groq key to turn on AI.';
+  $('aikeybox').hidden = !!ai.configured;
+  $('useai').checked = !!s.useAI;
+  $('useai').disabled = !ai.configured;
+
   const p = status.profile;
   $('profile').innerHTML = p
     ? '<b style="color:var(--text)">' + esc(p.name) + '</b><br>' + esc(p.headline) + '<br>' + esc(p.years) + ' yrs experience · ' + (p.fromLinkedIn ? 'from LinkedIn' : 'from resume only, connect LinkedIn to detect your company') +
@@ -388,7 +415,10 @@ async function refresh() {
     '<div class="meta">' + esc(j.company) + ' · ' + esc(j.location) + ' · ' + new Date(j.at).toLocaleString() + '</div>' +
     (j.note ? '<div class="meta s-' + j.status + '">' + esc(j.note) + '</div>' : '') +
     (j.applyUrl && j.status !== 'applied' ? '<div class="meta"><a class="applylink" href="' + esc(j.applyUrl) + '" target="_blank" rel="noopener">Open application on company site →</a></div>' : '') +
-    (j.reasons.length ? '<div class="meta">' + esc(j.reasons.join(' · ')) + '</div>' : '') + '</div>').join('') : 'Nothing here yet.';
+    (j.reasons.length ? '<div class="meta">' + esc(j.reasons.join(' · ')) + '</div>' : '') +
+    (j.aiAnswers && j.aiAnswers.length ? '<details class="meta"><summary>AI wrote ' + j.aiAnswers.length + ' answer(s)</summary>' +
+      j.aiAnswers.map((x) => '<p style="margin:6px 0"><b>' + esc(x.q) + '</b><br>' + esc(x.a) + '</p>').join('') + '</details>' : '') +
+    '</div>').join('') : 'Nothing here yet.';
 
   $('errshot').hidden = !status.lastErrorShot;
   $('logs').textContent = status.logs.slice().reverse().map((l) => new Date(l.at).toLocaleTimeString() + '  ' + l.msg).join('\n');

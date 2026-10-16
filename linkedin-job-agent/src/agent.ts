@@ -12,7 +12,8 @@ import { jobDetails, searchJobIds } from './linkedin/jobs.js';
 import { easyApply, type ApplyResult } from './linkedin/easyApply.js';
 import { externalApply } from './linkedin/externalApply.js';
 import { splitName, type Applicant } from './answers.js';
-import { llmFit } from './llm.js';
+import { aiAnswer, aiCoverNote, aiEnabled, aiFit, aiKeywords } from './ai.js';
+import type { QuestionContext } from './answers.js';
 import { notify } from './notify.js';
 
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
@@ -173,7 +174,14 @@ class Agent {
     const budget = Math.min(settings.maxPerRun, env.maxPerDay - store.appliedToday());
     if (budget <= 0 && !settings.dryRun) return 'Daily application limit reached';
 
-    const keywords = searchKeywords(settings, profile);
+    let keywords = searchKeywords(settings, profile);
+    if (!settings.keywords.length && aiEnabled()) {
+      // AI suggests extra job titles from your resume (you can override them in Settings)
+      const extra = await aiKeywords(profile, years);
+      const seenKw = new Set(keywords.map((k) => k.toLowerCase()));
+      keywords = [...keywords, ...extra.filter((k) => !seenKw.has(k.toLowerCase()))].slice(0, 4);
+      if (extra.length) this.log(`AI suggested search titles: ${extra.join(', ')}`);
+    }
     this.log(`Run started (${settings.dryRun ? 'DRY RUN' : 'LIVE'}). Keywords: ${keywords.join(' / ')}. Never applying to: ${exclusions.join(', ') || '—'}`);
     const answers = loadAnswers();
     const qctx = { answers, skills: profile.skills, years, profileUrl: profile.profileUrl };
@@ -278,11 +286,19 @@ class Agent {
           continue;
         }
         await pause(1500, 2500);
+        const aiCtx = { profile, years, job: c.job };
+        const jobQctx: QuestionContext = {
+          ...qctx,
+          ai: aiEnabled() ? (q, kind, options) => aiAnswer(q, kind, options, aiCtx) : undefined,
+          coverNote: aiEnabled() ? () => aiCoverNote(aiCtx) : undefined,
+          aiLog: [],
+        };
         const res: ApplyResult = await (c.job.easyApply
-          ? easyApply(page, qctx, settings.dryRun)
-          : externalApply(page, ctx, applicant, qctx, settings.dryRun, c.job.externalUrl)
+          ? easyApply(page, jobQctx, settings.dryRun)
+          : externalApply(page, ctx, applicant, jobQctx, settings.dryRun, c.job.externalUrl)
         ).catch((e) => ({ status: 'failed' as const, note: (e as Error).message.split('\n')[0] }));
-        this.save(c.job, c.score, c.reasons, res.status, res.note, res.applyUrl);
+        if (jobQctx.aiLog?.length) this.log(`AI wrote ${jobQctx.aiLog.length} answer(s): ${jobQctx.aiLog.map((x) => x.q).join(' | ').slice(0, 150)}`);
+        this.save(c.job, c.score, c.reasons, res.status, res.note, res.applyUrl, jobQctx.aiLog);
         if (res.status === 'applied') applied++;
         if (res.status === 'needs_attention') attention++;
         await pause(20000, 45000);
@@ -317,7 +333,7 @@ class Agent {
     if (t) return { status: 'skipped', note: t, score: 0, reasons: [] };
 
     let { score, reasons } = scoreJob(job, me);
-    const llm = await llmFit(job, profile, years);
+    const llm = await aiFit(job, profile, years);
     if (llm) {
       score = Math.round((score + llm.score) / 2);
       reasons = [...reasons, `AI: ${llm.score} — ${llm.why}`];
@@ -326,8 +342,13 @@ class Agent {
     return { score, reasons };
   }
 
-  private save(job: JobDetails, score: number, reasons: string[], status: JobRecord['status'], note?: string, applyUrl?: string) {
-    store.save({ id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl, v: SCORING_VERSION, at: new Date().toISOString() });
+  private save(
+    job: JobDetails, score: number, reasons: string[], status: JobRecord['status'], note?: string, applyUrl?: string, aiAnswers?: { q: string; a: string }[],
+  ) {
+    store.save({
+      id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl,
+      aiAnswers: aiAnswers?.length ? aiAnswers : undefined, v: SCORING_VERSION, at: new Date().toISOString(),
+    });
     this.log(`${status.toUpperCase()}: ${job.title} @ ${job.company} (${score})${note ? ` — ${note}` : ''}`);
   }
 }

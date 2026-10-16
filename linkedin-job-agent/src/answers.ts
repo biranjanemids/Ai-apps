@@ -6,6 +6,23 @@ export interface QuestionContext {
   skills: string[];
   years: number;
   profileUrl: string;
+  /** AI fallback for questions the rules can't answer (grounded in your resume) */
+  ai?: (question: string, kind: FieldKind, options: string[]) => Promise<string | null>;
+  /** AI cover note for this job */
+  coverNote?: () => Promise<string | null>;
+  /** What the AI wrote, so you can review it on the dashboard */
+  aiLog?: { q: string; a: string }[];
+}
+
+/** Rules first (your saved answers); then the AI, if enabled; null if neither knows. */
+export async function answerQuestion(question: string, kind: FieldKind, options: string[], ctx: QuestionContext): Promise<string | null> {
+  const ruled = resolveAnswer(question, kind, options, ctx);
+  if (ruled !== null || !ctx.ai) return ruled;
+  const real = options.filter((o) => !/^select an option$|^please select/i.test(o.trim()));
+  const raw = await ctx.ai(question, kind, real).catch(() => null);
+  const ans = raw === null ? null : fitToOptions(raw, kind, real);
+  if (ans !== null) ctx.aiLog?.push({ q: question.replace(/\s+/g, ' ').trim(), a: ans });
+  return ans;
 }
 
 export type FieldKind = 'text' | 'number' | 'select' | 'radio' | 'checkbox' | 'textarea';
@@ -76,7 +93,7 @@ function lakhs(v: number | undefined, q: string): string | null {
 }
 
 /** Map an answer onto a select/radio option list (e.g. "Yes" → "Yes, I am"). */
-function fitToOptions(answer: string, kind: FieldKind, options: string[]): string | null {
+export function fitToOptions(answer: string, kind: FieldKind, options: string[]): string | null {
   if (kind === 'number') {
     const n = answer.match(/\d+(\.\d+)?/);
     return n ? n[0] : null;

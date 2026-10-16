@@ -3,7 +3,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
-import { DATA_DIR, VERSION, env, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
+import { aiEnabled } from './ai.js';
+import { DATA_DIR, VERSION, env, saveGroqKey, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, LAST_ERROR_SHOT, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
@@ -39,6 +40,7 @@ export function startServer() {
       busy: agent.busy || login.loginActive(),
       linkedin: getSession(),
       resume: env.resumePath ? path.basename(env.resumePath) : null,
+      ai: { configured: Boolean(env.groqApiKey), enabled: aiEnabled(), keywords: readAiKeywords() },
       lastErrorShot: fs.existsSync(LAST_ERROR_SHOT) ? fs.statSync(LAST_ERROR_SHOT).mtime.toISOString() : null,
       lastRun: agent.lastRun,
       appliedToday: store.appliedToday(),
@@ -73,6 +75,20 @@ export function startServer() {
     if (agent.busy || login.loginActive()) return res.status(409).json({ error: 'busy' });
     void agent.run();
     res.json({ ok: true });
+  });
+
+  // ── AI (Groq) ──
+  app.post('/api/ai', async (req, res) => {
+    const { key, useAI } = req.body as { key?: string; useAI?: boolean };
+    if (typeof key === 'string' && key.trim()) {
+      // Check the key works before saving it
+      const r = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${key.trim()}` } }).catch(() => null);
+      if (!r?.ok) return res.status(400).json({ error: r ? `Groq rejected the key (HTTP ${r.status})` : "Couldn't reach Groq" });
+      saveGroqKey(key);
+      agent.log('AI key saved — AI scoring, answers, keywords and cover notes are on');
+    }
+    if (typeof useAI === 'boolean') saveSettings({ useAI });
+    res.json({ configured: Boolean(env.groqApiKey), enabled: aiEnabled() });
   });
 
   app.post('/api/jobs/recheck', (_req, res) => {
@@ -176,5 +192,13 @@ export function startServer() {
     setInterval(() => {
       if (!agent.busy && !login.loginActive()) void agent.run();
     }, env.runEveryMinutes * 60_000);
+  }
+}
+
+function readAiKeywords(): string[] {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'ai-keywords.json'), 'utf8')).keywords ?? [];
+  } catch {
+    return [];
   }
 }

@@ -41,7 +41,15 @@ export const env = {
     if (process.env.RESUME_PATH && fs.existsSync(process.env.RESUME_PATH)) return process.env.RESUME_PATH;
     return ['resume.pdf', 'resume.txt'].map((f) => path.join(DATA_DIR, f)).find((f) => fs.existsSync(f));
   },
-  groqApiKey: process.env.GROQ_API_KEY || undefined,
+  /** GROQ_API_KEY from .env, or a key saved from the dashboard */
+  get groqApiKey(): string | undefined {
+    if (process.env.GROQ_API_KEY) return process.env.GROQ_API_KEY;
+    try {
+      return JSON.parse(fs.readFileSync(path.join(DATA_DIR, 'secrets.json'), 'utf8')).groqApiKey || undefined;
+    } catch {
+      return undefined;
+    }
+  },
   groqModel: process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
   ntfyTopic: process.env.NTFY_TOPIC || undefined,
   runEveryMinutes: num(process.env.RUN_EVERY_MINUTES, 0),
@@ -66,6 +74,8 @@ export interface Settings {
   dryRun: boolean;
   /** r86400 = 24h, r604800 = week, r2592000 = month */
   postedWithin: 'r86400' | 'r604800' | 'r2592000';
+  /** Use AI (when a Groq key is set) for scoring, open questions, keywords and cover notes. */
+  useAI: boolean;
   /** 'all' = Easy Apply + company-site jobs; 'easy' = LinkedIn Easy Apply only. */
   applyMode: 'all' | 'easy';
   /** Overrides experience detected from the profile/resume. */
@@ -87,6 +97,7 @@ function defaults(): Settings {
     postedWithin: (process.env.POSTED_WITHIN as Settings['postedWithin']) || 'r604800',
     yearsExperience: years ? Number(years) : null,
     applyMode: process.env.APPLY_MODE === 'easy' ? 'easy' : 'all',
+    useAI: bool(process.env.USE_AI, true),
   };
 }
 
@@ -133,4 +144,9 @@ export function loadAnswers(): Answers {
   } catch {
     return {};
   }
+}
+
+export function saveGroqKey(key: string): void {
+  const file = path.join(DATA_DIR, 'secrets.json');
+  fs.writeFileSync(file, JSON.stringify({ groqApiKey: key.trim() }), { mode: 0o600 });
 }

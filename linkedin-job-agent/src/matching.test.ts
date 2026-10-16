@@ -168,3 +168,37 @@ test('a matching title is not sunk by an unreadable description', () => {
   const unrelated = scoreJob({ title: 'Sales Manager', description: '' }, me);
   assert.ok(unrelated.score < 55, `unrelated: ${unrelated.score}`);
 });
+
+test('AI answers: grounded, never sensitive, validated, rules first', async () => {
+  process.env.GROQ_API_KEY = 'test-key';
+  const ai = await import('./ai.js');
+  const { answerQuestion } = await import('./answers.js');
+  const calls: string[] = [];
+  ai.setChatForTests(async (_sys, user) => {
+    calls.push(user);
+    if (/Why do you want/.test(user)) return { answer: 'I build large-scale Java and Kafka platforms, which matches your team.' };
+    if (/Highest level of education/.test(user)) return { answer: "Bachelor's degree" };
+    if (/Years of experience with Spring/.test(user)) return { answer: '12 years' };
+    if (/Pick a colour/.test(user)) return { answer: 'Purple' }; // not one of the options
+    return { answer: null };
+  });
+  const profile = { name: 'B S', headline: 'Principal Engineer', profileUrl: '', experiences: [], skills: ['Java'], totalYears: 14, resumeText: 'Java Kafka', updatedAt: 'x' };
+  const job = { title: 'Principal Engineer', company: 'Acme', description: 'Java' };
+  const ctx = {
+    answers: { phone: '9876543210', noticePeriodDays: 30 }, skills: ['Java'], years: 14, profileUrl: '', aiLog: [] as { q: string; a: string }[],
+    ai: (q: string, k: import('./answers.js').FieldKind, o: string[]) => ai.aiAnswer(q, k, o, { profile, years: 14, job }),
+  };
+  assert.equal(await answerQuestion('Why do you want to join Acme?', 'textarea', [], ctx), 'I build large-scale Java and Kafka platforms, which matches your team.');
+  assert.equal(await answerQuestion('Highest level of education', 'select', ['Select an option', 'High school', "Bachelor's degree", "Master's degree"], ctx), "Bachelor's degree");
+  assert.equal(await answerQuestion('Years of experience with Spring', 'number', [], ctx), '12');
+  assert.equal(await answerQuestion('Pick a colour', 'radio', ['Red', 'Blue'], ctx), null, 'answers outside the options are rejected');
+  assert.equal(await answerQuestion('Describe your patent portfolio', 'textarea', [], ctx), null, 'AI says null when facts are missing');
+  const before = calls.length;
+  assert.equal(await answerQuestion('What is your expected salary?', 'text', [], ctx), null);
+  assert.equal(await answerQuestion('Gender', 'select', ['Male', 'Female'], ctx), null);
+  assert.equal(calls.length, before, 'sensitive questions never reach the AI');
+  assert.equal(await answerQuestion('Mobile phone number', 'text', [], ctx), '9876543210', 'saved answers win over AI');
+  assert.deepEqual(ctx.aiLog.map((x) => x.q), ['Why do you want to join Acme?', 'Highest level of education', 'Years of experience with Spring']);
+  ai.setChatForTests(null);
+  delete process.env.GROQ_API_KEY;
+});

@@ -1,6 +1,6 @@
 import type { Locator, Page } from 'playwright';
 import { env } from '../config.js';
-import { resolveAnswer, type FieldKind, type QuestionContext } from '../answers.js';
+import { answerQuestion, type FieldKind, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
 import { applyButton } from './jobs.js';
 
@@ -99,7 +99,7 @@ async function fillStep(dialog: Locator, ctx: QuestionContext): Promise<string[]
     const type = (await el.getAttribute('type')) ?? '';
     const id = (await el.getAttribute('id')) ?? '';
     const kind: FieldKind = type === 'number' || /numeric/.test(id) ? 'number' : tag === 'textarea' ? 'textarea' : 'text';
-    const ans = resolveAnswer(label, kind, [], ctx);
+    const ans = await answerQuestion(label, kind, [], ctx);
     if (ans === null) {
       if (!isOptional(label)) unanswered.push(label || '(unlabelled field)');
       continue;
@@ -120,7 +120,7 @@ async function fillStep(dialog: Locator, ctx: QuestionContext): Promise<string[]
     if (current && !/select an option/i.test(current)) continue;
     const label = await labelFor(dialog, sel);
     const options = await sel.evaluate((s: HTMLSelectElement) => Array.from(s.options).map((o) => o.text.trim()));
-    const ans = resolveAnswer(label, 'select', options, ctx);
+    const ans = await answerQuestion(label, 'select', options, ctx);
     if (ans === null) unanswered.push(label);
     else await sel.selectOption({ label: ans });
   }
@@ -134,7 +134,7 @@ async function fillStep(dialog: Locator, ctx: QuestionContext): Promise<string[]
     if (await radios.count()) {
       if ((await fs.locator('input[type="radio"]:checked').count()) > 0) continue;
       const labels = (await fs.locator('label').allInnerTexts()).map((s) => s.trim()).filter(Boolean);
-      const ans = resolveAnswer(legend, 'radio', labels, ctx);
+      const ans = await answerQuestion(legend, 'radio', labels, ctx);
       if (ans === null) unanswered.push(legend);
       else await fs.locator('label').filter({ hasText: ans }).first().click();
     } else if ((await boxes.count()) && (await fs.locator('input[type="checkbox"]:checked').count()) === 0) {

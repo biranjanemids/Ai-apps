@@ -22,6 +22,8 @@ export interface JobRecord {
   note?: string;
   /** Company application page, for jobs you finish yourself */
   applyUrl?: string;
+  /** Answers the AI wrote on this application, for you to review */
+  aiAnswers?: { q: string; a: string }[];
   /** Scoring version that produced `score`; older low-match skips get re-checked */
   v?: number;
   at: string;
