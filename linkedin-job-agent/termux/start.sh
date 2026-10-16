@@ -5,6 +5,13 @@ mkdir -p data
 termux-wake-lock 2>/dev/null || true   # keep running while the screen is off
 PORT=$(grep -E '^PORT=' .env | cut -d= -f2); PORT=${PORT:-8787}
 TOKEN=$(grep -E '^DASHBOARD_TOKEN=' .env | cut -d= -f2)
+INSTALLED=$(git rev-parse --short HEAD 2>/dev/null)
+RUNNING=$(curl -s -H "Authorization: Bearer $TOKEN" "http://127.0.0.1:$PORT/api/status" | sed -n 's/.*"version":"\([^"]*\)".*/\1/p')
+if curl -s -o /dev/null "http://127.0.0.1:$PORT/" && [ "$RUNNING" != "$INSTALLED" ]; then
+  echo "Restarting the agent to load the new version ($INSTALLED)…"
+  pkill -f "dist/cli.js serve"
+  sleep 2
+fi
 if ! curl -s -o /dev/null "http://127.0.0.1:$PORT/"; then
   nohup node dist/cli.js serve >> data/agent.log 2>&1 &
   for _ in 1 2 3 4 5 6 7 8 9 10; do

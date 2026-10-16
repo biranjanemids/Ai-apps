@@ -41,6 +41,13 @@ cp termux/stop.sh "$HOME/.shortcuts/Stop Job Agent"
 cp termux/check.sh "$HOME/.shortcuts/Check Job Agent"
 chmod +x "$HOME/.shortcuts/"*
 
+# A dashboard left running from before would keep using the old code
+if pkill -f "dist/cli.js serve"; then
+  echo "==> Restarting the agent with the new version…"
+  sleep 2
+  bash termux/start.sh
+fi
+
 echo
 echo "✔ Installed. Start it with:   bash ~/Ai-apps/linkedin-job-agent/termux/start.sh"
 echo "  (or add the Termux:Widget 'Job Agent' button to your home screen)"

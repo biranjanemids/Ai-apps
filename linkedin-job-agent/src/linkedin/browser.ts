@@ -28,11 +28,18 @@ export function userAgent(): string {
 
 /** Persistent Chromium profile so your LinkedIn login survives restarts. */
 export async function openBrowser(
-  opts: { headless?: boolean; viewport?: { width: number; height: number } } = {},
+  opts: { headless?: boolean; viewport?: { width: number; height: number }; lite?: boolean } = {},
 ): Promise<BrowserContext> {
   const args = ['--disable-blink-features=AutomationControlled'];
-  // Termux's Chromium can't use the Linux sandbox and has a tiny /dev/shm
-  if (process.platform === 'android') args.push('--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu');
+  if (process.platform === 'android') {
+    // Termux's Chromium can't use the Linux sandbox and has a tiny /dev/shm; keep memory low
+    // so Android doesn't kill the browser mid-run
+    args.push(
+      '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
+      '--renderer-process-limit=2', '--disable-extensions', '--disable-background-networking',
+      '--js-flags=--max-old-space-size=384',
+    );
+  }
   const ctx = await chromium.launchPersistentContext(USER_DATA, {
     headless: opts.headless ?? env.headless,
     executablePath: env.chromePath,
@@ -42,6 +49,14 @@ export async function openBrowser(
     userAgent: userAgent(),
     args,
   });
+  if (opts.lite) {
+    // Pictures, video and fonts aren't needed to read jobs or fill forms — skipping them
+    // cuts memory and mobile data a lot
+    await ctx.route('**/*', (route) => {
+      const t = route.request().resourceType();
+      return t === 'image' || t === 'media' || t === 'font' ? route.abort() : route.continue();
+    });
+  }
   if (env.liAt) {
     await ctx.addCookies([
       { name: 'li_at', value: env.liAt, domain: '.linkedin.com', path: '/', httpOnly: true, secure: true, sameSite: 'None' },

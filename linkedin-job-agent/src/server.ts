@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
-import { DATA_DIR, env, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
+import { DATA_DIR, VERSION, env, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, LAST_ERROR_SHOT, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
@@ -34,6 +34,7 @@ export function startServer() {
     const settings = loadSettings();
     const profile = loadProfile();
     res.json({
+      version: VERSION,
       running: agent.running,
       busy: agent.busy || login.loginActive(),
       linkedin: getSession(),
@@ -160,7 +161,7 @@ export function startServer() {
   });
 
   app.listen(env.port, env.host, () => {
-    console.log(`Dashboard: http://${env.host === '0.0.0.0' ? '<this-device-ip>' : env.host}:${env.port}/#token=${env.dashboardToken}`);
+    console.log(`Job agent ${VERSION} — dashboard: http://${env.host === '0.0.0.0' ? '<this-device-ip>' : env.host}:${env.port}/#token=${env.dashboardToken}`);
   });
 
   if (env.runEveryMinutes > 0) {

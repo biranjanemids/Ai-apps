@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR, env, loadAnswers, loadSettings } from './config.js';
+import { DATA_DIR, VERSION, env, loadAnswers, loadSettings } from './config.js';
 import { effectiveExclusions } from './agent.js';
 import { getSession, isLoggedIn, openBrowser, userAgent } from './linkedin/browser.js';
 import { currentEmployers, loadProfile, readResumeText } from './profile.js';
@@ -20,7 +20,7 @@ const timed = async <T>(p: Promise<T>, ms: number): Promise<T> =>
 
 /** One-command health check; paste its output when asking for help. */
 export async function doctor(): Promise<void> {
-  console.log('LinkedIn Job Agent — health check\n');
+  console.log(`LinkedIn Job Agent ${VERSION} — health check\n`);
 
   const major = Number(process.versions.node.split('.')[0]);
   line(major >= 20 ? 'ok' : 'fail', `Node.js ${process.versions.node}`, major >= 20 ? '' : 'needs 20+: pkg install nodejs-lts');
@@ -31,8 +31,11 @@ export async function doctor(): Promise<void> {
   try {
     const res = await timed(fetch(`http://127.0.0.1:${env.port}/api/status`, { headers: { Authorization: `Bearer ${env.dashboardToken}` } }), 5000);
     if (res.ok) {
-      const s = (await res.json()) as { busy: boolean; running: boolean };
+      const s = (await res.json()) as { busy: boolean; running: boolean; version?: string };
       busy = s.busy;
+      if (s.version !== VERSION) {
+        line('fail', `Dashboard is running an OLD version (${s.version ?? 'old'}, installed ${VERSION})`, 'restart it: bash termux/stop.sh && bash termux/start.sh');
+      }
       line('ok', `Dashboard running on port ${env.port}`, s.running ? 'a job search is running now' : s.busy ? 'busy (login or profile sync)' : 'idle');
     } else {
       line('fail', 'Dashboard answered with an error', `HTTP ${res.status}${res.status === 401 ? ' (DASHBOARD_TOKEN mismatch)' : ''}`);

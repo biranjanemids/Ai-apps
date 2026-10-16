@@ -64,7 +64,7 @@ class Agent {
   }
 
   private async withPage<T>(fn: (page: Page, ctx: BrowserContext) => Promise<T>): Promise<T> {
-    const ctx = await openBrowser();
+    const ctx = await openBrowser({ lite: true });
     try {
       const page = ctx.pages()[0] ?? (await ctx.newPage());
       if (!(await isLoggedIn(page))) {
@@ -97,6 +97,9 @@ class Agent {
     const scraped = await this.withPage((page) => scrapeOwnProfile(page)).finally(() => (this.syncing = wasSyncing));
     const resume = await readResumeText();
     const profile = mergeResume({ ...scraped, resumeText: '' }, resume);
+    if (!scraped.experiences.length) {
+      this.log("Couldn't read your work history from LinkedIn — make sure your company is listed under \"Never apply to\".");
+    }
     if (!profile.totalYears) profile.totalYears = yearsFromResume(resume);
     if (!profile.headline) profile.headline = roleFromResume(resume);
     saveProfile(profile);
@@ -131,7 +134,15 @@ class Agent {
     this.running = true;
     this.stopRequested = false;
     try {
-      return await this.runInner();
+      try {
+        return await this.runInner();
+      } catch (e) {
+        // On a phone, Android sometimes kills the browser mid-run; finished jobs are saved,
+        // so start a fresh browser and carry on once
+        if (!/has been closed|crashed|disconnected/i.test((e as Error).message) || this.stopRequested) throw e;
+        this.log('The browser closed unexpectedly (low memory?) — restarting it and continuing…');
+        return await this.runInner();
+      }
     } catch (e) {
       const msg = `Run failed: ${(e as Error).message}`;
       this.log(msg);

@@ -57,7 +57,11 @@ export async function scrapeOwnProfile(page: Page): Promise<Omit<Profile, 'resum
  * text, so parsing still works if LinkedIn changes its list markup.
  */
 async function detailsPage(page: Page, url: string): Promise<{ items: string[][]; lines: string[] }> {
-  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const ok = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).then(
+    (r) => !r || r.ok(),
+    () => false,
+  );
+  if (!ok) return { items: [], lines: [] }; // e.g. LinkedIn returned an error page — skip this section
   await page.waitForSelector('main ul li, main li, li', { timeout: 30000 }).catch(() => {});
   for (let i = 0; i < 8; i++) {
     await page.mouse.wheel(0, 3000);

@@ -1,6 +1,8 @@
 import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 const list = (v: string | undefined): string[] =>
   (v ?? '').split(',').map((s) => s.trim()).filter(Boolean);
@@ -10,6 +12,16 @@ const num = (v: string | undefined, d: number): number => {
 };
 const bool = (v: string | undefined, d: boolean): boolean =>
   v === undefined || v === '' ? d : /^(1|true|yes|on)$/i.test(v);
+
+/** Git commit of the installed code, so a stale running dashboard can be spotted. */
+export const VERSION = (() => {
+  try {
+    const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: 5000 }).trim();
+  } catch {
+    return 'unknown';
+  }
+})();
 
 export const DATA_DIR = path.resolve(process.env.DATA_DIR ?? 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });
