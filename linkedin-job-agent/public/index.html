@@ -305,6 +305,24 @@ async function saveAnswers(e) {
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
 
+let runStartedAt = 0;
+function startRun() {
+  runStartedAt = Date.now();
+  $('runbtn').disabled = true;
+  post('/api/run').then(refresh);
+}
+function stopRun() {
+  // the Stop button appears where Run was — ignore an accidental double tap
+  if (Date.now() - runStartedAt < 4000) return;
+  if (confirm('Stop the current run? Jobs already handled stay saved.')) post('/api/stop').then(refresh);
+}
+async function recheck() {
+  if (!confirm('Check skipped, failed and dry-run jobs again on the next run?')) return;
+  const r = await post('/api/jobs/recheck');
+  alert((r.cleared ?? 0) + ' jobs will be checked again. Now tap the Find button.');
+  refresh();
+}
+
 const TABS = [['applied', 'Applied'], ['needs_attention', 'Needs you'], ['dry_run', 'Dry run'], ['excluded', 'Blocked'], ['skipped', 'Skipped'], ['failed', 'Failed']];
 
 async function refresh() {
@@ -321,8 +339,9 @@ async function refresh() {
   $('runbox').innerHTML = !status.running && status.busy
     ? '<button class="ghost" style="width:100%" disabled>Busy…</button>'
     : status.running
-    ? '<button class="danger" onclick="post(\'/api/stop\').then(refresh)">Stop</button>'
-    : '<button class="primary" onclick="post(\'/api/run\').then(refresh)">' + (s.dryRun ? 'Find jobs (dry run)' : 'Find & apply now') + '</button>';
+      ? '<button class="danger" onclick="stopRun()">Stop</button>'
+      : '<button class="primary" id="runbtn" onclick="startRun()">' + (s.dryRun ? 'Find jobs (dry run)' : 'Find & apply now') + '</button>' +
+        '<button class="ghost" style="width:100%;margin-top:8px;font-size:13px" onclick="recheck()">Re-check skipped jobs</button>';
 
   const detected = new Set(status.detectedEmployers.map((x) => x.toLowerCase()));
   $('excl').innerHTML =

@@ -62,7 +62,7 @@ class Agent {
   stop() {
     if (this.running) {
       this.stopRequested = true;
-      this.log('Stop requested — finishing current job…');
+      this.log('Stop requested from the dashboard — finishing current job…');
     }
   }
 
@@ -251,6 +251,7 @@ class Agent {
           await pause(1500, 3500);
         }
       }
+      if (this.stopRequested) this.log('Search stopped early from the dashboard.');
       const breakdown = Object.entries(tally).map(([k, v]) => `${v} ${k}`).join(', ');
       this.log(`Checked ${found} jobs → ${candidates.length} good matches${breakdown ? `; skipped: ${breakdown}` : ''}`);
 
@@ -260,15 +261,22 @@ class Agent {
       this.log(`${candidates.length} jobs passed filters; applying to top ${Math.min(limit, candidates.length)}`);
       let applied = 0;
       let attention = 0;
+      let tried = 0;
       for (const c of candidates.slice(0, limit)) {
         if (this.stopRequested) break;
+        tried++;
+        this.log(`Applying (${tried}/${Math.min(limit, candidates.length)}): ${c.job.title} @ ${c.job.company} — ${c.job.easyApply ? 'Easy Apply' : 'company website'}`);
         // Belt and braces: re-check exclusion right before submitting.
         const ex = exclusionReason(c.job, exclusions);
         if (ex) {
           this.save(c.job, c.score, c.reasons, 'excluded', ex);
           continue;
         }
-        await page.goto(c.job.url, { waitUntil: 'domcontentloaded' });
+        const opened = await page.goto(c.job.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).then(() => true, () => false);
+        if (!opened) {
+          this.save(c.job, c.score, c.reasons, 'failed', "couldn't open the job page");
+          continue;
+        }
         await pause(1500, 2500);
         const res: ApplyResult = await (c.job.easyApply
           ? easyApply(page, qctx, settings.dryRun)
@@ -280,9 +288,10 @@ class Agent {
         await pause(20000, 45000);
       }
 
+      const stopped = this.stopRequested ? ' (stopped early from the dashboard)' : '';
       const summary = settings.dryRun
-        ? `Dry run done: ${candidates.length} matches found, forms checked for ${Math.min(limit, candidates.length)}.`
-        : `Applied to ${applied} jobs in ${env.location}. ${attention} need your input.`;
+        ? `Dry run done: ${candidates.length} matches found, forms checked for ${tried}${stopped}.`
+        : `Applied to ${applied} jobs in ${env.location}. ${attention} need your input${stopped}.`;
       this.lastRun = { at: new Date().toISOString(), summary };
       this.log(summary);
       await notify('LinkedIn job agent', summary);

@@ -75,6 +75,13 @@ export function startServer() {
     res.json({ ok: true });
   });
 
+  app.post('/api/jobs/recheck', (_req, res) => {
+    if (agent.busy) return res.status(409).json({ error: 'busy' });
+    const n = store.forgetUnapplied();
+    agent.log(`Cleared ${n} skipped/failed/dry-run jobs — they'll be checked again on the next run`);
+    res.json({ cleared: n });
+  });
+
   app.post('/api/stop', (_req, res) => {
     agent.stop();
     res.json({ ok: true });

@@ -60,6 +60,18 @@ export const store = {
     for (const r of Object.values(cache)) c[r.status] = (c[r.status] ?? 0) + 1;
     return c;
   },
+  /** Forget jobs that weren't applied to, so the next run checks them again. */
+  forgetUnapplied(): number {
+    let n = 0;
+    for (const [id, r] of Object.entries(cache)) {
+      if (r.status === 'skipped' || r.status === 'failed' || r.status === 'dry_run') {
+        delete cache[id];
+        n++;
+      }
+    }
+    fs.writeFileSync(FILE, JSON.stringify(cache, null, 2));
+    return n;
+  },
   reload(): void {
     cache = read();
   },
