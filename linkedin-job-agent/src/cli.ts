@@ -3,6 +3,7 @@ import './platform.js';
 import { openBrowser, isLoggedIn, sleep } from './linkedin/browser.js';
 import { agent } from './agent.js';
 import { startServer } from './server.js';
+import { doctor } from './doctor.js';
 
 async function login() {
   console.log('A browser window will open. Log in to LinkedIn (incl. 2FA); the session is saved in data/browser-profile.');
@@ -30,10 +31,13 @@ switch (cmd) {
   case 'run':
     console.log(await agent.run());
     break;
+  case 'doctor':
+    await doctor();
+    process.exit(0);
   case 'serve':
     startServer();
     break;
   default:
-    console.log('Usage: node dist/cli.js <login|sync-profile|run|serve>');
+    console.log('Usage: node dist/cli.js <login|sync-profile|run|serve|doctor>');
     process.exit(1);
 }

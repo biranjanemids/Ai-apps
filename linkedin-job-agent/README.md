@@ -72,6 +72,11 @@ Everything runs on the phone itself: the agent, its browser, your LinkedIn login
 
 To update later, run the same `curl … | bash` line again. Your data and `.env` are kept.
 
+**Is it working?** Run `bash ~/Ai-apps/linkedin-job-agent/termux/check.sh`, or tap the **Check Job Agent** widget.
+It checks Node.js, Chromium, the dashboard, internet access to LinkedIn, your LinkedIn login, profile, resume,
+company block list, answers and recent errors, then prints ✅ / ⚠️ / ❌ for each. Copy the output when asking for help.
+On a computer, run `npm run doctor`.
+
 ## Setup on a laptop, PC or server (alternative)
 
 Here the browser runs on the computer and you open the dashboard from your phone.

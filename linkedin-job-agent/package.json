@@ -9,6 +9,7 @@
     "sync-profile": "node dist/cli.js sync-profile",
     "run": "node dist/cli.js run",
     "start": "node dist/cli.js serve",
+    "doctor": "node dist/cli.js doctor",
     "test": "tsc && node --test dist/*.test.js"
   },
   "keywords": [],

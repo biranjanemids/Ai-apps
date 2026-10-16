@@ -38,6 +38,7 @@ fi
 mkdir -p "$HOME/.shortcuts"
 cp termux/start.sh "$HOME/.shortcuts/Job Agent"
 cp termux/stop.sh "$HOME/.shortcuts/Stop Job Agent"
+cp termux/check.sh "$HOME/.shortcuts/Check Job Agent"
 chmod +x "$HOME/.shortcuts/"*
 
 echo
