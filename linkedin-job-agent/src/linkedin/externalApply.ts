@@ -48,16 +48,21 @@ export async function externalApply(
   me: Applicant,
   qctx: QuestionContext,
   dryRun: boolean,
+  directUrl?: string,
 ): Promise<ApplyResult> {
   const btn = applyButton(page);
-  if (!(await btn.isVisible().catch(() => false))) return { status: 'failed', note: 'Apply button not found' };
-
-  const popup = ctx.waitForEvent('page', { timeout: 20000 }).catch(() => null);
-  await btn.click();
-  // LinkedIn sometimes asks before leaving ("Continue to company site" / share profile)
-  await page.locator('div[role="dialog"] button:has-text("Continue"), div[role="dialog"] a:has-text("Continue")').first().click({ timeout: 4000 }).catch(() => {});
-  const site = (await popup) ?? page;
-  await site.waitForURL((u) => !/linkedin\.com/.test(u.hostname), { timeout: 30000 }).catch(() => {});
+  let site: Page = page;
+  if (await btn.isVisible().catch(() => false)) {
+    const popup = ctx.waitForEvent('page', { timeout: 20000 }).catch(() => null);
+    await btn.click();
+    // LinkedIn sometimes asks before leaving ("Continue to company site" / share profile)
+    await page.locator('div[role="dialog"] button:has-text("Continue"), div[role="dialog"] a:has-text("Continue")').first().click({ timeout: 4000 }).catch(() => {});
+    site = (await popup) ?? page;
+    await site.waitForURL((u) => !/linkedin\.com/.test(u.hostname), { timeout: 30000 }).catch(() => {});
+  }
+  if (/linkedin\.com/.test(site.url()) && directUrl) {
+    await site.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+  }
   await site.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
   const applyUrl = site.url();
   const close = async () => {

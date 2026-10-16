@@ -126,7 +126,12 @@ export async function doctor(): Promise<void> {
   const logFile = path.join(DATA_DIR, 'agent.log');
   if (fs.existsSync(logFile)) {
     const log = fs.readFileSync(logFile, 'utf8').trim().split('\n');
-    const errors = log.filter((l) => /error|failed|refusing/i.test(l)).slice(-3);
+    const summary = log.filter((l) => /Checked \d+ jobs|": \d+ (Easy Apply )?jobs in|Applied to \d+|Dry run done/.test(l)).slice(-4);
+    if (summary.length) {
+      console.log('   last run:');
+      summary.forEach((l) => console.log(`     ${l.slice(0, 220)}`));
+    }
+    const errors = log.filter((l) => /error|failed|refusing|couldn't/i.test(l)).slice(-3);
     if (errors.length) {
       console.log('   recent errors in data/agent.log:');
       errors.forEach((l) => console.log(`     ${l.slice(0, 200)}`));

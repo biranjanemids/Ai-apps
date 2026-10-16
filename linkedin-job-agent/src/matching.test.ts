@@ -149,3 +149,11 @@ test('company-site forms: identity fields, name split and portal detection', asy
   assert.equal(detectPortal('https://jobs.lever.co/acme/abc-123').kind, 'lever');
   assert.equal(detectPortal('https://careers.acme.in/jobs/42').kind, 'form');
 });
+
+test('extractJobIds finds job IDs in any LinkedIn markup', async () => {
+  const { extractJobIds } = await import('./linkedin/jobs.js');
+  const html = `<div data-entity-urn="urn:li:jobPosting:4012345678"></div>
+    <a href="https://in.linkedin.com/jobs/view/principal-engineer-at-acme-4087654321?position=2">x</a>
+    <li data-occludable-job-id="4011111111"></li> {"*jobPosting":"urn:li:fsd_jobPosting:4022222222"} ?currentJobId=4033333333&`;
+  assert.deepEqual(extractJobIds(html).sort(), ['4011111111', '4012345678', '4022222222', '4033333333', '4087654321']);
+});

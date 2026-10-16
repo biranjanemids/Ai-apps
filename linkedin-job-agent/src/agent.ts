@@ -182,29 +182,59 @@ class Agent {
       // 1. Find and rank
       const candidates: { job: JobDetails; score: number; reasons: string[] }[] = [];
       const seen = new Set<string>();
+      const tally: Record<string, number> = {};
+      let found = 0;
       for (const kw of keywords) {
         if (this.stopRequested) break;
-        const ids = await searchJobIds(page, kw, settings, env.maxJobsScannedPerKeyword);
-        this.log(`"${kw}": ${ids.length} Easy Apply jobs in ${env.location}`);
+        const { ids, source } = await searchJobIds(page, kw, settings, env.maxJobsScannedPerKeyword);
+        found += ids.length;
+        const kind = settings.applyMode === 'easy' ? 'Easy Apply jobs' : 'jobs';
+        this.log(`"${kw}": ${ids.length} ${kind} in ${env.location} (from ${source})`);
+        if (!ids.length) {
+          await page.screenshot({ path: LAST_ERROR_SHOT }).catch(() => {});
+          this.log(`No results for "${kw}" — screenshot saved (Activity → "What the browser saw")`);
+        }
+        let i = 0;
         for (const id of ids) {
           if (this.stopRequested) break;
-          // dry-run results are re-evaluated once you switch to live mode
+          i++;
           const prev = store.get(id);
-          // re-check jobs skipped only because they weren't Easy Apply, now that company sites are supported
+          // dry-run results are re-evaluated in live mode, and jobs skipped only for not being
+          // Easy Apply are re-checked now that company sites are supported
           const retry = !prev || prev.status === 'dry_run' || (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? ''));
-          if (seen.has(id) || !retry) continue;
+          if (seen.has(id) || !retry) {
+            tally['seen before'] = (tally['seen before'] ?? 0) + 1;
+            continue;
+          }
           seen.add(id);
-          const job = await jobDetails(page, id).catch(() => null);
-          if (!job || !job.title) continue;
+          const job = await jobDetails(page, id).catch((e: Error) => {
+            this.log(`Couldn't open job ${id}: ${e.message.split('\n')[0]}`);
+            return null;
+          });
+          if (!job || !job.title) {
+            tally['unreadable'] = (tally['unreadable'] ?? 0) + 1;
+            if (job) this.log(`Couldn't read job ${id} (no title on the page)`);
+            continue;
+          }
           const verdict = await this.evaluate(job, settings, exclusions, me, profile, years);
           if (verdict.status) {
             this.save(job, verdict.score, verdict.reasons, verdict.status, verdict.note);
+            const note = verdict.note ?? '';
+            const why =
+              verdict.status === 'excluded' ? 'your company (blocked)'
+              : /^match/.test(note) ? 'below your match score'
+              : /^location/.test(note) ? 'outside Bengaluru'
+              : note.replace(/\d+/g, 'N');
+            tally[why] = (tally[why] ?? 0) + 1;
           } else {
             candidates.push({ job, score: verdict.score, reasons: verdict.reasons });
+            this.log(`MATCH ${verdict.score}%: ${job.title} @ ${job.company} (${i}/${ids.length})`);
           }
           await pause(1500, 3500);
         }
       }
+      const breakdown = Object.entries(tally).map(([k, v]) => `${v} ${k}`).join(', ');
+      this.log(`Checked ${found} jobs → ${candidates.length} good matches${breakdown ? `; skipped: ${breakdown}` : ''}`);
 
       // 2. Apply best matches first
       candidates.sort((a, b) => b.score - a.score);
@@ -224,7 +254,7 @@ class Agent {
         await pause(1500, 2500);
         const res: ApplyResult = await (c.job.easyApply
           ? easyApply(page, qctx, settings.dryRun)
-          : externalApply(page, ctx, applicant, qctx, settings.dryRun)
+          : externalApply(page, ctx, applicant, qctx, settings.dryRun, c.job.externalUrl)
         ).catch((e) => ({ status: 'failed' as const, note: (e as Error).message.split('\n')[0] }));
         this.save(c.job, c.score, c.reasons, res.status, res.note, res.applyUrl);
         if (res.status === 'applied') applied++;

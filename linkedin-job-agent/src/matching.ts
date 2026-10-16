@@ -13,6 +13,8 @@ export interface JobDetails {
   easyApply: boolean;
   /** "Apply" button that leads to the company's own careers site */
   externalApply: boolean;
+  /** Company application URL when LinkedIn exposes it */
+  externalUrl?: string;
   alreadyApplied: boolean;
 }
 
