@@ -130,3 +130,22 @@ test('parseExperienceText reads roles from plain page text (layout-independent)'
     ['Senior Engineer', 'Infosys', false],
   ]);
 });
+
+test('company-site forms: identity fields, name split and portal detection', async () => {
+  const { identityAnswer, splitName } = await import('./answers.js');
+  const { detectPortal } = await import('./linkedin/externalApply.js');
+  const me = { firstName: 'Biranjan', lastName: 'Soni', fullName: 'Biranjan Soni', email: 'b@x.com', phone: '9876543210', linkedinUrl: 'https://linkedin.com/in/b', currentCompany: 'Dell Technologies' };
+  assert.equal(identityAnswer('First Name *', 'text', me), 'Biranjan');
+  assert.equal(identityAnswer('Last name', 'text', me), 'Soni');
+  assert.equal(identityAnswer('Full name', 'text', me), 'Biranjan Soni');
+  assert.equal(identityAnswer('Anything', 'email', me), 'b@x.com');
+  assert.equal(identityAnswer('Phone', 'tel', me), '9876543210');
+  assert.equal(identityAnswer('LinkedIn Profile', 'url', me), 'https://linkedin.com/in/b');
+  assert.equal(identityAnswer('Current company', 'text', me), 'Dell Technologies');
+  assert.equal(identityAnswer('Why do you want to join?', 'text', me), undefined);
+  assert.deepEqual(splitName('biranjan kumar soni'), { firstName: 'Biranjan', lastName: 'Kumar Soni' });
+  assert.equal(detectPortal('https://acme.wd5.myworkdayjobs.com/en-US/careers/job/123').kind, 'account');
+  assert.equal(detectPortal('https://job-boards.greenhouse.io/acme/jobs/123').kind, 'greenhouse');
+  assert.equal(detectPortal('https://jobs.lever.co/acme/abc-123').kind, 'lever');
+  assert.equal(detectPortal('https://careers.acme.in/jobs/42').kind, 'form');
+});

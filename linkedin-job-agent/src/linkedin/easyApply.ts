@@ -6,6 +6,8 @@ import { pause } from './browser.js';
 export interface ApplyResult {
   status: 'applied' | 'dry_run' | 'needs_attention' | 'failed';
   note: string;
+  /** Where the application lives (company site), if not on LinkedIn */
+  applyUrl?: string;
 }
 
 const MAX_STEPS = 12;

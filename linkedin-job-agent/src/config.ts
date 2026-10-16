@@ -54,6 +54,8 @@ export interface Settings {
   dryRun: boolean;
   /** r86400 = 24h, r604800 = week, r2592000 = month */
   postedWithin: 'r86400' | 'r604800' | 'r2592000';
+  /** 'all' = Easy Apply + company-site jobs; 'easy' = LinkedIn Easy Apply only. */
+  applyMode: 'all' | 'easy';
   /** Overrides experience detected from the profile/resume. */
   yearsExperience: number | null;
 }
@@ -72,6 +74,7 @@ function defaults(): Settings {
     dryRun: bool(process.env.DRY_RUN, true),
     postedWithin: (process.env.POSTED_WITHIN as Settings['postedWithin']) || 'r604800',
     yearsExperience: years ? Number(years) : null,
+    applyMode: process.env.APPLY_MODE === 'easy' ? 'easy' : 'all',
   };
 }
 

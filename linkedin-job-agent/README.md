@@ -9,9 +9,10 @@ ranks them best match first and applies. It **never applies to your own company*
 | Step | What happens |
 |------|--------------|
 | Profile | Reads your headline, experience (including your **current employer**) and skills from LinkedIn, plus skills found in your resume (`RESUME_PATH`, PDF or text). |
-| Search | LinkedIn Jobs in Bengaluru (`geoId 105214831`), Easy Apply only. Keywords come from your current job titles, or from `KEYWORDS`. |
+| Search | LinkedIn Jobs in Bengaluru (`geoId 105214831`): Easy Apply **and** company-website jobs (set **Which jobs** to "Easy Apply only" to narrow it). Keywords come from your current job titles, or from `KEYWORDS`. |
 | **Block your company** | A job is skipped if the employer matches `EXCLUDED_COMPANIES` **or** your current employer on LinkedIn. Names are normalized first, so `Pvt Ltd`, `India` and punctuation are ignored. Matching is on whole words, so "Walmart" also catches subsidiaries like "Walmart Global Tech India". Staffing-agency posts that say "our client *X* is hiring" are blocked too. Jobs with no company name are never applied to. The check runs again right before each submit, and live mode won't start if the block list is empty. |
 | Score 0–100 | Skills overlap (50 points) + how close the title is to your roles (30) + experience fit against "5+ yrs" or "3-6 yrs" in the posting (20). If you set `GROQ_API_KEY`, an LLM also rates the job against your resume and the two scores are averaged. |
+| Company websites | For jobs whose **Apply** button leads to the company's site, the agent fills the form itself on Greenhouse, Lever, Ashby, SmartRecruiters and simple company forms: name, email, phone, resume upload, LinkedIn URL and screening questions. Portals that need an account (Workday, Taleo, iCIMS, SuccessFactors, Naukri…), captchas and questions it can't answer truthfully go to **Needs you** with an **Open application** link. |
 | Apply | Highest scores first, up to `MAX_APPLICATIONS_PER_RUN` and `MAX_APPLICATIONS_PER_DAY`, waiting 20–45 s between applications. Screening questions are answered from your profile and `answers.json`. **If a question can't be answered truthfully** (for example, years with a skill you don't list), the job goes to **"Needs you"** on the phone instead of the agent guessing. |
 
 ## Web version (open it from any browser)

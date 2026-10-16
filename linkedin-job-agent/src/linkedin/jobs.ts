@@ -8,11 +8,11 @@ export function searchUrl(keyword: string, settings: Settings, start = 0): strin
     keywords: keyword,
     location: env.location,
     geoId: env.geoId,
-    f_AL: 'true', // Easy Apply only — the agent can't fill external career sites
     f_TPR: settings.postedWithin,
     sortBy: 'R',
     start: String(start),
   });
+  if (settings.applyMode === 'easy') p.set('f_AL', 'true'); // Easy Apply only
   return `https://www.linkedin.com/jobs/search/?${p}`;
 }
 
@@ -76,9 +76,21 @@ export async function jobDetails(page: Page, id: string): Promise<JobDetails> {
     '.jobs-unified-top-card__subtitle-primary-grouping',
   ]);
   const description = await firstText(page, ['#job-details', '.jobs-description__content', '.jobs-box__html-content', '.description__text']);
-  const applyBtn = page.locator('button.jobs-apply-button, button[aria-label*="Easy Apply" i]').first();
-  const easyApply = (await applyBtn.count()) > 0 && /easy apply/i.test((await applyBtn.innerText().catch(() => '')) + (await applyBtn.getAttribute('aria-label').catch(() => '')));
+  const applyBtn = applyButton(page);
+  const applyText = (await applyBtn.count())
+    ? (await applyBtn.innerText().catch(() => '')) + ' ' + ((await applyBtn.getAttribute('aria-label').catch(() => '')) ?? '')
+    : '';
+  const easyApply = /easy apply/i.test(applyText);
+  const externalApply = !easyApply && /\bapply\b/i.test(applyText);
   const alreadyApplied = await page.locator('.artdeco-inline-feedback--success, .post-apply-timeline').filter({ hasText: /applied/i }).count().then((n) => n > 0).catch(() => false);
 
-  return { id, url, title, company, location: topCard.split('·')[0].trim(), description, easyApply, alreadyApplied };
+  return { id, url, title, company, location: topCard.split('·')[0].trim(), description, easyApply, externalApply, alreadyApplied };
 }
+
+/** The job's main apply control: Easy Apply, or "Apply" that opens the company's site. */
+export const applyButton = (page: Page) =>
+  page
+    .locator(
+      'button.jobs-apply-button, a.jobs-apply-button, button[aria-label*="Easy Apply" i], button[aria-label^="Apply" i], a[aria-label^="Apply" i]',
+    )
+    .first();

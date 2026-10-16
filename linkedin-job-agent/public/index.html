@@ -66,6 +66,7 @@
   .job a { color: var(--text); font-weight: 600; text-decoration: none; }
   .job .meta { font-size: 13px; color: var(--muted); }
   .score { float: right; font-weight: 700; font-size: 13px; padding: 2px 8px; border-radius: 6px; background: var(--chip); }
+  .job a.applylink { color: var(--brand); font-weight: 600; font-size: 13px; }
   .s-applied { color: var(--ok); } .s-excluded { color: var(--warn); } .s-needs_attention { color: var(--amber); }
   pre { margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; color: var(--muted); }
   .warn { background: color-mix(in srgb, var(--warn) 12%, var(--card)); border-color: var(--warn); }
@@ -144,6 +145,11 @@
     <section class="card">
       <h2>Settings</h2>
       <label class="toggle"><span><b>Live mode</b><br><span class="muted">Off = fill forms but don't submit</span></span><input type="checkbox" id="live" onchange="toggleLive(this)"></label>
+      <p class="muted" style="margin:8px 0 4px">Which jobs</p>
+      <select id="applyMode" onchange="set({applyMode:this.value})">
+        <option value="all">All jobs: Easy Apply + company websites</option>
+        <option value="easy">Easy Apply only</option>
+      </select>
       <p class="muted" style="margin:8px 0 4px">Search keywords (comma separated, blank = from my profile)</p>
       <input type="text" id="kw" onchange="set({keywords:this.value.split(',')})">
       <div class="row" style="margin-top:10px">
@@ -330,7 +336,7 @@ async function refresh() {
 
   $('live').checked = !s.dryRun;
   if (document.activeElement !== $('kw')) $('kw').value = s.keywords.join(', ');
-  for (const [id, v] of [['minScore', s.minScore], ['maxPerRun', s.maxPerRun], ['posted', s.postedWithin]]) if (document.activeElement !== $(id)) $(id).value = v;
+  for (const [id, v] of [['applyMode', s.applyMode || 'all'], ['minScore', s.minScore], ['maxPerRun', s.maxPerRun], ['posted', s.postedWithin]]) if (document.activeElement !== $(id)) $(id).value = v;
   if (document.activeElement !== $('years')) $('years').value = s.yearsExperience ?? '';
 
   if ($('lipanel').hidden) {
@@ -362,6 +368,7 @@ async function refresh() {
     '<div class="job"><span class="score">' + j.score + '%</span><a href="' + esc(j.url) + '" target="_blank" rel="noopener">' + esc(j.title) + '</a>' +
     '<div class="meta">' + esc(j.company) + ' · ' + esc(j.location) + ' · ' + new Date(j.at).toLocaleString() + '</div>' +
     (j.note ? '<div class="meta s-' + j.status + '">' + esc(j.note) + '</div>' : '') +
+    (j.applyUrl && j.status !== 'applied' ? '<div class="meta"><a class="applylink" href="' + esc(j.applyUrl) + '" target="_blank" rel="noopener">Open application on company site →</a></div>' : '') +
     (j.reasons.length ? '<div class="meta">' + esc(j.reasons.join(' · ')) + '</div>' : '') + '</div>').join('') : 'Nothing here yet.';
 
   $('errshot').hidden = !status.lastErrorShot;

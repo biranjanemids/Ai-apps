@@ -97,6 +97,7 @@ export function startServer() {
     if (Number.isFinite(b.minScore)) patch.minScore = Math.max(0, Math.min(100, Number(b.minScore)));
     if (Number.isFinite(b.maxPerRun)) patch.maxPerRun = Math.max(1, Math.min(50, Number(b.maxPerRun)));
     if (b.yearsExperience === null || Number.isFinite(b.yearsExperience)) patch.yearsExperience = b.yearsExperience ?? null;
+    if (b.applyMode === 'all' || b.applyMode === 'easy') patch.applyMode = b.applyMode;
     if (b.postedWithin && ['r86400', 'r604800', 'r2592000'].includes(b.postedWithin)) patch.postedWithin = b.postedWithin;
     res.json(saveSettings(patch));
   });

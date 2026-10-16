@@ -20,6 +20,8 @@ export interface JobRecord {
   reasons: string[];
   status: JobStatus;
   note?: string;
+  /** Company application page, for jobs you finish yourself */
+  applyUrl?: string;
   at: string;
 }
 

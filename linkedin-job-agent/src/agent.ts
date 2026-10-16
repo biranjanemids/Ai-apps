@@ -9,7 +9,9 @@ import { store, type JobRecord } from './store.js';
 import { isLoggedIn, openBrowser, pause } from './linkedin/browser.js';
 import { scrapeOwnProfile } from './linkedin/profile.js';
 import { jobDetails, searchJobIds } from './linkedin/jobs.js';
-import { easyApply } from './linkedin/easyApply.js';
+import { easyApply, type ApplyResult } from './linkedin/easyApply.js';
+import { externalApply } from './linkedin/externalApply.js';
+import { splitName, type Applicant } from './answers.js';
 import { llmFit } from './llm.js';
 import { notify } from './notify.js';
 
@@ -163,7 +165,20 @@ class Agent {
     const qctx = { answers, skills: profile.skills, years, profileUrl: profile.profileUrl };
     const me = { titles: [...keywords, ...profileTitles(profile)], skills: profile.skills, years };
 
-    return this.withPage(async (page) => {
+    const current = profile.experiences.find((e) => e.current);
+    const applicant: Applicant = {
+      ...splitName(profile.name),
+      fullName: profile.name,
+      email: answers.email,
+      phone: answers.phone,
+      linkedinUrl: answers.linkedinUrl ?? (profile.profileUrl || undefined),
+      portfolioUrl: answers.portfolioUrl,
+      city: answers.city ?? 'Bengaluru',
+      currentCompany: current?.company,
+      currentTitle: current?.title,
+    };
+
+    return this.withPage(async (page, ctx) => {
       // 1. Find and rank
       const candidates: { job: JobDetails; score: number; reasons: string[] }[] = [];
       const seen = new Set<string>();
@@ -175,7 +190,9 @@ class Agent {
           if (this.stopRequested) break;
           // dry-run results are re-evaluated once you switch to live mode
           const prev = store.get(id);
-          if (seen.has(id) || (prev && prev.status !== 'dry_run')) continue;
+          // re-check jobs skipped only because they weren't Easy Apply, now that company sites are supported
+          const retry = !prev || prev.status === 'dry_run' || (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? ''));
+          if (seen.has(id) || !retry) continue;
           seen.add(id);
           const job = await jobDetails(page, id).catch(() => null);
           if (!job || !job.title) continue;
@@ -205,8 +222,11 @@ class Agent {
         }
         await page.goto(c.job.url, { waitUntil: 'domcontentloaded' });
         await pause(1500, 2500);
-        const res = await easyApply(page, qctx, settings.dryRun).catch((e) => ({ status: 'failed' as const, note: (e as Error).message }));
-        this.save(c.job, c.score, c.reasons, res.status, res.note);
+        const res: ApplyResult = await (c.job.easyApply
+          ? easyApply(page, qctx, settings.dryRun)
+          : externalApply(page, ctx, applicant, qctx, settings.dryRun)
+        ).catch((e) => ({ status: 'failed' as const, note: (e as Error).message.split('\n')[0] }));
+        this.save(c.job, c.score, c.reasons, res.status, res.note, res.applyUrl);
         if (res.status === 'applied') applied++;
         if (res.status === 'needs_attention') attention++;
         await pause(20000, 45000);
@@ -233,7 +253,8 @@ class Agent {
     const ex = exclusionReason(job, exclusions);
     if (ex) return { status: 'excluded', note: ex, score: 0, reasons: [] };
     if (job.alreadyApplied) return { status: 'skipped', note: 'already applied on LinkedIn', score: 0, reasons: [] };
-    if (!job.easyApply) return { status: 'skipped', note: 'not Easy Apply (external site)', score: 0, reasons: [] };
+    if (!job.easyApply && !job.externalApply) return { status: 'skipped', note: 'no Apply button (closed or already applied)', score: 0, reasons: [] };
+    if (!job.easyApply && settings.applyMode === 'easy') return { status: 'skipped', note: 'company-site job (Easy Apply only is on)', score: 0, reasons: [] };
     if (!isBangalore(job.location)) return { status: 'skipped', note: `location: ${job.location}`, score: 0, reasons: [] };
     const t = titleExcluded(job.title, settings.excludedTitleWords);
     if (t) return { status: 'skipped', note: t, score: 0, reasons: [] };
@@ -248,8 +269,8 @@ class Agent {
     return { score, reasons };
   }
 
-  private save(job: JobDetails, score: number, reasons: string[], status: JobRecord['status'], note?: string) {
-    store.save({ id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, at: new Date().toISOString() });
+  private save(job: JobDetails, score: number, reasons: string[], status: JobRecord['status'], note?: string, applyUrl?: string) {
+    store.save({ id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl, at: new Date().toISOString() });
     this.log(`${status.toUpperCase()}: ${job.title} @ ${job.company} (${score})${note ? ` — ${note}` : ''}`);
   }
 }

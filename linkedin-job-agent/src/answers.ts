@@ -105,3 +105,37 @@ function numericOption(answer: string, options: string[]): string | null {
   }
   return null;
 }
+
+export interface Applicant {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  linkedinUrl?: string;
+  portfolioUrl?: string;
+  city?: string;
+  currentCompany?: string;
+  currentTitle?: string;
+}
+
+/** Contact/identity fields found on company application forms (Greenhouse, Lever, …). */
+export function identityAnswer(label: string, inputType: string, a: Applicant): string | null | undefined {
+  const q = label.toLowerCase().replace(/\s+/g, ' ').replace(/\*/g, '').trim();
+  if (inputType === 'email' || /e-?mail/.test(q)) return a.email ?? null;
+  if (inputType === 'tel' || /\b(phone|mobile|contact number)\b/.test(q)) return a.phone ?? null;
+  if (/first.?name|given name|forename/.test(q)) return a.firstName;
+  if (/last.?name|surname|family name/.test(q)) return a.lastName || null;
+  if (/^(full )?name$|^your name|full name|candidate name|legal name/.test(q)) return a.fullName;
+  if (/linkedin/.test(q)) return a.linkedinUrl ?? null;
+  if (/github|portfolio|website|personal (site|url)|other (url|link)/.test(q)) return a.portfolioUrl ?? null;
+  if (/current (company|employer|organi[sz]ation)|^company$|^organi[sz]ation$/.test(q)) return a.currentCompany ?? null;
+  if (/current (title|designation|role|position)/.test(q)) return a.currentTitle ?? null;
+  if (/^(location|city|current location|current city)/.test(q)) return a.city ?? 'Bengaluru';
+  return undefined; // not an identity field
+}
+
+export function splitName(full: string): { firstName: string; lastName: string } {
+  const parts = full.trim().split(/\s+/).map((p) => p.charAt(0).toUpperCase() + p.slice(1));
+  return { firstName: parts[0] ?? '', lastName: parts.slice(1).join(' ') };
+}

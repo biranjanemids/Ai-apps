@@ -11,6 +11,8 @@ export interface JobDetails {
   description: string;
   url: string;
   easyApply: boolean;
+  /** "Apply" button that leads to the company's own careers site */
+  externalApply: boolean;
   alreadyApplied: boolean;
 }
 
