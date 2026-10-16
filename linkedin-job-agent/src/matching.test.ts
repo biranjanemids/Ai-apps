@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { exclusionReason, normalizeCompany, requiredYears, scoreJob, isBangalore, titleExcluded } from './matching.js';
 import { resolveAnswer } from './answers.js';
 import { parseExperience } from './linkedin/profile.js';
-import { yearsFromExperiences } from './profile.js';
+import { profileFromResume, roleFromResume, yearsFromExperiences, yearsFromResume } from './profile.js';
 import { effectiveExclusions } from './agent.js';
 import type { Settings } from './config.js';
 
@@ -102,4 +102,16 @@ test('parseExperience handles single and grouped roles and finds the current emp
     ['Systems Engineer', 'Infosys', false],
   ]);
   assert.equal(yearsFromExperiences(exps, new Date('2026-06-01')), 10);
+});
+
+test('resume parsing: role, years and skills', () => {
+  const cv = 'Priya Sharma\nSr. Software Engineer\nAcme — Mar 2021 – Present\nInfosys, Jul 2017 to Feb 2021\nJava, Kafka, AWS';
+  const now = new Date('2026-10-16');
+  assert.equal(roleFromResume(cv), 'Senior Software Engineer');
+  assert.equal(yearsFromResume(cv, now), 9.3);
+  assert.equal(yearsFromResume('No dates here'), 0);
+  const p = profileFromResume(cv);
+  assert.equal(p.name, 'Priya Sharma');
+  assert.deepEqual(p.skills, ['Java', 'Kafka', 'AWS']);
+  assert.equal(p.profileUrl, '', 'resume-only profile must not count as synced from LinkedIn');
 });

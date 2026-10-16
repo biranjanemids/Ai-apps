@@ -24,6 +24,20 @@
   header h1 { font-size: 17px; margin: 0; flex: 1; }
   .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: rgba(255,255,255,.2); }
   main { max-width: 640px; margin: 0 auto; padding: 12px 16px; display: grid; gap: 12px; }
+  .col { display: grid; gap: 12px; align-content: start; min-width: 0; }
+  #app:not([hidden]) { display: grid; gap: 12px; }
+  @media (min-width: 960px) {
+    main { max-width: 1180px; padding: 20px 24px; }
+    #app:not([hidden]) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
+    .side { position: sticky; top: 72px; }
+    #jobs { max-height: 52vh; overflow: auto; }
+  }
+  .drop { display: grid; gap: 4px; place-items: center; text-align: center; padding: 22px 12px; border: 2px dashed var(--line); border-radius: 12px; cursor: pointer; background: var(--bg); }
+  .drop.over { border-color: var(--brand); background: var(--chip); }
+  .drop input { display: none; }
+  .drop b { color: var(--brand); }
+  .skills { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+  .skills span { background: var(--chip); border-radius: 6px; padding: 2px 8px; font-size: 12px; color: var(--text); }
   #app, .card, .tabs { min-width: 0; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; }
   .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
@@ -75,7 +89,8 @@
   </section>
 
   <div id="app" hidden>
-    <section class="card" id="licard" style="margin-bottom:12px">
+    <div class="col">
+    <section class="card" id="licard">
       <h2>LinkedIn</h2>
       <div id="listatus" class="muted"></div>
       <div id="lipanel" hidden>
@@ -89,49 +104,21 @@
         <div class="row" style="margin-top:8px"><button class="ghost" onclick="liCancel()">Cancel</button><button class="primary" onclick="liFinish()">I'm logged in</button></div>
       </div>
     </section>
-    <section class="card" style="margin-bottom:12px">
-      <div class="stats">
-        <div><b id="st-today">0</b><span>applied today</span></div>
-        <div><b id="st-applied">0</b><span>applied total</span></div>
-        <div><b id="st-attn">0</b><span>need you</span></div>
-        <div><b id="st-ex">0</b><span>blocked</span></div>
-      </div>
-      <p class="muted" id="last" style="margin:10px 0 12px"></p>
-      <div id="runbox"></div>
+    <section class="card" id="rescard">
+      <h2>Resume</h2>
+      <label class="drop" id="drop">
+        <input type="file" id="resume" accept=".pdf,.txt,application/pdf,text/plain" onchange="uploadResume(this.files[0]); this.value=''">
+        <b>Upload resume</b><span class="muted" id="droptext">PDF or .txt. Tap to choose, or drag it here.</span>
+      </label>
+      <div id="resinfo" class="muted" style="margin-top:10px"></div>
     </section>
-
-    <section class="card" id="excard" style="margin-bottom:12px">
+    <section class="card" id="excard">
       <h2>Never apply to</h2>
       <div class="chips" id="excl"></div>
       <div class="row"><input type="text" id="newex" placeholder="Add company (e.g. parent / group name)"><button class="ghost" style="flex:0" onclick="addEx()">Add</button></div>
       <label class="toggle"><span class="muted">Auto-block my current employer from LinkedIn</span><input type="checkbox" id="autoex" onchange="set({autoExcludeCurrentEmployer:this.checked})"></label>
     </section>
-
-    <section class="card" style="margin-bottom:12px">
-      <h2>Settings</h2>
-      <label class="toggle"><span><b>Live mode</b><br><span class="muted">Off = fill forms but don't submit</span></span><input type="checkbox" id="live" onchange="toggleLive(this)"></label>
-      <p class="muted" style="margin:8px 0 4px">Search keywords (comma separated, blank = from my profile)</p>
-      <input type="text" id="kw" onchange="set({keywords:this.value.split(',')})">
-      <div class="row" style="margin-top:10px">
-        <div><p class="muted" style="margin:0 0 4px">Min match %</p><input type="number" id="minScore" min="0" max="100" onchange="set({minScore:+this.value})"></div>
-        <div><p class="muted" style="margin:0 0 4px">Max per run</p><input type="number" id="maxPerRun" min="1" max="50" onchange="set({maxPerRun:+this.value})"></div>
-      </div>
-      <div class="row" style="margin-top:10px">
-        <div><p class="muted" style="margin:0 0 4px">Posted within</p>
-          <select id="posted" onchange="set({postedWithin:this.value})"><option value="r86400">24 hours</option><option value="r604800">1 week</option><option value="r2592000">1 month</option></select></div>
-        <div><p class="muted" style="margin:0 0 4px">My years of exp.</p><input type="number" id="years" step="0.5" min="0" onchange="set({yearsExperience:this.value===''?null:+this.value})"></div>
-      </div>
-    </section>
-
-    <section class="card" style="margin-bottom:12px">
-      <h2>Profile</h2>
-      <div id="profile" class="muted">Not synced yet.</div>
-      <p class="muted" style="margin:10px 0 4px">Resume (PDF): <span id="resname">none</span></p>
-      <input type="file" id="resume" accept=".pdf,.txt,application/pdf,text/plain" onchange="uploadResume(this)">
-      <button class="ghost" style="width:100%;margin-top:10px" onclick="post('/api/sync-profile').then(refresh)">Re-sync from LinkedIn + resume</button>
-    </section>
-
-    <section class="card" style="margin-bottom:12px">
+    <section class="card">
       <h2>My answers for application forms</h2>
       <form id="ans" onsubmit="saveAnswers(event)">
         <div class="grid2">
@@ -154,17 +141,48 @@
         <p class="muted" id="anssaved" style="margin:6px 0 0"></p>
       </form>
     </section>
-
-    <section class="card" style="margin-bottom:12px">
+    <section class="card">
+      <h2>Settings</h2>
+      <label class="toggle"><span><b>Live mode</b><br><span class="muted">Off = fill forms but don't submit</span></span><input type="checkbox" id="live" onchange="toggleLive(this)"></label>
+      <p class="muted" style="margin:8px 0 4px">Search keywords (comma separated, blank = from my profile)</p>
+      <input type="text" id="kw" onchange="set({keywords:this.value.split(',')})">
+      <div class="row" style="margin-top:10px">
+        <div><p class="muted" style="margin:0 0 4px">Min match %</p><input type="number" id="minScore" min="0" max="100" onchange="set({minScore:+this.value})"></div>
+        <div><p class="muted" style="margin:0 0 4px">Max per run</p><input type="number" id="maxPerRun" min="1" max="50" onchange="set({maxPerRun:+this.value})"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <div><p class="muted" style="margin:0 0 4px">Posted within</p>
+          <select id="posted" onchange="set({postedWithin:this.value})"><option value="r86400">24 hours</option><option value="r604800">1 week</option><option value="r2592000">1 month</option></select></div>
+        <div><p class="muted" style="margin:0 0 4px">My years of exp.</p><input type="number" id="years" step="0.5" min="0" onchange="set({yearsExperience:this.value===''?null:+this.value})"></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Profile</h2>
+      <div id="profile" class="muted">Not synced yet.</div>
+      <button class="ghost" style="width:100%;margin-top:10px" onclick="post('/api/sync-profile').then(refresh)">Re-sync from LinkedIn + resume</button>
+    </section>
+    </div>
+    <div class="col side">
+    <section class="card">
+      <div class="stats">
+        <div><b id="st-today">0</b><span>applied today</span></div>
+        <div><b id="st-applied">0</b><span>applied total</span></div>
+        <div><b id="st-attn">0</b><span>need you</span></div>
+        <div><b id="st-ex">0</b><span>blocked</span></div>
+      </div>
+      <p class="muted" id="last" style="margin:10px 0 12px"></p>
+      <div id="runbox"></div>
+    </section>
+    <section class="card">
       <h2>Jobs</h2>
       <div class="tabs" id="tabs"></div>
       <div id="jobs" class="muted">—</div>
     </section>
-
     <section class="card">
       <h2>Activity</h2>
       <pre id="logs"></pre>
     </section>
+    </div>
   </div>
 </main>
 <script>
@@ -236,13 +254,19 @@ async function liFinish() {
 }
 async function liCancel() { clearInterval(liTimer); await post('/api/login/cancel'); $('lipanel').hidden = true; refresh(); }
 
-async function uploadResume(el) {
-  const f = el.files[0]; if (!f) return;
-  $('resname').textContent = 'uploading…';
+async function uploadResume(f) {
+  if (!f) return;
+  if (f.size > 10e6) return alert('That file is over 10 MB.');
+  if (!/\.(pdf|txt)$/i.test(f.name)) return alert('Please upload a PDF (or .txt) resume.');
+  $('droptext').textContent = 'Reading ' + f.name + '…';
   const r = await fetch('/api/resume', { method: 'POST', body: f, headers: { Authorization: 'Bearer ' + token, 'Content-Type': f.type || 'application/octet-stream' } });
-  $('resname').textContent = r.ok ? f.name + ' ✓' : 'upload failed';
-  el.value = ''; refresh();
+  $('droptext').textContent = r.ok ? f.name + ' uploaded ✓  Tap to replace.' : 'Upload failed. Try again.';
+  refresh();
 }
+const drop = $('drop');
+['dragenter', 'dragover'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', (e) => uploadResume(e.dataTransfer.files[0]));
 
 let answersLoaded = false;
 async function loadAnswersForm() {
@@ -303,12 +327,19 @@ async function refresh() {
       ? '<span class="ok">Connected ✓</span> <button class="ghost" style="padding:6px 10px;margin-left:6px" onclick="liStart()">Reconnect</button>'
       : '<span class="bad">Not connected.</span><button class="primary" style="margin-top:10px" onclick="liStart()">Connect LinkedIn</button>';
   }
-  $('resname').textContent = status.resume || 'none — upload it below';
+  const pr = status.profile;
+  $('resinfo').innerHTML = status.resume && pr && pr.hasResume
+    ? '<span class="ok">' + esc(status.resume) + ' loaded</span>' +
+      (pr.resumeYears ? ' · about ' + esc(pr.resumeYears) + ' yrs experience' : '') +
+      ' · ' + pr.resumeSkills.length + ' skills found' +
+      '<div class="skills">' + pr.resumeSkills.map((x) => '<span>' + esc(x) + '</span>').join('') + '</div>'
+    : 'No resume yet. Matching uses your skills and experience from it, and it\'s attached when a form asks for one.';
+  $('rescard').classList.toggle('warn', !status.resume);
   if (!answersLoaded) loadAnswersForm();
 
   const p = status.profile;
   $('profile').innerHTML = p
-    ? '<b style="color:var(--text)">' + esc(p.name) + '</b><br>' + esc(p.headline) + '<br>' + esc(p.years) + ' yrs experience · resume ' + (p.hasResume ? 'loaded' : 'not set') +
+    ? '<b style="color:var(--text)">' + esc(p.name) + '</b><br>' + esc(p.headline) + '<br>' + esc(p.years) + ' yrs experience · ' + (p.fromLinkedIn ? 'from LinkedIn' : 'from resume only, connect LinkedIn to detect your company') +
       '<br><span style="font-size:12px">' + esc(p.skills.slice(0, 20).join(', ')) + '</span>'
     : 'Not synced yet.';
 

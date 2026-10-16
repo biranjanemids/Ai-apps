@@ -14,6 +14,38 @@ ranks them best match first and applies. It **never applies to your own company*
 | Score 0–100 | Skills overlap (50 points) + how close the title is to your roles (30) + experience fit against "5+ yrs" or "3-6 yrs" in the posting (20). If you set `GROQ_API_KEY`, an LLM also rates the job against your resume and the two scores are averaged. |
 | Apply | Highest scores first, up to `MAX_APPLICATIONS_PER_RUN` and `MAX_APPLICATIONS_PER_DAY`, waiting 20–45 s between applications. Screening questions are answered from your profile and `answers.json`. **If a question can't be answered truthfully** (for example, years with a skill you don't list), the job goes to **"Needs you"** on the phone instead of the agent guessing. |
 
+## Web version (open it from any browser)
+
+The same agent runs on a cloud server, and you open it at a web address from your phone or laptop.
+On a laptop the dashboard shows two columns, and you can drag your resume PDF onto the **Resume** card.
+
+**Deploy on Render** (about 5 minutes):
+
+1. Click [**Deploy to Render**](https://render.com/deploy?repo=https://github.com/biranjanemids/Ai-apps/tree/claude/linkedin-bangalore-job-agent-x13ndj)
+   and sign in with GitHub. This uses `render.yaml` in the repo root.
+2. When asked, fill in `EXCLUDED_COMPANIES` (your company and its parent/group). `GROQ_API_KEY` and `NTFY_TOPIC` are optional.
+3. When it finishes, open the service → **Environment** and copy the generated `DASHBOARD_TOKEN`.
+4. Open `https://<your-service>.onrender.com/#token=<DASHBOARD_TOKEN>`, then:
+   **Upload resume → Connect LinkedIn → My answers → check Never apply to → Find jobs (dry run)**.
+
+Cost: the plan includes a 1 GB disk that keeps your login, resume and history across restarts.
+That needs Render's Starter plan (about US$7/month); the free plan has no disk.
+
+**Or run the same container on any computer with Docker (free):**
+
+```bash
+cd linkedin-job-agent
+docker build -t job-agent .
+docker run -d --name job-agent -p 8787:8787 -v job-agent-data:/data \
+  -e DASHBOARD_TOKEN=$(openssl rand -hex 24) -e EXCLUDED_COMPANIES="Your Company,Parent Group" job-agent
+docker logs job-agent   # prints the dashboard link with your token
+```
+
+Notes for the web version:
+- Anyone with the dashboard link and token can control the agent, so keep the token private.
+- LinkedIn may ask for an extra verification code the first time you log in from a cloud server. Enter it on the Connect LinkedIn screen.
+- Uploading your resume first is fine. The agent still reads your LinkedIn profile before every run, so your current company is always detected and blocked.
+
 ## Run it on your Android phone (no computer needed)
 
 Everything runs on the phone itself: the agent, its browser, your LinkedIn login and your job history.

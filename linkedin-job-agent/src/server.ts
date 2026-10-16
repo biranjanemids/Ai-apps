@@ -5,7 +5,8 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import fs from 'node:fs';
 import { DATA_DIR, env, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, searchKeywords } from './agent.js';
-import { currentEmployers, loadProfile } from './profile.js';
+import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
+import { extractSkillsFromText } from './matching.js';
 import { store, type JobStatus } from './store.js';
 import { getSession } from './linkedin/browser.js';
 import * as login from './linkedin/remoteLogin.js';
@@ -52,6 +53,9 @@ export function startServer() {
         years: settings.yearsExperience ?? profile.totalYears,
         skills: profile.skills,
         hasResume: Boolean(profile.resumeText),
+        fromLinkedIn: Boolean(profile.profileUrl),
+        resumeSkills: profile.resumeText ? extractSkillsFromText(profile.resumeText) : [],
+        resumeYears: profile.resumeText ? yearsFromResume(profile.resumeText) : null,
         updatedAt: profile.updatedAt,
       },
       logs: agent.logs.slice(-60),
@@ -115,7 +119,7 @@ export function startServer() {
   app.post('/api/login/scroll', wrap((req) => login.scroll(Number(req.body.dy) || 0)));
   app.post('/api/login/finish', wrap(async () => {
     const ok = await login.finish();
-    if (ok && !loadProfile()) agent.syncProfile().catch((e) => agent.log(`Profile sync failed: ${(e as Error).message}`));
+    if (ok && !loadProfile()?.profileUrl) agent.syncProfile().catch((e) => agent.log(`Profile sync failed: ${(e as Error).message}`));
     return { ok };
   }));
   app.post('/api/login/cancel', wrap(() => login.stop()));

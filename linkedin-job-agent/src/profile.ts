@@ -81,3 +81,37 @@ export function yearsFromExperiences(exps: Experience[], now = new Date()): numb
   const months = now.getFullYear() * 12 + now.getMonth() - earliest;
   return Math.max(0, Math.round((months / 12) * 10) / 10);
 }
+
+const RANGE = new RegExp(
+  `(?:(${MONTHS.join('|')})[a-z]*\\.?\\s*)?((?:19|20)\\d{2})\\s*(?:-|–|—|to)\\s*(?:present|current|now|today|(?:(?:${MONTHS.join('|')})[a-z]*\\.?\\s*)?(?:19|20)\\d{2})`,
+  'gi',
+);
+
+/** Years since the earliest "Jan 2019 – Present"-style date range in a resume. */
+export function yearsFromResume(text: string, now = new Date()): number {
+  const ranges = [...text.matchAll(RANGE)].map((m) => ({ title: '', company: '', dates: m[0], current: false }));
+  return yearsFromExperiences(ranges, now);
+}
+
+const ROLE = /\b((?:senior|sr\.?|lead|staff|principal|junior|associate)\s+)?(software|backend|back-end|frontend|front-end|full[- ]?stack|data|devops|qa|test|automation|mobile|android|ios|cloud|ml|machine learning|ai|platform|site reliability|security|java|python|\.net|react|node(?:\.js)?)\s+(engineer|developer|scientist|analyst|architect|consultant)\b/i;
+
+/** Best-guess job title from a resume, e.g. "Senior Software Engineer". */
+export function roleFromResume(text: string): string {
+  const m = text.match(ROLE);
+  return m ? m[0].replace(/\s+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bSr\b\.?/, 'Senior') : '';
+}
+
+/** A profile built only from the resume, used until LinkedIn is connected. */
+export function profileFromResume(text: string): Profile {
+  const role = roleFromResume(text);
+  return {
+    name: text.split('\n').map((l) => l.trim()).find((l) => l && l.length < 60) ?? '',
+    headline: role,
+    profileUrl: '',
+    experiences: [],
+    skills: extractSkillsFromText(text),
+    totalYears: yearsFromResume(text),
+    resumeText: text,
+    updatedAt: new Date().toISOString(),
+  };
+}

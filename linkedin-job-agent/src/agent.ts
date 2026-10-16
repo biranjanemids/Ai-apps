@@ -1,7 +1,9 @@
 import type { BrowserContext, Page } from 'playwright';
 import { env, loadAnswers, loadSettings, type Settings } from './config.js';
 import { exclusionReason, isBangalore, normalizeCompany, scoreJob, titleExcluded, type JobDetails } from './matching.js';
-import { currentEmployers, loadProfile, mergeResume, profileTitles, readResumeText, saveProfile, type Profile } from './profile.js';
+import {
+  currentEmployers, loadProfile, mergeResume, profileFromResume, profileTitles, readResumeText, roleFromResume, saveProfile, yearsFromResume, type Profile,
+} from './profile.js';
 import { store, type JobRecord } from './store.js';
 import { isLoggedIn, openBrowser, pause } from './linkedin/browser.js';
 import { scrapeOwnProfile } from './linkedin/profile.js';
@@ -80,7 +82,9 @@ class Agent {
     const wasSyncing = this.syncing;
     this.syncing = true;
     const scraped = await this.withPage((page) => scrapeOwnProfile(page)).finally(() => (this.syncing = wasSyncing));
-    const profile = mergeResume({ ...scraped, resumeText: '' }, await readResumeText());
+    const resume = await readResumeText();
+    const profile = mergeResume({ ...scraped, resumeText: '' }, resume);
+    if (!profile.totalYears) profile.totalYears = yearsFromResume(resume);
     saveProfile(profile);
     this.log(
       `Profile: ${profile.name} — ${profile.headline}; ${profile.totalYears} yrs; ${profile.skills.length} skills; ` +
@@ -91,11 +95,14 @@ class Agent {
 
   /** Re-read the resume (e.g. after uploading a new one) without opening LinkedIn. */
   async refreshResume(): Promise<void> {
+    const text = await readResumeText();
     const p = loadProfile();
-    if (!p) return;
-    const next = mergeResume(p, await readResumeText());
+    // No LinkedIn yet: the resume alone is enough to search and score jobs
+    const next = p ? mergeResume(p, text) : profileFromResume(text);
+    if (p && !next.totalYears) next.totalYears = yearsFromResume(text);
+    if (!next.headline) next.headline = roleFromResume(text);
     saveProfile(next);
-    this.log(`Resume loaded: ${next.skills.length} skills total`);
+    this.log(`Resume loaded: ${next.skills.length} skills, ${next.totalYears} yrs experience${next.headline ? `, role: ${next.headline}` : ''}`);
   }
 
   async run(): Promise<string> {
@@ -116,7 +123,9 @@ class Agent {
 
   private async runInner(): Promise<string> {
     const settings = loadSettings();
-    const profile = loadProfile() ?? (await this.syncProfile());
+    // A resume-only profile doesn't know your current employer — always read LinkedIn first
+    const saved = loadProfile();
+    const profile = saved?.profileUrl ? saved : await this.syncProfile();
     const years = settings.yearsExperience ?? profile.totalYears;
     const exclusions = effectiveExclusions(settings, profile);
 

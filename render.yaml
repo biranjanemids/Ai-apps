@@ -1,0 +1,31 @@
+# One-click deploy of the LinkedIn Job Agent web version on Render (https://render.com).
+# A persistent disk keeps your LinkedIn login, resume and job history across restarts;
+# disks need Render's Starter plan or higher.
+services:
+  - type: web
+    name: linkedin-job-agent
+    runtime: docker
+    rootDir: linkedin-job-agent
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: singapore
+    healthCheckPath: /
+    disk:
+      name: agent-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: DASHBOARD_TOKEN
+        generateValue: true
+      - key: EXCLUDED_COMPANIES
+        sync: false
+      - key: DRY_RUN
+        value: "true"
+      - key: MAX_APPLICATIONS_PER_DAY
+        value: "40"
+      - key: RUN_EVERY_MINUTES
+        value: "0"
+      - key: GROQ_API_KEY
+        sync: false
+      - key: NTFY_TOPIC
+        sync: false
