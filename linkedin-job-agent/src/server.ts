@@ -9,6 +9,7 @@ import { agent, effectiveExclusions, LAST_ERROR_SHOT, lastRunEndedAt, RUN_STATE,
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
 import { store, type JobStatus } from './store.js';
+import { plausibleLakhs } from './answers.js';
 import { getSession } from './linkedin/browser.js';
 import * as login from './linkedin/remoteLogin.js';
 
@@ -186,6 +187,11 @@ export function startServer() {
       authorizedToWorkInIndia: flag(b.authorizedToWorkInIndia), requiresSponsorship: flag(b.requiresSponsorship),
       willingToRelocate: flag(b.willingToRelocate), comfortableOnsite: flag(b.comfortableOnsite),
     };
+    for (const [k, label] of [['currentCtcLakhs', 'Current CTC'], ['expectedCtcLakhs', 'Expected CTC']] as const) {
+      if (next[k] !== undefined && !plausibleLakhs(next[k])) {
+        return res.status(400).json({ error: `${label} must be in lakhs per annum (e.g. 65 for ₹65 LPA), not ${next[k]}` });
+      }
+    }
     saveAnswers(next);
     res.json(next);
   });

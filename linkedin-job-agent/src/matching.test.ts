@@ -209,3 +209,11 @@ test('a job with an unrelated title cannot pass on skills alone', () => {
   assert.ok(scoreJob({ title: 'Regional Sales Manager', description: desc }, me).score < 55);
   assert.ok(scoreJob({ title: 'Staff Engineer, Platform', description: desc }, me).score >= 55, 'related title still passes');
 });
+
+test('impossible CTC values are never submitted', async () => {
+  const { resolveAnswer, plausibleLakhs } = await import('./answers.js');
+  const ctx = { answers: { currentCtcLakhs: 65, expectedCtcLakhs: 560035 }, skills: [], years: 15, profileUrl: '' };
+  assert.equal(resolveAnswer('Current CTC (in LPA)', 'text', [], ctx), '65');
+  assert.equal(resolveAnswer('Expected CTC (in LPA)', 'text', [], ctx), null, 'a PIN-code-sized CTC goes to Needs you');
+  assert.ok(plausibleLakhs(80) && !plausibleLakhs(560035) && !plausibleLakhs(0));
+});

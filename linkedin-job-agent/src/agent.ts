@@ -34,6 +34,10 @@ export function lastRunEndedAt(): number {
 
 export const LAST_ERROR_SHOT = path.join(DATA_DIR, 'last-error.png');
 
+/** The whole browser died (not just a tab): the run restarts it rather than failing every job. */
+class BrowserGone extends Error {}
+const isCrash = (e: unknown) => /crash|closed|detached|disconnected|Target/i.test((e as Error)?.message ?? '');
+
 export interface LogLine {
   at: string;
   msg: string;
@@ -160,14 +164,16 @@ class Agent {
     fs.writeFileSync(RUN_STATE, JSON.stringify({ startedAt: new Date().toISOString(), attempts }));
     progress('Starting…');
     try {
-      try {
-        return await this.runInner();
-      } catch (e) {
-        // On a phone, Android sometimes kills the browser mid-run; finished jobs are saved,
-        // so start a fresh browser and carry on once
-        if (!/has been closed|crashed|disconnected/i.test((e as Error).message) || this.stopRequested) throw e;
-        this.log('The browser closed unexpectedly (low memory?) — restarting it and continuing…');
-        return await this.runInner();
+      // On a phone, Android sometimes kills the browser mid-run. Finished jobs and the queue are
+      // saved, so start a fresh browser and carry on (up to twice).
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await this.runInner();
+        } catch (e) {
+          if (!(e instanceof BrowserGone || isCrash(e)) || this.stopRequested || attempt > 2) throw e;
+          this.log(`${(e as Error).message} — restarting the browser and continuing (${attempt}/2)…`);
+          await pause(5000, 8000);
+        }
       }
     } catch (e) {
       const msg = `Run failed: ${(e as Error).message}`;
@@ -240,10 +246,19 @@ class Agent {
         try {
           return await fn(page);
         } catch (e) {
-          if (!/crash|closed|detached|Target/i.test((e as Error).message)) throw e;
+          if (!isCrash(e)) throw e;
           this.log('Browser tab crashed (low memory) — opening a fresh tab and continuing');
-          await freshTab();
-          return fn(page);
+          try {
+            await freshTab();
+          } catch {
+            throw new BrowserGone('the browser closed (Android may have killed it)');
+          }
+          try {
+            return await fn(page);
+          } catch (e2) {
+            if (isCrash(e2)) throw new BrowserGone('the browser keeps crashing');
+            throw e2;
+          }
         }
       };
 
@@ -283,10 +298,16 @@ class Agent {
           const res: ApplyResult = await onPage(async (p) => {
             await p.goto(job.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await pause(1500, 2500);
-            return job.easyApply
+            const r = await (job.easyApply
               ? easyApply(p, jobQctx, settings.dryRun)
-              : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl);
-          }).catch((e) => ({ status: 'failed' as const, note: (e as Error).message.split('\n')[0] }));
+              : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl));
+            // The form "failed" only because the browser died under it — retry, don't give up
+            if (r.status === 'failed' && p.isClosed()) throw new Error('Target page closed during apply');
+            return r;
+          }).catch((e) => {
+            if (e instanceof BrowserGone) throw e; // job stays queued; run() restarts the browser
+            return { status: 'failed' as const, note: (e as Error).message.split('\n')[0] };
+          });
           if (jobQctx.aiLog?.length) this.log(`AI wrote ${jobQctx.aiLog.length} answer(s): ${jobQctx.aiLog.map((x) => x.q).join(' | ').slice(0, 150)}`);
           this.save(job, rec.score, rec.reasons, res.status, res.note, res.applyUrl, jobQctx.aiLog);
           if (res.status === 'applied') applied++;
@@ -324,7 +345,8 @@ class Agent {
             !prev ||
             prev.status === 'dry_run' ||
             (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? '')) ||
-            (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION);
+            (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION) ||
+            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target/i.test(prev.note ?? ''));
           if (seen.has(id) || !retry) {
             tally['seen before'] = (tally['seen before'] ?? 0) + 1;
             continue;
@@ -332,6 +354,7 @@ class Agent {
           seen.add(id);
           progress(`Checking "${kw}" jobs: ${i}/${ids.length} · ${matches} matches so far`);
           const job = await onPage((p) => jobDetails(p, id)).catch((e: Error) => {
+            if (e instanceof BrowserGone) throw e;
             this.log(`Couldn't open job ${id}: ${e.message.split('\n')[0]}`);
             return null;
           });

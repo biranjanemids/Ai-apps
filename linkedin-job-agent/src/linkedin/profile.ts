@@ -39,7 +39,9 @@ export async function scrapeOwnProfile(page: Page): Promise<Omit<Profile, 'resum
   const sk = await detailsPage(page, `${profileUrl}/details/skills/`);
   const skills = sk.items
     .map((lines) => lines[0])
-    .filter((x) => x && x.length < 60 && !/endorse/i.test(x));
+    .filter((x) => x && x.length < 60 && !/endorse/i.test(x))
+    // the skills page's filter tabs, not skills
+    .filter((x) => !/^(all|industry knowledge|tools & technologies|interpersonal skills|other skills|languages|skills)$/i.test(x));
 
   return {
     name,

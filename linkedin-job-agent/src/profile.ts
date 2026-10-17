@@ -24,9 +24,12 @@ export interface Profile {
 
 const FILE = path.join(DATA_DIR, 'profile.json');
 
+const NOT_SKILLS = /^(all|industry knowledge|tools & technologies|interpersonal skills|other skills|languages|skills)$/i;
+
 export function loadProfile(): Profile | null {
   try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    const p = JSON.parse(fs.readFileSync(FILE, 'utf8')) as Profile;
+    return { ...p, skills: p.skills.filter((s) => !NOT_SKILLS.test(s)) };
   } catch {
     return null;
   }

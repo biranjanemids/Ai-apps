@@ -170,6 +170,8 @@
         <option value="all">All jobs: Easy Apply + company websites</option>
         <option value="easy">Easy Apply only</option>
       </select>
+      <p class="muted" style="margin:8px 0 4px">Skip job titles containing (comma separated)</p>
+      <input type="text" id="noTitle" placeholder="intern, analog, VLSI, hardware" onchange="set({excludedTitleWords:this.value.split(',')})">
       <p class="muted" style="margin:8px 0 4px">Search keywords (comma separated, blank = from my profile)</p>
       <input type="text" id="kw" onchange="set({keywords:this.value.split(',')})">
       <div class="row" style="margin-top:10px">
@@ -320,7 +322,8 @@ async function saveAnswers(e) {
   e.preventDefault();
   const body = {};
   for (const el of $('ans').elements) if (el.name) body[el.name] = el.type === 'checkbox' ? el.checked : el.value;
-  await post('/api/answers', body);
+  const r = await post('/api/answers', body);
+  if (r.error) { $('anssaved').innerHTML = '<span class="bad">' + esc(r.error) + '</span>'; return; }
   $('anssaved').textContent = 'Saved ✓';
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
@@ -389,6 +392,7 @@ async function refresh() {
 
   $('live').checked = !s.dryRun;
   if (document.activeElement !== $('kw')) $('kw').value = s.keywords.join(', ');
+  if (document.activeElement !== $('noTitle')) $('noTitle').value = (s.excludedTitleWords || []).join(', ');
   $('nextrun').textContent = status.nextRunAt ? 'Next run: ' + new Date(status.nextRunAt).toLocaleString() : '';
   for (const [id, v] of [['autoRun', String(s.autoRunHours || 0)], ['applyMode', s.applyMode || 'all'], ['minScore', s.minScore], ['maxPerRun', s.maxPerRun], ['posted', s.postedWithin]]) if (document.activeElement !== $(id)) $(id).value = v;
   if (document.activeElement !== $('years')) $('years').value = s.yearsExperience ?? '';

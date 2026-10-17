@@ -85,7 +85,11 @@ export function resolveAnswer(question: string, kind: FieldKind, options: string
   return fitToOptions(raw, kind, options);
 }
 
+/** A CTC in lakhs per annum that's actually plausible (catches typos like a PIN code). */
+export const plausibleLakhs = (v: number | undefined) => v !== undefined && Number.isFinite(v) && v > 0 && v <= 500;
+
 function lakhs(v: number | undefined, q: string): string | null {
+  if (!plausibleLakhs(v)) return null; // leave it for you rather than submit a wrong figure
   if (v === undefined) return null;
   if (/lpa|lakh|lac/.test(q)) return String(v);
   if (/(inr|rupees|₹|annual|per annum)/.test(q)) return String(Math.round(v * 100000));
