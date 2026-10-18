@@ -25,6 +25,8 @@ export interface JobRecord {
   applyUrl?: string;
   /** What the apply step needs, kept while the job is queued */
   job?: { easyApply: boolean; externalApply: boolean; externalUrl?: string; description: string };
+  /** A screenshot was saved for this job (data/shots/<id>.png) */
+  shot?: boolean;
   /** Answers the AI wrote on this application, for you to review */
   aiAnswers?: { q: string; a: string }[];
   /** Scoring version that produced `score`; older low-match skips get re-checked */

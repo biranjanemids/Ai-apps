@@ -71,6 +71,12 @@ export function startServer() {
     });
   });
 
+  app.get('/api/jobs/:id/shot', (req, res) => {
+    const file = path.join(DATA_DIR, 'shots', `${String(req.params.id).replace(/\D/g, '')}.png`);
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'no screenshot' });
+    res.type('image/png').set('Cache-Control', 'no-store').send(fs.readFileSync(file));
+  });
+
   app.get('/api/jobs', (req, res) => {
     const status = (req.query.status as JobStatus | undefined) || undefined;
     res.json(store.list(status).slice(0, 200));

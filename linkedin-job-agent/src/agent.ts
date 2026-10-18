@@ -19,6 +19,8 @@ import { notify, progress } from './notify.js';
 
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
+/** Bump when applying gets smarter so jobs that failed to open the form are tried again. */
+const APPLY_VERSION = 3;
 
 /** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
 export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
@@ -89,6 +91,7 @@ class Agent {
     try {
       const page = ctx.pages()[0] ?? (await ctx.newPage());
       if (!(await isLoggedIn(page))) {
+        await notify('LinkedIn logged you out', 'Open the dashboard and tap "Connect LinkedIn" to continue.');
         throw new Error('Not logged in to LinkedIn. Tap "Connect LinkedIn" on the dashboard (or run `npm run login` on a computer).');
       }
       return await fn(page, ctx);
@@ -302,6 +305,7 @@ class Agent {
             const r = await (job.easyApply
               ? easyApply(p, jobQctx, settings.dryRun)
               : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl));
+            if (r.status === 'failed' && !p.isClosed()) r.shot = await p.screenshot().catch(() => undefined);
             // The form "failed" only because the browser died under it — retry, don't give up
             if (r.status === 'failed' && p.isClosed()) throw new Error('Target page closed during apply');
             return r;
@@ -310,7 +314,11 @@ class Agent {
             return { status: 'failed' as const, note: (e as Error).message.split('\n')[0] };
           });
           if (jobQctx.aiLog?.length) this.log(`AI wrote ${jobQctx.aiLog.length} answer(s): ${jobQctx.aiLog.map((x) => x.q).join(' | ').slice(0, 150)}`);
-          this.save(job, rec.score, rec.reasons, res.status, res.note, res.applyUrl, jobQctx.aiLog);
+          if (res.shot) {
+            fs.mkdirSync(path.join(DATA_DIR, 'shots'), { recursive: true });
+            fs.writeFileSync(path.join(DATA_DIR, 'shots', `${job.id}.png`), res.shot);
+          }
+          this.save(job, rec.score, rec.reasons, res.status, res.note, res.applyUrl, jobQctx.aiLog, Boolean(res.shot));
           if (res.status === 'applied') applied++;
           if (res.status === 'needs_attention') attention++;
           await pause(20000, 45000);
@@ -347,7 +355,7 @@ class Agent {
             prev.status === 'dry_run' ||
             (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? '')) ||
             (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION) ||
-            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target/i.test(prev.note ?? ''));
+            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
           if (seen.has(id) || !retry) {
             tally['seen before'] = (tally['seen before'] ?? 0) + 1;
             continue;
@@ -431,10 +439,11 @@ class Agent {
 
   private save(
     job: JobDetails, score: number, reasons: string[], status: JobRecord['status'], note?: string, applyUrl?: string, aiAnswers?: { q: string; a: string }[],
+    shot?: boolean,
   ) {
     store.save({
       id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl,
-      aiAnswers: aiAnswers?.length ? aiAnswers : undefined, v: SCORING_VERSION, at: new Date().toISOString(),
+      aiAnswers: aiAnswers?.length ? aiAnswers : undefined, shot: shot || undefined, v: status === 'failed' ? APPLY_VERSION : SCORING_VERSION, at: new Date().toISOString(),
       job: status === 'queued'
         ? { easyApply: job.easyApply, externalApply: job.externalApply, externalUrl: job.externalUrl, description: job.description.slice(0, 6000) }
         : undefined,

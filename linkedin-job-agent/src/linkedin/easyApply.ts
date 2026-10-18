@@ -2,31 +2,38 @@ import type { Locator, Page } from 'playwright';
 import { env } from '../config.js';
 import { answerQuestion, type FieldKind, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
-import { applyButton } from './jobs.js';
+import { findApplyButton, passInterstitials } from './jobs.js';
 
 export interface ApplyResult {
   status: 'applied' | 'dry_run' | 'needs_attention' | 'failed';
   note: string;
   /** Where the application lives (company site), if not on LinkedIn */
   applyUrl?: string;
+  /** What the browser showed when it didn't work */
+  shot?: Buffer;
 }
 
 const MAX_STEPS = 12;
 
 /** Opens Easy Apply on the current job page and walks the form. Never guesses answers. */
 export async function easyApply(page: Page, ctx: QuestionContext, dryRun: boolean): Promise<ApplyResult> {
-  const btn = applyButton(page);
-  if (!(await btn.isVisible().catch(() => false))) return { status: 'failed', note: 'Easy Apply button not found' };
+  const btn = await findApplyButton(page);
+  if (!btn) return { status: 'failed', note: 'Easy Apply button not found' };
   await btn.click();
+  await passInterstitials(page);
   // Classic LinkedIn opens a dialog; the newer one opens the form as its own page (/apply/)
-  const modal = page.locator('div[role="dialog"]').filter({ has: page.locator('form, button') }).first();
+  // The (visible) dialog that holds the form — not a dismissed reminder popup
+  const modal = page
+    .locator('div[role="dialog"]:visible')
+    .filter({ has: page.locator('form, input, select, textarea, button[aria-label*="Submit" i], button[aria-label*="next step" i], button[aria-label*="Review" i]') })
+    .first();
   await Promise.race([modal.waitFor({ timeout: 20000 }), page.waitForURL(/\/apply\//, { timeout: 20000 })]).catch(() => {});
   const dialog = (await modal.isVisible().catch(() => false))
     ? modal
     : /\/apply\//.test(page.url())
       ? page.locator('main, body').first()
       : null;
-  if (!dialog) return { status: 'failed', note: 'Easy Apply form did not open' };
+  if (!dialog) return { status: 'failed', note: `Easy Apply form did not open (page: ${page.url().split('?')[0]})` };
 
   let lastSignature = '';
   for (let step = 0; step < MAX_STEPS; step++) {

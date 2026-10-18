@@ -4,7 +4,7 @@ import path from 'node:path';
 import { DATA_DIR, env } from '../config.js';
 import { answerQuestion, identityAnswer, type Applicant, type FieldKind, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
-import { applyButton } from './jobs.js';
+import { applyHref, findApplyButton, passInterstitials } from './jobs.js';
 import type { ApplyResult } from './easyApply.js';
 
 /** Portals that need you to create an account first — the agent can't apply there for you. */
@@ -52,15 +52,16 @@ export async function externalApply(
   dryRun: boolean,
   directUrl?: string,
 ): Promise<ApplyResult> {
-  const btn = applyButton(page);
+  const btn = await findApplyButton(page);
   let site: Page = page;
-  if (await btn.isVisible().catch(() => false)) {
+  if (btn) {
+    directUrl = directUrl ?? (await applyHref(btn));
     const popup = ctx.waitForEvent('page', { timeout: 20000 }).catch(() => null);
-    await btn.click();
+    await btn.click().catch(() => {});
     // LinkedIn sometimes asks before leaving ("Continue to company site" / share profile)
-    await page.locator('div[role="dialog"] button:has-text("Continue"), div[role="dialog"] a:has-text("Continue")').first().click({ timeout: 4000 }).catch(() => {});
+    await passInterstitials(page);
     site = (await popup) ?? page;
-    await site.waitForURL((u) => !/linkedin\.com/.test(u.hostname), { timeout: 30000 }).catch(() => {});
+    await site.waitForURL((u) => !/linkedin\.com/.test(u.hostname), { timeout: 20000 }).catch(() => {});
   }
   if (/linkedin\.com/.test(site.url()) && directUrl) {
     await site.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
@@ -73,7 +74,7 @@ export async function externalApply(
 
   if (/linkedin\.com/.test(new URL(applyUrl).hostname)) {
     await close();
-    return { status: 'failed', note: "Apply button didn't open the company site" };
+    return { status: 'failed', note: `Apply button didn't open the company site (stayed on ${site.url().split('?')[0]})` };
   }
   const portal = detectPortal(applyUrl);
   if (portal.kind === 'account') {

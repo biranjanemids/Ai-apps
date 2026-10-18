@@ -286,6 +286,14 @@ async function liFinish() {
 }
 async function liCancel() { clearInterval(liTimer); await post('/api/login/cancel'); $('lipanel').hidden = true; refresh(); }
 
+const openShots = {}; // job id -> image URL, kept open across the 5-second refresh
+async function showJobShot(e, id) {
+  e.preventDefault();
+  if (openShots[id]) { delete openShots[id]; refresh(); return; }
+  const r = await fetch('/api/jobs/' + id + '/shot', { headers: { Authorization: 'Bearer ' + token } });
+  if (r.ok) { openShots[id] = URL.createObjectURL(await r.blob()); refresh(); }
+}
+
 async function showShot() {
   const r = await fetch('/api/debug/last-error.png', { headers: { Authorization: 'Bearer ' + token } });
   if (!r.ok) return;
@@ -437,6 +445,7 @@ async function refresh() {
     (j.note ? '<div class="meta s-' + j.status + '">' + esc(j.note) + '</div>' : '') +
     (j.applyUrl && j.status !== 'applied' ? '<div class="meta"><a class="applylink" href="' + esc(j.applyUrl) + '" target="_blank" rel="noopener">Open application on company site →</a></div>' : '') +
     (j.reasons.length ? '<div class="meta">' + esc(j.reasons.join(' · ')) + '</div>' : '') +
+    (j.shot ? '<div class="meta"><a href="#" class="applylink" onclick="showJobShot(event, \'' + esc(j.id) + '\')">What the browser saw</a><img id="shot-' + esc(j.id) + '" hidden style="width:100%;margin-top:6px;border-radius:8px;border:1px solid var(--line)"></div>' : '') +
     (j.aiAnswers && j.aiAnswers.length ? '<details class="meta"><summary>AI wrote ' + j.aiAnswers.length + ' answer(s)</summary>' +
       j.aiAnswers.map((x) => '<p style="margin:6px 0"><b>' + esc(x.q) + '</b><br>' + esc(x.a) + '</p>').join('') + '</details>' : '') +
     '</div>').join('') : 'Nothing here yet.';

@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Locator, Page } from 'playwright';
 import { env, type Settings } from '../config.js';
 import { fixTitle, type JobDetails } from '../matching.js';
 import { pause } from './browser.js';
@@ -174,8 +174,8 @@ export async function jobDetails(page: Page, id: string): Promise<JobDetails> {
     if (fromPage.length > description.length) description = fromPage;
   }
 
-  const applyBtn = applyButton(page);
-  const applyText = (await applyBtn.count())
+  const applyBtn = await findApplyButton(page);
+  const applyText = applyBtn
     ? (await applyBtn.innerText().catch(() => '')) + ' ' + ((await applyBtn.getAttribute('aria-label').catch(() => '')) ?? '')
     : '';
   const easyApply = /easy apply/i.test(applyText);
@@ -210,3 +210,56 @@ export const applyButton = (page: Page) =>
     .or(page.getByRole('button', { name: /^\s*(easy apply|apply)\b/i }))
     .or(page.getByRole('link', { name: /^\s*(easy apply|apply)\b/i }))
     .first();
+
+/**
+ * The visible apply control for THIS job, most specific first, so a "Easy Apply" search
+ * filter or a similar-jobs card elsewhere on the page is never clicked by mistake.
+ */
+export async function findApplyButton(page: Page): Promise<Locator | null> {
+  const candidates = [
+    page.locator('[aria-label^="Easy Apply to" i]'),
+    page.locator('[aria-label*="Apply to" i][aria-label*="website" i]'),
+    page.locator('[aria-label^="Apply to" i]'),
+    page.locator('.jobs-apply-button'),
+    page.locator('a[href*="/apply/"], a[href*="externalApply"], a[href*="/redir/redirect"]').filter({ hasText: /apply/i }),
+    page.getByRole('button', { name: /^\s*(easy apply|apply)\s*$/i }),
+    page.getByRole('link', { name: /^\s*(easy apply|apply)\s*$/i }),
+  ];
+  for (const c of candidates) {
+    for (const el of await c.all().catch(() => [])) {
+      if (!(await el.isVisible().catch(() => false))) continue;
+      // Search filters ("Easy Apply" chip) and page chrome aren't this job's apply button
+      const chrome = await el
+        .evaluate((e) => !!e.closest('header, nav, [role="search"], [class*="filter" i], [class*="search-reusables"]'))
+        .catch(() => false);
+      if (!chrome) return el;
+    }
+  }
+  return null;
+}
+
+/** Where an apply link points, unwrapping LinkedIn's redirect links. */
+export async function applyHref(el: Locator): Promise<string | undefined> {
+  const href = await el.getAttribute('href').catch(() => null);
+  if (!href) return undefined;
+  try {
+    const u = new URL(href, 'https://www.linkedin.com');
+    const wrapped = u.searchParams.get('url');
+    if (wrapped) return decodeURIComponent(wrapped);
+    return /linkedin\.com$/.test(u.hostname) ? undefined : u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/** LinkedIn sometimes shows a "share your profile" / job-safety reminder before applying. */
+export async function passInterstitials(page: Page): Promise<void> {
+  for (let i = 0; i < 3; i++) {
+    const dlg = page.locator('div[role="dialog"], div[role="alertdialog"]').filter({ hasNot: page.locator('input, textarea, select') }).first();
+    if (!(await dlg.isVisible({ timeout: 2500 }).catch(() => false))) return;
+    const go = dlg.locator('button, a').filter({ hasText: /^\s*(continue( applying| to (apply|application|site|company website))?|apply( anyway)?|i understand|got it|ok)\s*$/i }).first();
+    if (!(await go.isVisible().catch(() => false))) return;
+    await go.click().catch(() => {});
+    await pause(800, 1500);
+  }
+}
