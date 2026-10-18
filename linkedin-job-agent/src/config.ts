@@ -50,7 +50,8 @@ export const env = {
       return undefined;
     }
   },
-  groqModel: process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile',
+  /** Optional: force a Groq model; otherwise the best available one is picked automatically */
+  groqModel: process.env.GROQ_MODEL || '',
   ntfyTopic: process.env.NTFY_TOPIC || undefined,
   runEveryMinutes: num(process.env.RUN_EVERY_MINUTES, 0),
   maxPerDay: num(process.env.MAX_APPLICATIONS_PER_DAY, 40),

@@ -13,28 +13,90 @@ import type { Profile } from './profile.js';
 
 type Chat = (system: string, user: string, maxTokens: number) => Promise<Record<string, unknown> | null>;
 
-const groqChat: Chat = async (system, user, maxTokens) => {
+const API = 'https://api.groq.com/openai/v1';
+
+/**
+ * Groq retires models every few months, so don't hard-code one: ask which chat models this
+ * key can use and take the best by preference (GROQ_MODEL in .env still overrides).
+ */
+const PREFERRED = [/gpt-oss-120b/i, /llama-4-maverick/i, /llama-3\.3-70b/i, /70b/i, /kimi/i, /qwen/i, /llama-4-scout/i, /gpt-oss-20b/i, /llama/i];
+const NOT_CHAT = /whisper|guard|tts|playai|orpheus|embed|compound|distil|safeguard|allam/i;
+let chosen: { id: string; at: number } | null = null;
+
+export async function groqModel(refresh = false): Promise<string | null> {
+  if (process.env.GROQ_MODEL) return process.env.GROQ_MODEL;
+  if (!refresh && chosen && Date.now() - chosen.at < 6 * 3600_000) return chosen.id;
   const key = env.groqApiKey;
   if (!key) return null;
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: env.groqModel,
-        temperature: 0.2,
-        max_tokens: maxTokens,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: user },
-        ],
-      }),
-      signal: AbortSignal.timeout(45000),
-    });
+    const res = await fetch(`${API}/models`, { headers: { Authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(20000) });
     if (!res.ok) return null;
-    const data = (await res.json()) as { choices: { message: { content: string } }[] };
-    return JSON.parse(data.choices[0].message.content);
+    const { data } = (await res.json()) as { data: { id: string; active?: boolean }[] };
+    const ids = data.filter((m) => m.active !== false && !NOT_CHAT.test(m.id)).map((m) => m.id);
+    const id = PREFERRED.map((re) => ids.find((m) => re.test(m))).find(Boolean) ?? ids[0];
+    if (!id) return null;
+    chosen = { id, at: Date.now() };
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/** Models sometimes wrap JSON in prose or code fences. */
+export function parseJsonLoose(text: string): Record<string, unknown> | null {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const m = text.match(/\{[\s\S]*\}/);
+    try {
+      return m ? JSON.parse(m[0]) : null;
+    } catch {
+      return null;
+    }
+  }
+}
+
+async function complete(model: string, messages: { role: string; content: string }[], maxTokens: number, json: boolean) {
+  const reasoning = /gpt-oss|qwen3|deepseek/i.test(model);
+  return fetch(`${API}/chat/completions`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.groqApiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      // reasoning models spend tokens thinking before they answer
+      max_tokens: reasoning ? maxTokens + 1024 : maxTokens,
+      ...(reasoning ? { reasoning_effort: 'low' } : {}),
+      ...(json ? { response_format: { type: 'json_object' } } : {}),
+      messages,
+    }),
+    signal: AbortSignal.timeout(60000),
+  });
+}
+
+const retired = (status: number, body: string) => status === 404 || /model_not_found|decommissioned|does not exist/i.test(body);
+
+const groqChat: Chat = async (system, user, maxTokens) => {
+  if (!env.groqApiKey) return null;
+  const messages = [
+    { role: 'system', content: system },
+    { role: 'user', content: user },
+  ];
+  try {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const model = await groqModel(attempt > 0);
+      if (!model) return null;
+      let res = await complete(model, messages, maxTokens, true);
+      if (!res.ok) {
+        const body = await res.text();
+        if (retired(res.status, body)) continue; // pick another model and retry
+        if (res.status === 400 && /response_format|json/i.test(body)) res = await complete(model, messages, maxTokens, false);
+        if (!res.ok) return null;
+      }
+      const data = (await res.json()) as { choices: { message: { content: string } }[] };
+      return parseJsonLoose(data.choices[0]?.message?.content ?? '');
+    }
+    return null;
   } catch {
     return null;
   }
@@ -190,16 +252,15 @@ export async function aiHealth(): Promise<AiHealth> {
   if (!loadSettings().useAI) return { ok: false, detail: 'AI is switched off on the dashboard' };
   const started = Date.now();
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: env.groqModel,
-        max_tokens: 5,
-        messages: [{ role: 'user', content: 'Reply with the single word: ok' }],
-      }),
-      signal: AbortSignal.timeout(20000),
-    });
+    let model = await groqModel();
+    if (!model) return { ok: false, detail: "couldn't list Groq models — check the key and internet" };
+    const ask = (m: string) => complete(m, [{ role: 'user', content: 'Reply with the single word: ok' }], 5, false);
+    let res = await ask(model);
+    if (!res.ok && retired(res.status, await res.clone().text())) {
+      model = await groqModel(true);
+      if (!model) return { ok: false, detail: 'no usable Groq chat model found for this key' };
+      res = await ask(model);
+    }
     const n = (h: string) => Number(res.headers.get(h) ?? NaN);
     const reqLeft = n('x-ratelimit-remaining-requests');
     const reqMax = n('x-ratelimit-limit-requests');
@@ -209,7 +270,7 @@ export async function aiHealth(): Promise<AiHealth> {
     if (!res.ok) return { ok: false, detail: `Groq answered HTTP ${res.status} (${(await res.text()).slice(0, 80)})`, limits };
     const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
     const reply = data.choices?.[0]?.message?.content?.trim() ?? '';
-    return { ok: true, detail: `${env.groqModel} answered "${reply.slice(0, 20)}" in ${((Date.now() - started) / 1000).toFixed(1)}s`, limits };
+    return { ok: true, detail: `${model} answered "${reply.slice(0, 20)}" in ${((Date.now() - started) / 1000).toFixed(1)}s`, limits };
   } catch (e) {
     return { ok: false, detail: `can't reach api.groq.com (${(e as Error).message})` };
   }
