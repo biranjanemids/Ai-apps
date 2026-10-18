@@ -217,3 +217,12 @@ test('impossible CTC values are never submitted', async () => {
   assert.equal(resolveAnswer('Expected CTC (in LPA)', 'text', [], ctx), null, 'a PIN-code-sized CTC goes to Needs you');
   assert.ok(plausibleLakhs(80) && !plausibleLakhs(560035) && !plausibleLakhs(0));
 });
+
+test('keyword typos are corrected for search and scoring', async () => {
+  const { fixTitle } = await import('./matching.js');
+  assert.equal(fixTitle('Sr principle engineer'), 'Senior Principal engineer');
+  assert.equal(fixTitle('software architec'), 'software Architect');
+  const me = { titles: ['Sr principle engineer'], skills: ['Java'], years: 15 };
+  const s = scoreJob({ title: 'Principal Software Engineer', description: 'Java. ' + 'x'.repeat(200) }, me);
+  assert.ok(s.reasons.some((r) => /title (6|7|8|9|10)\d?% similar/.test(r)), s.reasons.join(' | '));
+});

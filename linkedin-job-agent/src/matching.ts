@@ -122,8 +122,26 @@ export function extractSkillsFromText(text: string): string[] {
 // ── Scoring ──────────────────────────────────────────────────────────────────
 
 const STOP = new Set(['and', 'or', 'of', 'the', 'a', 'an', 'in', 'at', 'for', 'to', 'with', 'i', 'ii', 'iii', '-']);
+/** Common job-title misspellings and abbreviations → the words recruiters actually post. */
+const TITLE_FIXES: Record<string, string> = {
+  principle: 'principal', prinicipal: 'principal', pricipal: 'principal', sr: 'senior', snr: 'senior', jr: 'junior',
+  architec: 'architect', architech: 'architect', archtect: 'architect', engg: 'engineer', enginner: 'engineer',
+  engineeer: 'engineer', eng: 'engineer', mgr: 'manager', dev: 'developer', swe: 'software engineer', sde: 'software engineer',
+};
+
+/** "Sr principle engineer" → "Senior Principal Engineer" (used for searching and scoring). */
+export function fixTitle(title: string): string {
+  return title
+    .split(/(\s+)/)
+    .map((w) => {
+      const fixed = TITLE_FIXES[w.toLowerCase().replace(/\.$/, '')];
+      return fixed ? fixed.replace(/\b\w/g, (c) => c.toUpperCase()) : w;
+    })
+    .join('');
+}
+
 const tokens = (s: string) =>
-  new Set(s.toLowerCase().split(/[^a-z0-9+#.]+/).filter((w) => w.length > 1 && !STOP.has(w)));
+  new Set(fixTitle(s).toLowerCase().split(/[^a-z0-9+#.]+/).filter((w) => w.length > 1 && !STOP.has(w)));
 
 export interface Score {
   score: number;

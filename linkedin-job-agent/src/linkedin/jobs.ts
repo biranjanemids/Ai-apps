@@ -1,11 +1,11 @@
 import type { Page } from 'playwright';
 import { env, type Settings } from '../config.js';
-import type { JobDetails } from '../matching.js';
+import { fixTitle, type JobDetails } from '../matching.js';
 import { pause } from './browser.js';
 
 export function searchUrl(keyword: string, settings: Settings, start = 0): string {
   const p = new URLSearchParams({
-    keywords: keyword,
+    keywords: fixTitle(keyword),
     location: env.location,
     geoId: env.geoId,
     f_TPR: settings.postedWithin,

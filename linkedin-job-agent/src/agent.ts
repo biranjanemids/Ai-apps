@@ -2,7 +2,7 @@ import type { BrowserContext, Page } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, env, loadAnswers, loadSettings, type Settings } from './config.js';
-import { exclusionReason, isBangalore, normalizeCompany, scoreJob, titleExcluded, type JobDetails } from './matching.js';
+import { fixTitle, exclusionReason, isBangalore, normalizeCompany, scoreJob, titleExcluded, type JobDetails } from './matching.js';
 import {
   currentEmployers, loadProfile, mergeResume, profileFromResume, profileTitles, readResumeText, roleFromResume, saveProfile, yearsFromResume, type Profile,
 } from './profile.js';
@@ -213,6 +213,7 @@ class Agent {
       keywords = [...keywords, ...extra.filter((k) => !seenKw.has(k.toLowerCase()))].slice(0, 4);
       if (extra.length) this.log(`AI suggested search titles: ${extra.join(', ')}`);
     }
+    keywords = keywords.map(fixTitle);
     this.log(`Run started (${settings.dryRun ? 'DRY RUN' : 'LIVE'}). Keywords: ${keywords.join(' / ')}. Never applying to: ${exclusions.join(', ') || '—'}`);
     const answers = loadAnswers();
     const qctx = { answers, skills: profile.skills, years, profileUrl: profile.profileUrl };

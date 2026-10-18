@@ -143,6 +143,13 @@ export async function doctor(): Promise<void> {
   const missing = (['phone', 'noticePeriodDays', 'currentCtcLakhs', 'expectedCtcLakhs'] as const).filter((k) => a[k] === undefined);
   line(missing.length ? 'warn' : 'ok', missing.length ? `Answers missing: ${missing.join(', ')}` : 'Application answers filled', missing.length ? 'more jobs will land in "Needs you"' : '');
 
+  // Work waiting from an interrupted run
+  const queued = store.list('queued').length;
+  if (queued) console.log(`   ${queued} matches queued — they're applied first on the next run`);
+  if (fs.existsSync(path.join(DATA_DIR, 'run-state.json')) && !busy) {
+    line('warn', 'The last run was interrupted (Android closed the app)', 'it resumes by itself when the agent starts: bash termux/start.sh');
+  }
+
   // Activity
   const c = store.counts();
   line('ok', `Mode: ${settings.dryRun ? 'DRY RUN (nothing is submitted)' : 'LIVE'}`, `min match ${settings.minScore}%, max ${settings.maxPerRun}/run, ${env.maxPerDay}/day`);
