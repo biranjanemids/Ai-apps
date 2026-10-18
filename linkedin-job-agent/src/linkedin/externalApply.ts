@@ -4,6 +4,7 @@ import path from 'node:path';
 import { DATA_DIR, env } from '../config.js';
 import { answerQuestion, identityAnswer, type Applicant, type FieldKind, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
+import { workdayApply } from './workday.js';
 import { applyHref, findApplyButton, passInterstitials } from './jobs.js';
 import type { ApplyResult } from './easyApply.js';
 
@@ -77,6 +78,13 @@ export async function externalApply(
     return { status: 'failed', note: `Apply button didn't open the company site (stayed on ${site.url().split('?')[0]})` };
   }
   const portal = detectPortal(applyUrl);
+  if (portal.name === 'Workday') {
+    try {
+      return await workdayApply(site, me, qctx, dryRun);
+    } finally {
+      await close();
+    }
+  }
   if (portal.kind === 'account') {
     await close();
     return { status: 'needs_attention', note: `${portal.name} needs an account — apply yourself`, applyUrl };
@@ -87,7 +95,17 @@ export async function externalApply(
     const form = await findForm(site);
     if (!form) return { status: 'needs_attention', note: `couldn't find an application form on the ${portal.name}`, applyUrl };
 
-    const unanswered = await fillForm(site, form, me, qctx);
+    // Fill page by page: some forms have Next / Continue before the final Submit
+    let unanswered = await fillForm(site, form, me, qctx);
+    for (let pageNo = 0; pageNo < 5 && !unanswered.length; pageNo++) {
+      const submitNow = form.locator('button[type="submit"], input[type="submit"]').or(form.locator('button').filter({ hasText: /^\s*(submit|apply|send)( application| now)?\s*$/i }));
+      if (await submitNow.first().isVisible().catch(() => false)) break;
+      const next = form.locator('button, a').filter({ hasText: /^\s*(next|continue|save (and|&) continue)\s*$/i }).first();
+      if (!(await next.isVisible().catch(() => false))) break;
+      await next.click().catch(() => {});
+      await pause(1500, 2500);
+      unanswered = await fillForm(site, form, me, qctx);
+    }
     if (unanswered.length) {
       return { status: 'needs_attention', note: `${portal.name}: couldn't answer ${unanswered.slice(0, 3).join(' | ')}`, applyUrl: site.url() };
     }
@@ -192,10 +210,37 @@ async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Question
   }
   await pause(500, 1000);
 
+  // Dropdowns built as comboboxes (Greenhouse/Ashby react-select, location autocompletes)
+  for (const box of await form.locator('input[role="combobox"]').all()) {
+    if (!(await box.isVisible().catch(() => false)) || (await box.inputValue().catch(() => 'x'))) continue;
+    const wrap = box.locator('xpath=ancestor::*[contains(@class,"select") or contains(@class,"field") or contains(@class,"question")][1]');
+    if ((await wrap.locator('[class*="single-value"], [class*="singleValue"]').count()) > 0) continue; // already chosen
+    const label = await labelOf(box);
+    await box.click().catch(() => {});
+    const optsLoc = site.locator('[role="option"]:visible');
+    await optsLoc.first().waitFor({ timeout: 3000 }).catch(() => {});
+    const options = (await optsLoc.allInnerTexts().catch(() => [])).map((o) => o.trim()).filter(Boolean);
+    const ident = identityAnswer(label, 'text', me);
+    const ans = options.length
+      ? (ident && options.find((o) => o.toLowerCase().startsWith(ident.toLowerCase()))) || (await answerQuestion(label, 'select', options, qctx))
+      : ident ?? (await answerQuestion(label, 'text', [], qctx));
+    if (!ans) {
+      await box.press('Escape').catch(() => {});
+      if (await isRequired(box, label)) unanswered.push(label);
+      continue;
+    }
+    await box.fill(ans).catch(() => {});
+    await pause(800, 1400);
+    const match = site.locator('[role="option"]:visible').filter({ hasText: ans.slice(0, 40) }).first();
+    if (await match.isVisible().catch(() => false)) await match.click().catch(() => {});
+    else await box.press('Enter').catch(() => {});
+  }
+
   // Text inputs and textareas
   const texts = form.locator('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input[type="number"], input:not([type]), textarea');
   for (const el of await texts.all()) {
     if (!(await el.isVisible().catch(() => false)) || (await el.inputValue().catch(() => 'x'))) continue;
+    if ((await el.getAttribute('role')) === 'combobox') continue; // handled above
     const label = await labelOf(el);
     const type = ((await el.getAttribute('type')) ?? 'text').toLowerCase();
     const required = await isRequired(el, label);

@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
 import { aiEnabled, aiHealth } from './ai.js';
-import { DATA_DIR, VERSION, env, saveGroqKey, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
+import { portalAccounts } from './linkedin/workday.js';
+import { DATA_DIR, VERSION, env, portalPassword, saveGroqKey, savePortalPassword, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, LAST_ERROR_SHOT, lastRunEndedAt, RUN_STATE, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
@@ -41,6 +42,7 @@ export function startServer() {
       busy: agent.busy || login.loginActive(),
       linkedin: getSession(),
       resume: env.resumePath ? path.basename(env.resumePath) : null,
+      portal: { passwordSet: Boolean(portalPassword()), accounts: Object.keys(portalAccounts()) },
       ai: { configured: Boolean(env.groqApiKey), enabled: aiEnabled(), keywords: readAiKeywords() },
       nextRunAt: (() => {
         const h = loadSettings().autoRunHours;
@@ -100,6 +102,16 @@ export function startServer() {
     }
     if (typeof useAI === 'boolean') saveSettings({ useAI });
     res.json({ configured: Boolean(env.groqApiKey), enabled: aiEnabled() });
+  });
+
+  app.post('/api/portal-password', (req, res) => {
+    const pw = String((req.body as { password?: string }).password ?? '');
+    if (pw.length < 8 || !/[A-Z]/.test(pw) || !/[a-z]/.test(pw) || !/\d/.test(pw) || !/[^A-Za-z0-9]/.test(pw)) {
+      return res.status(400).json({ error: 'Use 8+ characters with upper and lower case, a number and a symbol (job portals require it)' });
+    }
+    savePortalPassword(pw);
+    agent.log('Job-portal password saved — Workday applications are now automatic');
+    res.json({ ok: true });
   });
 
   app.get('/api/ai/test', async (_req, res) => res.json(await aiHealth()));
@@ -188,7 +200,8 @@ export function startServer() {
     const flag = (v: unknown) => (typeof v === 'boolean' ? v : undefined);
     const next: Answers = {
       ...loadAnswers(),
-      phone: str(b.phone), email: str(b.email), city: str(b.city), linkedinUrl: str(b.linkedinUrl), portfolioUrl: str(b.portfolioUrl),
+      phone: str(b.phone), email: str(b.email), city: str(b.city),
+      addressLine1: str(b.addressLine1), postalCode: str(b.postalCode), state: str(b.state), linkedinUrl: str(b.linkedinUrl), portfolioUrl: str(b.portfolioUrl),
       noticePeriodDays: n(b.noticePeriodDays), currentCtcLakhs: n(b.currentCtcLakhs), expectedCtcLakhs: n(b.expectedCtcLakhs),
       authorizedToWorkInIndia: flag(b.authorizedToWorkInIndia), requiresSponsorship: flag(b.requiresSponsorship),
       willingToRelocate: flag(b.willingToRelocate), comfortableOnsite: flag(b.comfortableOnsite),

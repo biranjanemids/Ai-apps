@@ -127,6 +127,9 @@
           <label>Email<input type="text" name="email" inputmode="email"></label>
           <label>Notice period (days)<input type="number" name="noticePeriodDays"></label>
           <label>City<input type="text" name="city" placeholder="Bengaluru"></label>
+          <label>Address (street)<input type="text" name="addressLine1" autocomplete="street-address"></label>
+          <label>PIN code<input type="text" name="postalCode" inputmode="numeric" placeholder="560035"></label>
+          <label>State<input type="text" name="state" placeholder="Karnataka"></label>
           <label>Current CTC (LPA)<input type="number" step="0.1" name="currentCtcLakhs"></label>
           <label>Expected CTC (LPA)<input type="number" step="0.1" name="expectedCtcLakhs"></label>
         </div>
@@ -142,6 +145,14 @@
         <p class="muted" id="anssaved" style="margin:6px 0 0"></p>
       </form>
     </section>
+    <section class="card" id="portalcard">
+      <h2>Company job portals (Workday)</h2>
+      <p class="muted" style="margin:0 0 8px">Many companies use Workday, which needs an account. Set one password and the agent creates the account,
+        signs in, uploads your resume and submits. Use a new password you don't use anywhere else.</p>
+      <div id="portalstatus" class="muted" style="margin-bottom:8px"></div>
+      <div class="row"><input type="password" id="portalpw" placeholder="Job-portal password" autocomplete="new-password"><button class="ghost" style="flex:0" onclick="savePortalPw()">Save</button></div>
+    </section>
+
     <section class="card" id="aicard">
       <h2>AI assistant</h2>
       <div id="aistatus" class="muted"></div>
@@ -336,6 +347,12 @@ async function saveAnswers(e) {
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
 
+async function savePortalPw() {
+  const r = await post('/api/portal-password', { password: $('portalpw').value });
+  if (r.error) { $('portalstatus').innerHTML = '<span class="bad">' + esc(r.error) + '</span>'; return; }
+  $('portalpw').value = ''; refresh();
+}
+
 async function testAi() {
   $('aitest').textContent = 'Asking Groq…';
   const r = await api('/api/ai/test');
@@ -420,6 +437,15 @@ async function refresh() {
     : 'No resume yet. Matching uses your skills and experience from it, and it\'s attached when a form asks for one.';
   $('rescard').classList.toggle('warn', !status.resume);
   if (!answersLoaded) loadAnswersForm();
+
+  const portal = status.portal || {};
+  if (!$('portalstatus').querySelector('.bad')) {
+    $('portalstatus').innerHTML = portal.passwordSet
+      ? '<span class="ok">Password set ✓</span> — Workday jobs are applied automatically' +
+        (portal.accounts && portal.accounts.length ? '<br>Accounts created: ' + esc(portal.accounts.map((h) => h.split('.')[0]).join(', ')) : '')
+      : 'Not set — Workday jobs go to "Needs you".';
+  }
+  $('portalcard').classList.toggle('warn', !portal.passwordSet);
 
   const ai = status.ai || {};
   $('aistatus').innerHTML = ai.enabled

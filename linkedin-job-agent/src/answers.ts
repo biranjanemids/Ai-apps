@@ -38,6 +38,10 @@ export function resolveAnswer(question: string, kind: FieldKind, options: string
   const q = question.toLowerCase().replace(/\s+/g, ' ').trim();
   const a = ctx.answers;
 
+  if (/gender|\bsex\b|race|ethnic|veteran|disabilit|sexual orientation|pronoun/.test(q) && options.length) {
+    const decline = options.find((o) => /decline|not (wish|want) to|prefer not|rather not|don't wish|do not wish/i.test(o));
+    if (decline) return decline;
+  }
   const raw = (() => {
     for (const rule of a.custom ?? []) {
       try {
@@ -136,6 +140,9 @@ export interface Applicant {
   linkedinUrl?: string;
   portfolioUrl?: string;
   city?: string;
+  addressLine1?: string;
+  postalCode?: string;
+  state?: string;
   currentCompany?: string;
   currentTitle?: string;
 }
@@ -152,7 +159,13 @@ export function identityAnswer(label: string, inputType: string, a: Applicant): 
   if (/github|portfolio|website|personal (site|url)|other (url|link)/.test(q)) return a.portfolioUrl ?? null;
   if (/current (company|employer|organi[sz]ation)|^company$|^organi[sz]ation$/.test(q)) return a.currentCompany ?? null;
   if (/current (title|designation|role|position)/.test(q)) return a.currentTitle ?? null;
-  if (/^(location|city|current location|current city)/.test(q)) return a.city ?? 'Bengaluru';
+  if (/^(location|city|current location|current city|town)/.test(q)) return a.city ?? 'Bengaluru';
+  if (/address( line)? ?1|street|^address$/.test(q)) return a.addressLine1 ?? null;
+  if (/address( line)? ?2/.test(q)) return ''; // optional second line
+  if (/postal|zip|pin ?code|^pin$|post ?code/.test(q)) return a.postalCode ?? null;
+  if (/^(state|province|region)\b|state\/province/.test(q)) return a.state ?? 'Karnataka';
+  if (/^country\b|country of residence/.test(q)) return 'India';
+  if (/how did you (hear|learn|find)|source of (application|referral)|where did you (see|find)/.test(q)) return 'LinkedIn';
   return undefined; // not an identity field
 }
 

@@ -125,6 +125,9 @@ export interface Answers {
   phone?: string;
   email?: string;
   city?: string;
+  addressLine1?: string;
+  postalCode?: string;
+  state?: string;
   noticePeriodDays?: number;
   currentCtcLakhs?: number;
   expectedCtcLakhs?: number;
@@ -150,7 +153,19 @@ export function loadAnswers(): Answers {
   }
 }
 
-export function saveGroqKey(key: string): void {
-  const file = path.join(DATA_DIR, 'secrets.json');
-  fs.writeFileSync(file, JSON.stringify({ groqApiKey: key.trim() }), { mode: 0o600 });
+const SECRETS = path.join(DATA_DIR, 'secrets.json');
+function readSecrets(): { groqApiKey?: string; portalPassword?: string } {
+  try {
+    return JSON.parse(fs.readFileSync(SECRETS, 'utf8'));
+  } catch {
+    return {};
+  }
 }
+function saveSecret(patch: { groqApiKey?: string; portalPassword?: string }): void {
+  fs.writeFileSync(SECRETS, JSON.stringify({ ...readSecrets(), ...patch }), { mode: 0o600 });
+}
+
+export const saveGroqKey = (key: string) => saveSecret({ groqApiKey: key.trim() });
+/** Password the agent uses to create/sign in to company job portals (Workday etc.). */
+export const savePortalPassword = (pw: string) => saveSecret({ portalPassword: pw });
+export const portalPassword = (): string | undefined => process.env.PORTAL_PASSWORD || readSecrets().portalPassword || undefined;

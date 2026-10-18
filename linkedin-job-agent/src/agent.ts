@@ -20,7 +20,7 @@ import { notify, progress } from './notify.js';
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
 /** Bump when applying gets smarter so jobs that failed to open the form are tried again. */
-const APPLY_VERSION = 3;
+const APPLY_VERSION = 4;
 
 /** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
 export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
@@ -231,6 +231,9 @@ class Agent {
       linkedinUrl: answers.linkedinUrl ?? (profile.profileUrl || undefined),
       portfolioUrl: answers.portfolioUrl,
       city: answers.city ?? 'Bengaluru',
+      addressLine1: answers.addressLine1,
+      postalCode: answers.postalCode,
+      state: answers.state ?? 'Karnataka',
       currentCompany: current?.company,
       currentTitle: current?.title,
     };
@@ -355,7 +358,9 @@ class Agent {
             prev.status === 'dry_run' ||
             (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? '')) ||
             (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION) ||
-            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
+            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION) ||
+            // Needs-you jobs the agent can now handle itself (Workday accounts, dropdowns, address…)
+            (prev.status === 'needs_attention' && /needs an account|couldn't answer|no Submit button/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
           if (seen.has(id) || !retry) {
             tally['seen before'] = (tally['seen before'] ?? 0) + 1;
             continue;
@@ -443,7 +448,7 @@ class Agent {
   ) {
     store.save({
       id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl,
-      aiAnswers: aiAnswers?.length ? aiAnswers : undefined, shot: shot || undefined, v: status === 'failed' ? APPLY_VERSION : SCORING_VERSION, at: new Date().toISOString(),
+      aiAnswers: aiAnswers?.length ? aiAnswers : undefined, shot: shot || undefined, v: status === 'failed' || status === 'needs_attention' ? APPLY_VERSION : SCORING_VERSION, at: new Date().toISOString(),
       job: status === 'queued'
         ? { easyApply: job.easyApply, externalApply: job.externalApply, externalUrl: job.externalUrl, description: job.description.slice(0, 6000) }
         : undefined,
