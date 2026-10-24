@@ -180,6 +180,11 @@ export async function jobDetails(page: Page, id: string): Promise<JobDetails> {
     : '';
   const easyApply = /easy apply/i.test(applyText);
   const externalApply = !easyApply && (/\bapply\b/i.test(applyText) || Boolean(guest?.externalUrl));
+  const closed = await page
+    .getByText(/no longer accepting applications|applications (are )?closed|this job is no longer available/i)
+    .first()
+    .isVisible()
+    .catch(() => false);
   const alreadyApplied = await page
     .locator('.artdeco-inline-feedback--success, .post-apply-timeline, [class*="applied"]')
     .filter({ hasText: /^\s*applied\b/i })
@@ -198,6 +203,7 @@ export async function jobDetails(page: Page, id: string): Promise<JobDetails> {
     externalApply,
     externalUrl: guest?.externalUrl || undefined,
     alreadyApplied,
+    closed,
   };
 }
 
@@ -230,10 +236,14 @@ export async function findApplyButton(page: Page): Promise<Locator | null> {
       if (!(await el.isVisible().catch(() => false))) continue;
       // Search filters ("Easy Apply" chip) and page chrome aren't this job's apply button
       const chrome = await el
-        .evaluate((e) => !!e.closest('header, nav, [role="search"], [class*="filter" i], [class*="search-reusables"]'))
+        .evaluate((e) => !!e.closest('nav, [role="search"], [class*="search-reusables__filter"], [class*="search-filter"], [aria-label*="search filters" i]'))
         .catch(() => false);
       if (!chrome) return el;
     }
+  }
+  // Fallback: the broader match that worked before (LinkedIn's markup varies)
+  for (const el of await applyButton(page).all().catch(() => [])) {
+    if (await el.isVisible().catch(() => false)) return el;
   }
   return null;
 }

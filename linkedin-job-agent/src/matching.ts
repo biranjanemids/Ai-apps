@@ -16,6 +16,8 @@ export interface JobDetails {
   /** Company application URL when LinkedIn exposes it */
   externalUrl?: string;
   alreadyApplied: boolean;
+  /** LinkedIn says "No longer accepting applications" */
+  closed?: boolean;
 }
 
 export interface MatchInput {

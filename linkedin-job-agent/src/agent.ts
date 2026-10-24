@@ -11,6 +11,7 @@ import { isLoggedIn, openBrowser, pause } from './linkedin/browser.js';
 import { scrapeOwnProfile } from './linkedin/profile.js';
 import { jobDetails, searchJobIds } from './linkedin/jobs.js';
 import { easyApply, type ApplyResult } from './linkedin/easyApply.js';
+import { findApplyButton } from './linkedin/jobs.js';
 import { externalApply } from './linkedin/externalApply.js';
 import { splitName, type Applicant } from './answers.js';
 import { aiAnswer, aiCoverNote, aiEnabled, aiFit, aiKeywords } from './ai.js';
@@ -20,7 +21,7 @@ import { notify, progress } from './notify.js';
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
 /** Bump when applying gets smarter so jobs that failed to open the form are tried again. */
-const APPLY_VERSION = 4;
+const APPLY_VERSION = 5;
 
 /** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
 export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
@@ -249,7 +250,8 @@ class Agent {
         uses = 0;
       };
       const onPage = async <T>(fn: (p: Page) => Promise<T>): Promise<T> => {
-        if (++uses > 8) await freshTab();
+        // Phones have little memory: start a fresh tab often so Android doesn't kill the browser
+        if (++uses > (process.platform === 'android' ? 4 : 8)) await freshTab();
         try {
           return await fn(page);
         } catch (e) {
@@ -305,7 +307,16 @@ class Agent {
           const res: ApplyResult = await onPage(async (p) => {
             await p.goto(job.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
             await pause(1500, 2500);
-            const r = await (job.easyApply
+            const btn = await findApplyButton(p);
+            const btnText = btn ? `${await btn.innerText().catch(() => '')} ${(await btn.getAttribute('aria-label').catch(() => '')) ?? ''}` : '';
+            if (!btn && !job.externalUrl) {
+              if (await p.getByText(/no longer accepting applications/i).first().isVisible().catch(() => false)) {
+                return { status: 'failed' as const, note: 'no longer accepting applications' };
+              }
+              return { status: 'failed' as const, note: "couldn't find the Apply button on the job page", shot: await p.screenshot().catch(() => undefined) };
+            }
+            const isEasy = btn ? /easy apply/i.test(btnText) : false;
+            const r = await (isEasy
               ? easyApply(p, jobQctx, settings.dryRun)
               : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl));
             if (r.status === 'failed' && !p.isClosed()) r.shot = await p.screenshot().catch(() => undefined);
@@ -356,7 +367,7 @@ class Agent {
           const retry =
             !prev ||
             prev.status === 'dry_run' ||
-            (prev.status === 'skipped' && /easy apply|external site/i.test(prev.note ?? '')) ||
+            (prev.status === 'skipped' && /easy apply|external site|no Apply button/i.test(prev.note ?? '')) ||
             (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION) ||
             (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION) ||
             // Needs-you jobs the agent can now handle itself (Workday accounts, dropdowns, address…)
@@ -391,6 +402,8 @@ class Agent {
             matches++;
             this.save(job, verdict.score, verdict.reasons, 'queued', 'waiting to apply');
             this.log(`MATCH ${verdict.score}%: ${job.title} @ ${job.company} (${i}/${ids.length}) — queued`);
+            // Apply straight away, so a run that Android kills halfway has still applied
+            if (!settings.dryRun) await applyQueue();
           }
           await pause(1500, 3500);
         }
@@ -426,7 +439,8 @@ class Agent {
     const ex = exclusionReason(job, exclusions);
     if (ex) return { status: 'excluded', note: ex, score: 0, reasons: [] };
     if (job.alreadyApplied) return { status: 'skipped', note: 'already applied on LinkedIn', score: 0, reasons: [] };
-    if (!job.easyApply && !job.externalApply) return { status: 'skipped', note: 'no Apply button (closed or already applied)', score: 0, reasons: [] };
+    if (job.closed) return { status: 'skipped', note: 'no longer accepting applications', score: 0, reasons: [] };
+    // Button not recognised but the job is open: still try — the apply step looks again
     if (!job.easyApply && settings.applyMode === 'easy') return { status: 'skipped', note: 'company-site job (Easy Apply only is on)', score: 0, reasons: [] };
     if (!isBangalore(job.location)) return { status: 'skipped', note: `location: ${job.location}`, score: 0, reasons: [] };
     const t = titleExcluded(job.title, settings.excludedTitleWords);
