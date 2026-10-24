@@ -58,6 +58,13 @@ export async function doctor(): Promise<void> {
     };
     const supervised = sh('pgrep', ['-f', 'termux/supervise.sh']) !== '';
     line(supervised ? 'ok' : 'warn', supervised ? 'Auto-restart is on (agent comes back if Android kills it)' : 'Auto-restart is off', supervised ? '' : 'start the agent with: bash termux/start.sh');
+    const jobs = sh('timeout', ['10', 'termux-job-scheduler', '--pending']);
+    const watchdog = /4711/.test(jobs);
+    line(
+      watchdog ? 'ok' : 'warn',
+      watchdog ? 'Watchdog on (restarts the agent within 15 min if Android closes Termux)' : 'Watchdog off',
+      watchdog ? '' : 'install the Termux:API app from F-Droid, then run: bash termux/start.sh',
+    );
     const android = Number(sh('getprop', ['ro.build.version.release']).split('.')[0]) || 0;
     if (android >= 12) {
       console.log(`   Android ${android}: if runs stop in the background, turn off "phantom process" killing — see README "Keep it running"`);

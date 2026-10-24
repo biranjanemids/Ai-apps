@@ -5,10 +5,11 @@ import { DATA_DIR, env } from '../config.js';
 import { answerQuestion, identityAnswer, type Applicant, type FieldKind, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
 import { workdayApply } from './workday.js';
+import { accountPortalApply } from './accountPortal.js';
 import { applyHref, findApplyButton, passInterstitials } from './jobs.js';
 import type { ApplyResult } from './easyApply.js';
 
-/** Portals that need you to create an account first — the agent can't apply there for you. */
+/** Portals that need an account first. The agent creates one with your job-portal password. */
 const ACCOUNT_PORTALS: [RegExp, string][] = [
   [/myworkdayjobs\.com|workday\.com/, 'Workday'],
   [/taleo\.net/, 'Taleo'],
@@ -21,6 +22,9 @@ const ACCOUNT_PORTALS: [RegExp, string][] = [
   [/indeed\.com/, 'Indeed'],
   [/avature\.net/, 'Avature'],
 ];
+
+/** Job boards where you sign in with your own existing account (and OTP) — left for you. */
+const PERSONAL_LOGIN = /^(Naukri|Indeed)$/;
 
 export function detectPortal(url: string): { kind: 'account' | 'greenhouse' | 'lever' | 'ashby' | 'smartrecruiters' | 'form'; name: string } {
   const host = (() => {
@@ -85,61 +89,126 @@ export async function externalApply(
       await close();
     }
   }
-  if (portal.kind === 'account') {
+  if (portal.kind === 'account' && PERSONAL_LOGIN.test(portal.name)) {
     await close();
-    return { status: 'needs_attention', note: `${portal.name} needs an account — apply yourself`, applyUrl };
+    return { status: 'needs_attention', note: `${portal.name} needs your own ${portal.name} login — apply yourself`, applyUrl };
+  }
+  if (portal.kind === 'account') {
+    try {
+      if (await siteDown(site)) return unavailable(portal.name, site);
+      return await accountPortalApply(site, portal.name, me, qctx, dryRun);
+    } finally {
+      await close();
+    }
   }
 
   try {
     await openForm(site, portal.kind);
+    if (await siteDown(site)) return unavailable(portal.name, site);
+    // Some company sites ask you to sign in or register before the form
+    if (await visible(site.locator('input[type="password"]').first())) {
+      return await accountPortalApply(site, portal.name, me, qctx, dryRun);
+    }
     const form = await findForm(site);
     if (!form) return { status: 'needs_attention', note: `couldn't find an application form on the ${portal.name}`, applyUrl };
-
-    // Fill page by page: some forms have Next / Continue before the final Submit
-    let unanswered = await fillForm(site, form, me, qctx);
-    for (let pageNo = 0; pageNo < 5 && !unanswered.length; pageNo++) {
-      const submitNow = form.locator('button[type="submit"], input[type="submit"]').or(form.locator('button').filter({ hasText: /^\s*(submit|apply|send)( application| now)?\s*$/i }));
-      if (await submitNow.first().isVisible().catch(() => false)) break;
-      const next = form.locator('button, a').filter({ hasText: /^\s*(next|continue|save (and|&) continue)\s*$/i }).first();
-      if (!(await next.isVisible().catch(() => false))) break;
-      await next.click().catch(() => {});
-      await pause(1500, 2500);
-      unanswered = await fillForm(site, form, me, qctx);
-    }
-    if (unanswered.length) {
-      return { status: 'needs_attention', note: `${portal.name}: couldn't answer ${unanswered.slice(0, 3).join(' | ')}`, applyUrl: site.url() };
-    }
-    if (await hasBlockingCaptcha(site)) {
-      return { status: 'needs_attention', note: `${portal.name} has a captcha — apply yourself (takes a minute)`, applyUrl: site.url() };
-    }
-    if (dryRun) return { status: 'dry_run', note: `${portal.name}: form filled (dry run — not sent)`, applyUrl: site.url() };
-
-    const submit = form
-      .locator('button[type="submit"], input[type="submit"]')
-      .or(form.locator('button').filter({ hasText: /^\s*(submit|apply|send)( application| now)?\s*$/i }))
-      .last();
-    if (!(await submit.isVisible().catch(() => false))) {
-      return { status: 'needs_attention', note: `${portal.name}: no Submit button found`, applyUrl: site.url() };
-    }
-    await submit.click();
-    const done = await Promise.race([
-      site.getByText(SUCCESS).first().waitFor({ timeout: 25000 }).then(() => true),
-      site.waitForURL(/confirm|thank|success|submitted/i, { timeout: 25000 }).then(() => true),
-    ]).catch(() => false);
-    if (done) return { status: 'applied', note: `submitted on ${portal.name}`, applyUrl };
-    const errors = (await site.locator('[role="alert"], .error, .field-error, [class*="error-message"]').allInnerTexts().catch(() => []))
-      .map((t) => t.trim())
-      .filter(Boolean);
-    return errors.length
-      ? { status: 'needs_attention', note: `${portal.name} rejected the form: ${errors.join(' ').slice(0, 120)}`, applyUrl: site.url() }
-      : { status: 'failed', note: `${portal.name}: clicked Submit but saw no confirmation`, applyUrl: site.url() };
+    return await fillAndSubmit(site, form, portal.name, me, qctx, dryRun, applyUrl);
   } finally {
     await close();
   }
 }
 
+const visible = (l: Locator) => l.isVisible().catch(() => false);
+
+/** Career sites show this during maintenance or outages — worth trying again later. */
+export async function siteDown(site: Page): Promise<boolean> {
+  return site
+    .getByText(/currently unavailable|(scheduled|planned|under) maintenance|service (is )?(temporarily )?unavailable|site is down|try again later/i)
+    .first()
+    .isVisible()
+    .catch(() => false);
+}
+
+export const unavailable = (name: string, site: Page): ApplyResult => ({
+  status: 'failed',
+  note: `${name} site temporarily unavailable (maintenance) — will retry on a later run`,
+  applyUrl: site.url(),
+});
+
+const pageSignature = (site: Page) =>
+  site.evaluate(() => `${location.href}|${(document.querySelector('h1, h2, h3, [data-automation-id="progressBarActiveStep"]') as HTMLElement | null)?.innerText ?? ''}`).catch(() => '');
+
+const visibleErrors = async (site: Page) =>
+  (await site.locator('[role="alert"]:visible, .error:visible, .field-error:visible, [class*="error-message"]:visible').allInnerTexts().catch(() => []))
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+/**
+ * Fills the application step by step (Next / Continue) and submits at the end. Used for
+ * company forms and, after signing in, for account portals like iCIMS, Taleo or SuccessFactors.
+ */
+export async function fillAndSubmit(
+  site: Page,
+  form: Locator,
+  name: string,
+  me: Applicant,
+  qctx: QuestionContext,
+  dryRun: boolean,
+  applyUrl: string,
+): Promise<ApplyResult> {
+  const submitBtn = () =>
+    form
+      .locator('button[type="submit"], input[type="submit"]')
+      .or(form.locator('button, a[role="button"]').filter({ hasText: /^\s*(submit|apply|send)( (my |your )?application| now)?\s*$/i }))
+      .last();
+  const nextBtn = () =>
+    form.locator('button, a, input[type="button"]').filter({ hasText: /^\s*(next|continue|save (and|&) continue|proceed|next step)\s*(›|>|→)?\s*$/i }).first();
+
+  for (let pageNo = 0; pageNo < 10; pageNo++) {
+    const unanswered = await fillForm(site, form, me, qctx);
+    if (unanswered.length) {
+      return { status: 'needs_attention', note: `${name}: couldn't answer ${unanswered.slice(0, 3).join(' | ')}`, applyUrl: site.url() };
+    }
+    if (await hasBlockingCaptcha(site)) {
+      return { status: 'needs_attention', note: `${name} has a captcha — apply yourself (takes a minute)`, applyUrl: site.url() };
+    }
+    const before = await pageSignature(site);
+
+    // More steps to go: Next / Continue (multi-step portals often make these type="submit" too)
+    const next = nextBtn();
+    if (await visible(next)) {
+      await next.click().catch(() => {});
+      await site.waitForLoadState('domcontentloaded').catch(() => {});
+      await pause(1500, 2500);
+      const errors = await visibleErrors(site);
+      if (errors.length && (await pageSignature(site)) === before && pageNo > 0) {
+        return { status: 'needs_attention', note: `${name}: ${errors.join(' ').slice(0, 140)}`, applyUrl: site.url() };
+      }
+      continue;
+    }
+
+    const submit = submitBtn();
+    if (!(await visible(submit))) {
+      return { status: 'needs_attention', note: `${name}: no Submit button found`, applyUrl: site.url() };
+    }
+    if (dryRun) return { status: 'dry_run', note: `${name}: form filled (dry run — not sent)`, applyUrl: site.url() };
+    await submit.click();
+    const done = await Promise.race([
+      site.getByText(SUCCESS).first().waitFor({ timeout: 25000 }).then(() => true),
+      site.waitForURL(/confirm|thank|success|submitted/i, { timeout: 25000 }).then(() => true),
+    ]).catch(() => false);
+    if (done) return { status: 'applied', note: `submitted on ${name}`, applyUrl };
+    const errors = await visibleErrors(site);
+    if (errors.length) return { status: 'needs_attention', note: `${name} rejected the form: ${errors.join(' ').slice(0, 120)}`, applyUrl: site.url() };
+    // "Submit" sometimes just saves a step (e.g. before a review page) — keep going if the page moved on
+    const moved = (await pageSignature(site)) !== before;
+    const fields = await site.locator('input:visible, select:visible, textarea:visible, button[type="submit"]:visible').count().catch(() => 0);
+    if (!moved || !fields) break;
+  }
+  return { status: 'failed', note: `${name}: clicked Submit but saw no confirmation`, applyUrl: site.url() };
+}
+
 /** Get from the job description page to the actual form. */
-async function openForm(site: Page, kind: string) {
+export async function openForm(site: Page, kind: string) {
   const url = site.url();
   if (kind === 'lever' && !/\/apply/.test(url)) {
     await site.goto(url.replace(/[?#].*$/, '').replace(/\/$/, '') + '/apply', { waitUntil: 'domcontentloaded' });
@@ -150,7 +219,7 @@ async function openForm(site: Page, kind: string) {
   // Many career pages show the description first with an "Apply" button
   const opener = site
     .locator('a, button')
-    .filter({ hasText: /^\s*(apply( now| for this (job|position|role))?|i'?m interested)\s*$/i })
+    .filter({ hasText: /^\s*(apply( now| online| for this (job|position|role|opportunity))?( online)?|start (your |my )?application|i'?m interested)\s*$/i })
     .first();
   if (await opener.isVisible().catch(() => false)) {
     await opener.click().catch(() => {});
@@ -159,7 +228,7 @@ async function openForm(site: Page, kind: string) {
   }
 }
 
-async function findForm(site: Page): Promise<Locator | null> {
+export async function findForm(site: Page): Promise<Locator | null> {
   await site.waitForSelector('input[type="email"], input[type="file"], input[name*="email" i]', { timeout: 10000 }).catch(() => {});
   const form = site.locator('form').filter({ has: site.locator('input[type="email"], input[name*="email" i], input[type="file"]') }).first();
   if (await form.count()) return form;
@@ -191,7 +260,7 @@ const isRequired = (el: Locator, label: string) =>
   el.evaluate((n) => (n as HTMLInputElement).required || n.getAttribute('aria-required') === 'true').then((r) => r || /\*/.test(label));
 
 /** Fills a company application form; returns required questions it couldn't answer. */
-async function fillForm(site: Page, form: Locator, me: Applicant, qctx: QuestionContext): Promise<string[]> {
+export async function fillForm(site: Page, form: Locator, me: Applicant, qctx: QuestionContext): Promise<string[]> {
   const unanswered: string[] = [];
 
   // Resume / CV upload (file inputs are often hidden behind a styled button)
@@ -309,7 +378,7 @@ async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Question
 }
 
 /** A visible "I'm not a robot" style captcha that must be solved by a person. */
-async function hasBlockingCaptcha(site: Page): Promise<boolean> {
+export async function hasBlockingCaptcha(site: Page): Promise<boolean> {
   const frames = site.locator('iframe[src*="recaptcha/api2/anchor"], iframe[src*="hcaptcha.com"][src*="checkbox"], iframe[src*="challenges.cloudflare.com"]');
   for (const f of await frames.all()) {
     const box = await f.boundingBox().catch(() => null);

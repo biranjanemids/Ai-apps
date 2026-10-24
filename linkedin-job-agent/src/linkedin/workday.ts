@@ -5,6 +5,7 @@ import { DATA_DIR, env, portalPassword } from '../config.js';
 import { answerQuestion, identityAnswer, type Applicant, type QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
 import type { ApplyResult } from './easyApply.js';
+import { siteDown, unavailable } from './externalApply.js';
 
 /**
  * Workday career sites (*.myworkdayjobs.com). They need an account per company, then walk
@@ -14,14 +15,14 @@ import type { ApplyResult } from './easyApply.js';
 
 const ACCOUNTS = path.join(DATA_DIR, 'portal-accounts.json');
 type AccountState = { email: string; created: string; verified?: boolean };
-const readAccounts = (): Record<string, AccountState> => {
+export const readAccounts = (): Record<string, AccountState> => {
   try {
     return JSON.parse(fs.readFileSync(ACCOUNTS, 'utf8'));
   } catch {
     return {};
   }
 };
-const saveAccount = (tenant: string, a: AccountState) => fs.writeFileSync(ACCOUNTS, JSON.stringify({ ...readAccounts(), [tenant]: a }, null, 2));
+export const saveAccount = (tenant: string, a: AccountState) => fs.writeFileSync(ACCOUNTS, JSON.stringify({ ...readAccounts(), [tenant]: a }, null, 2));
 export const portalAccounts = readAccounts;
 
 const aid = (id: string) => `[data-automation-id="${id}"]`;
@@ -42,6 +43,8 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
   const password = portalPassword();
   if (!me.email) return { status: 'needs_attention', note: 'Workday: add your email under "My answers" first', applyUrl };
   if (!password) return { status: 'needs_attention', note: 'Workday needs an account — set a job-portal password on the dashboard so the agent can create one', applyUrl };
+
+  if (await siteDown(site)) return unavailable('Workday', site);
 
   // 1. Apply → choose how
   const apply = site.locator(`${aid('adventureButton')}, ${aid('applyButton')}`).first();
@@ -88,6 +91,7 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
       .locator(`${aid('bottom-navigation-next-button')}, ${aid('bottom-navigation-next-btn')}, ${aid('pageFooterNextButton')}`)
       .or(site.locator('button').filter({ hasText: /^\s*(save and continue|next|continue|submit)\s*$/i }))
       .first();
+    if (!(await visible(next)) && (await siteDown(site))) return unavailable('Workday', site);
     if (!(await visible(next))) return { status: 'needs_attention', note: `Workday (${heading}): no Next/Submit button`, applyUrl: site.url() };
     const isSubmit = /submit/i.test(await next.innerText().catch(() => ''));
     if (isSubmit && dryRun) return { status: 'dry_run', note: 'Workday: reached Submit (dry run — not sent)', applyUrl: site.url() };

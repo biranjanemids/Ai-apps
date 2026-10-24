@@ -18,6 +18,12 @@ if ! pgrep -f "termux/supervise.sh" > /dev/null; then
   pkill -f "dist/cli.js serve" 2>/dev/null   # an old unsupervised copy, if any
   nohup bash termux/supervise.sh > /dev/null 2>&1 &
 fi
+# Watchdog: Android's job scheduler re-runs this every 15 min even after Android closes Termux
+# (screen locked, memory low). Needs the Termux:API app; skipped quietly without it.
+if command -v termux-job-scheduler > /dev/null; then
+  timeout 15 termux-job-scheduler --job-id 4711 --script "$PWD/termux/watchdog.sh" \
+    --period-ms 900000 --persisted true > /dev/null 2>&1 || true
+fi
 for _ in $(seq 1 15); do
   curl -s -o /dev/null "http://127.0.0.1:$PORT/" && break
   sleep 1

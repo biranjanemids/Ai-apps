@@ -40,7 +40,8 @@ export async function openBrowser(
     // so Android doesn't kill the browser mid-run
     args.push(
       '--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu',
-      '--renderer-process-limit=2', '--disable-extensions', '--disable-background-networking',
+      '--renderer-process-limit=1', '--disable-site-isolation-trials', '--disable-extensions', '--disable-background-networking',
+      '--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints,site-per-process',
       '--js-flags=--max-old-space-size=384',
     );
   }

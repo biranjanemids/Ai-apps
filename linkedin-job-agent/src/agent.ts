@@ -21,7 +21,7 @@ import { notify, progress } from './notify.js';
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
 /** Bump when applying gets smarter so jobs that failed to open the form are tried again. */
-const APPLY_VERSION = 5;
+const APPLY_VERSION = 6;
 
 /** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
 export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
@@ -369,9 +369,13 @@ class Agent {
             prev.status === 'dry_run' ||
             (prev.status === 'skipped' && /easy apply|external site|no Apply button/i.test(prev.note ?? '')) ||
             (prev.status === 'skipped' && /^match/.test(prev.note ?? '') && (prev.v ?? 1) < SCORING_VERSION) ||
+            // waiting for you to tap an email-verification link — try again after an hour
+            (prev.status === 'needs_attention' && /verif|tap the link/i.test(prev.note ?? '') && Date.now() - Date.parse(prev.at) > 3600e3) ||
+            // career site was down for maintenance — try again, at most every 3 hours
+            (prev.status === 'failed' && /temporarily unavailable/.test(prev.note ?? '') && Date.now() - Date.parse(prev.at) > 3 * 3600e3) ||
             (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION) ||
             // Needs-you jobs the agent can now handle itself (Workday accounts, dropdowns, address…)
-            (prev.status === 'needs_attention' && /needs an account|couldn't answer|no Submit button/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
+            (prev.status === 'needs_attention' && /needs an account|couldn't answer|no Submit button|no Next\/Submit|currently unavailable/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
           if (seen.has(id) || !retry) {
             tally['seen before'] = (tally['seen before'] ?? 0) + 1;
             continue;
