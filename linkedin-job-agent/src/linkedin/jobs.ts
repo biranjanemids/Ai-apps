@@ -250,16 +250,7 @@ export async function findApplyButton(page: Page): Promise<Locator | null> {
 
 /** Where an apply link points, unwrapping LinkedIn's redirect links. */
 export async function applyHref(el: Locator): Promise<string | undefined> {
-  const href = await el.getAttribute('href').catch(() => null);
-  if (!href) return undefined;
-  try {
-    const u = new URL(href, 'https://www.linkedin.com');
-    const wrapped = u.searchParams.get('url');
-    if (wrapped) return decodeURIComponent(wrapped);
-    return /linkedin\.com$/.test(u.hostname) ? undefined : u.toString();
-  } catch {
-    return undefined;
-  }
+  return unwrapLinkedIn((await el.getAttribute('href').catch(() => null)) ?? undefined);
 }
 
 /** LinkedIn sometimes shows a "share your profile" / job-safety reminder before applying. */
@@ -272,4 +263,55 @@ export async function passInterstitials(page: Page): Promise<void> {
     await go.click().catch(() => {});
     await pause(800, 1500);
   }
+}
+
+/** Strips LinkedIn's redirect wrapper ("…/externalApply/…?url=<company link>"). */
+export function unwrapLinkedIn(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  try {
+    const u = new URL(url, 'https://www.linkedin.com');
+    const wrapped = u.searchParams.get('url');
+    if (wrapped) return decodeURIComponent(wrapped);
+    return /linkedin\.com$/.test(u.hostname) ? undefined : u.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * How this job is applied to, straight from LinkedIn's data instead of the page's buttons:
+ * Easy Apply, or the company's apply link. Works when the button is hidden, renamed or
+ * opens nothing. Needs the browser to be on linkedin.com and logged in.
+ */
+export async function applyMethod(page: Page, id: string): Promise<{ easy: boolean; url?: string } | null> {
+  const raw = await page
+    .evaluate(async (jobId) => {
+      // 1. LinkedIn's own API, as the page calls it
+      const csrf = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1];
+      if (csrf) {
+        const r = await fetch(`/voyager/api/jobs/jobPostings/${jobId}`, {
+          headers: { 'csrf-token': csrf, 'x-restli-protocol-version': '2.0.0', accept: 'application/vnd.linkedin.normalized+json+2.1' },
+          credentials: 'include',
+        }).catch(() => null);
+        if (r?.ok) return r.text();
+      }
+      // 2. The job page itself often embeds the link
+      const embedded = document.documentElement.innerHTML.match(/companyApplyUrl&quot;:&quot;(.*?)&quot;|"companyApplyUrl":"(.*?)"/);
+      if (embedded && location.pathname.includes(jobId)) return `{"companyApplyUrl":"${(embedded[1] ?? embedded[2]).replace(/"/g, '')}"}`;
+      return null;
+    }, id)
+    .catch(() => null);
+  if (!raw) return null;
+  const m = raw.match(/"companyApplyUrl"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  let url: string | undefined;
+  if (m) {
+    try {
+      url = JSON.parse(`"${m[1]}"`);
+    } catch {
+      url = m[1];
+    }
+  }
+  url = url?.replace(/&amp;/g, '&');
+  const easy = !url && /ComplexOnsiteApply|SimpleOnsiteApply|onsiteApply|easyApplyUrl/i.test(raw);
+  return url || easy ? { easy, url: unwrapLinkedIn(url) ?? url } : null;
 }

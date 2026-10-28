@@ -79,6 +79,8 @@ export interface Settings {
   autoRunHours: number;
   /** Use AI (when a Groq key is set) for scoring, open questions, keywords and cover notes. */
   useAI: boolean;
+  /** Never stop to ask you: when your profile doesn't cover a question, AI gives the most honest answer it can. */
+  autopilot: boolean;
   /** 'all' = Easy Apply + company-site jobs; 'easy' = LinkedIn Easy Apply only. */
   applyMode: 'all' | 'easy';
   /** Overrides experience detected from the profile/resume. */
@@ -101,6 +103,7 @@ function defaults(): Settings {
     yearsExperience: years ? Number(years) : null,
     applyMode: process.env.APPLY_MODE === 'easy' ? 'easy' : 'all',
     useAI: bool(process.env.USE_AI, true),
+    autopilot: bool(process.env.AUTOPILOT, true),
     autoRunHours: num(process.env.RUN_EVERY_MINUTES, 0) / 60,
   };
 }
@@ -154,14 +157,15 @@ export function loadAnswers(): Answers {
 }
 
 const SECRETS = path.join(DATA_DIR, 'secrets.json');
-function readSecrets(): { groqApiKey?: string; portalPassword?: string } {
+type Secrets = { groqApiKey?: string; portalPassword?: string; mailPassword?: string; mailHost?: string };
+function readSecrets(): Secrets {
   try {
     return JSON.parse(fs.readFileSync(SECRETS, 'utf8'));
   } catch {
     return {};
   }
 }
-function saveSecret(patch: { groqApiKey?: string; portalPassword?: string }): void {
+function saveSecret(patch: Secrets): void {
   fs.writeFileSync(SECRETS, JSON.stringify({ ...readSecrets(), ...patch }), { mode: 0o600 });
 }
 
@@ -169,3 +173,20 @@ export const saveGroqKey = (key: string) => saveSecret({ groqApiKey: key.trim() 
 /** Password the agent uses to create/sign in to company job portals (Workday etc.). */
 export const savePortalPassword = (pw: string) => saveSecret({ portalPassword: pw });
 export const portalPassword = (): string | undefined => process.env.PORTAL_PASSWORD || readSecrets().portalPassword || undefined;
+
+/** IMAP access to your inbox, so the agent can open job-portal verification emails itself. */
+export const saveMailAccess = (pass: string, host?: string) =>
+  saveSecret({ mailPassword: pass.replace(/\s+/g, '') || undefined, mailHost: host?.trim() || undefined });
+export function mailAccess(): { host: string; user: string; pass: string } | null {
+  const s = readSecrets();
+  const pass = process.env.MAIL_APP_PASSWORD || s.mailPassword;
+  const user = process.env.MAIL_USER || loadAnswers().email;
+  if (!pass || !user) return null;
+  const domain = user.split('@')[1]?.toLowerCase() ?? '';
+  const guess = /gmail|googlemail/.test(domain) ? 'imap.gmail.com'
+    : /outlook|hotmail|live\.|msn/.test(domain) ? 'outlook.office365.com'
+    : /yahoo/.test(domain) ? 'imap.mail.yahoo.com'
+    : /zoho/.test(domain) ? 'imap.zoho.in'
+    : `imap.${domain}`;
+  return { host: process.env.MAIL_HOST || s.mailHost || guess, user, pass };
+}

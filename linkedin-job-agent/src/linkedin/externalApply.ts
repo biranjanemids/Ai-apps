@@ -6,7 +6,8 @@ import { answerQuestion, identityAnswer, type Applicant, type FieldKind, type Qu
 import { pause } from './browser.js';
 import { workdayApply } from './workday.js';
 import { accountPortalApply } from './accountPortal.js';
-import { applyHref, findApplyButton, passInterstitials } from './jobs.js';
+import { applyHref, applyMethod, findApplyButton, passInterstitials, unwrapLinkedIn } from './jobs.js';
+import { aiPickClick } from '../ai.js';
 import type { ApplyResult } from './easyApply.js';
 
 /** Portals that need an account first. The agent creates one with your job-portal password. */
@@ -57,6 +58,7 @@ export async function externalApply(
   dryRun: boolean,
   directUrl?: string,
 ): Promise<ApplyResult> {
+  const jobId = page.url().match(/\/jobs\/view\/(\d+)/)?.[1];
   const btn = await findApplyButton(page);
   let site: Page = page;
   if (btn) {
@@ -68,53 +70,120 @@ export async function externalApply(
     site = (await popup) ?? page;
     await site.waitForURL((u) => !/linkedin\.com/.test(u.hostname), { timeout: 20000 }).catch(() => {});
   }
+  // The button did nothing: ask LinkedIn's own data where this job is applied to
+  if (/linkedin\.com/.test(site.url()) && (!directUrl || /linkedin\.com/.test(directUrl)) && jobId) {
+    if (site !== page) await site.close().catch(() => {});
+    site = page;
+    directUrl = (await applyMethod(page, jobId))?.url ?? directUrl;
+  }
+  directUrl = unwrapLinkedIn(directUrl) ?? directUrl;
   if (/linkedin\.com/.test(site.url()) && directUrl) {
     await site.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
   }
   await site.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
   const applyUrl = site.url();
+  const opened = new Set<Page>([site]);
   const close = async () => {
-    if (site !== page) await site.close().catch(() => {});
+    for (const p of opened) if (p !== page) await p.close().catch(() => {});
   };
 
   if (/linkedin\.com/.test(new URL(applyUrl).hostname)) {
     await close();
     return { status: 'failed', note: `Apply button didn't open the company site (stayed on ${site.url().split('?')[0]})` };
   }
-  const portal = detectPortal(applyUrl);
-  if (portal.name === 'Workday') {
-    try {
-      return await workdayApply(site, me, qctx, dryRun);
-    } finally {
-      await close();
-    }
-  }
-  if (portal.kind === 'account' && PERSONAL_LOGIN.test(portal.name)) {
-    await close();
-    return { status: 'needs_attention', note: `${portal.name} needs your own ${portal.name} login — apply yourself`, applyUrl };
-  }
-  if (portal.kind === 'account') {
-    try {
-      if (await siteDown(site)) return unavailable(portal.name, site);
-      return await accountPortalApply(site, portal.name, me, qctx, dryRun);
-    } finally {
-      await close();
-    }
-  }
 
   try {
-    await openForm(site, portal.kind);
-    if (await siteDown(site)) return unavailable(portal.name, site);
-    // Some company sites ask you to sign in or register before the form
-    if (await visible(site.locator('input[type="password"]').first())) {
-      return await accountPortalApply(site, portal.name, me, qctx, dryRun);
+    // Career pages often hand over to another site (jobs.company.com → Workday/iCIMS…), so
+    // re-check where we are after every hop
+    let aiClicks = 0;
+    for (let hop = 0; hop < 6; hop++) {
+      await dismissCookies(site);
+      const portal = detectPortal(site.url());
+      if (await siteDown(site)) return unavailable(portal.name, site);
+      if (portal.name === 'Workday') return await workdayApply(site, me, qctx, dryRun);
+      if (portal.kind === 'account' && PERSONAL_LOGIN.test(portal.name)) {
+        return { status: 'needs_attention', note: `${portal.name} needs your own ${portal.name} login (OTP to your phone) — apply yourself`, applyUrl: site.url() };
+      }
+      if (portal.kind === 'account') return await accountPortalApply(site, portal.name, me, qctx, dryRun);
+
+      const host = new URL(site.url()).host;
+      const next = await openForm(site, portal.kind, ctx);
+      if (next !== site) {
+        opened.add(next);
+        site = next;
+      }
+      if (new URL(site.url()).host !== host) continue; // moved to another site — route again
+      // Some company sites ask you to sign in or register before the form
+      if (await visible(site.locator('input[type="password"]').first())) {
+        return await accountPortalApply(site, portal.name, me, qctx, dryRun);
+      }
+      const form = await findForm(site, 6000);
+      if (form) return await fillAndSubmit(site, form, portal.name, me, qctx, dryRun, applyUrl);
+      // Unfamiliar page: let the AI pick the button that leads to the application
+      if (aiClicks++ >= 3) break;
+      const moved = await aiStep(site, ctx);
+      if (!moved) break;
+      if (moved !== site) {
+        opened.add(moved);
+        site = moved;
+      }
     }
-    const form = await findForm(site);
-    if (!form) return { status: 'needs_attention', note: `couldn't find an application form on the ${portal.name}`, applyUrl };
-    return await fillAndSubmit(site, form, portal.name, me, qctx, dryRun, applyUrl);
+    return { status: 'needs_attention', note: `couldn't find an application form on ${new URL(site.url()).host}`, applyUrl: site.url() };
   } finally {
     await close();
   }
+}
+
+/** Cookie banners cover buttons on many career sites. */
+async function dismissCookies(site: Page) {
+  const btn = site
+    .locator('#onetrust-accept-btn-handler, #truste-consent-button, button[id*="cookie" i][id*="accept" i]')
+    .or(
+      site
+        .locator('[id*="cookie" i], [class*="cookie" i], [id*="consent" i], [class*="consent" i], [aria-label*="cookie" i], [role="dialog"]')
+        .locator('button, a[role="button"]')
+        .filter({ hasText: /^\s*(accept( all)?( cookies)?|allow( all)?( cookies)?|i agree|agree( and close)?|got it|ok(ay)?|i accept)\s*$/i }),
+    )
+    .first();
+  if (await visible(btn)) {
+    await btn.click().catch(() => {});
+    await pause(500, 900);
+  }
+}
+
+/** Asks the AI which link/button leads to the application; clicks it. Returns the page now showing. */
+export async function aiStep(site: Page, ctx: BrowserContext = site.context()): Promise<Page | null> {
+  const items: Locator[] = [];
+  const labels: string[] = [];
+  for (const el of await site.locator('a, button, [role="button"], input[type="submit"], input[type="button"]').all()) {
+    if (items.length >= 70) break;
+    if (!(await visible(el))) continue;
+    const text = (
+      (await el.innerText().catch(() => '')) ||
+      (await el.getAttribute('aria-label').catch(() => '')) ||
+      (await el.getAttribute('value').catch(() => '')) ||
+      ''
+    ).replace(/\s+/g, ' ').trim();
+    if (!text || text.length > 80) continue;
+    const href = await el.getAttribute('href').catch(() => null);
+    const where = href && /^https?:/.test(href) ? ` → ${new URL(href).host}` : '';
+    items.push(el);
+    labels.push(`${text}${where}`);
+  }
+  const heading = `${await site.title().catch(() => '')} — ${site.url().split('?')[0]}`;
+  const i = await aiPickClick('open the application form for this job and apply', heading, labels);
+  if (i === null) return null;
+  const before = site.url();
+  const popup = ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null);
+  await items[i].click().catch(() => {});
+  await site.waitForLoadState('domcontentloaded').catch(() => {});
+  await pause(1500, 2500);
+  const tab = await popup;
+  if (tab) {
+    await tab.waitForLoadState('domcontentloaded').catch(() => {});
+    return tab;
+  }
+  return site.url() !== before || (await site.locator('input:visible').count()) > 0 ? site : null;
 }
 
 const visible = (l: Locator) => l.isVisible().catch(() => false);
@@ -207,29 +276,56 @@ export async function fillAndSubmit(
   return { status: 'failed', note: `${name}: clicked Submit but saw no confirmation`, applyUrl: site.url() };
 }
 
-/** Get from the job description page to the actual form. */
-export async function openForm(site: Page, kind: string) {
+/** Application systems career pages link out to — following the link beats hunting for buttons. */
+const ATS_LINK = /myworkdayjobs\.com|icims\.com|taleo\.net|greenhouse\.io|lever\.co|smartrecruiters\.com|successfactors|sapsf\.|oraclecloud\.com|ashbyhq\.com|brassring\.com|avature\.net|darwinbox\.|jobvite\.com|bamboohr\.com|recruitee\.com|workable\.com|personio\.|zohorecruit|keka\.com|freshteam\.com|teamtailor\.com|eightfold\.ai|phenompeople|recruiterbox|applytojob\.com/i;
+
+/** Get from the job description page to the actual form. Returns the page showing it (may be a new tab). */
+export async function openForm(site: Page, kind: string, ctx?: BrowserContext): Promise<Page> {
   const url = site.url();
   if (kind === 'lever' && !/\/apply/.test(url)) {
     await site.goto(url.replace(/[?#].*$/, '').replace(/\/$/, '') + '/apply', { waitUntil: 'domcontentloaded' });
   } else if (kind === 'ashby' && !/\/application/.test(url)) {
     await site.goto(url.replace(/[?#].*$/, '').replace(/\/$/, '') + '/application', { waitUntil: 'domcontentloaded' });
   }
-  if (await findForm(site)) return;
+  if (await findForm(site)) return site;
+  // A link straight into the company's application system
+  const here = new URL(site.url()).host;
+  for (const a of await site.locator('a[href]').all()) {
+    const href = await a.getAttribute('href').catch(() => null);
+    if (!href || !(await visible(a))) continue;
+    let target: URL;
+    try {
+      target = new URL(href, site.url());
+    } catch {
+      continue;
+    }
+    if (target.host !== here && ATS_LINK.test(target.host) && /apply|job|career|requisition|posting/i.test(`${await a.innerText().catch(() => '')} ${target.pathname}`)) {
+      await site.goto(target.toString(), { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+      await pause(1500, 2500);
+      return site;
+    }
+  }
   // Many career pages show the description first with an "Apply" button
   const opener = site
-    .locator('a, button')
-    .filter({ hasText: /^\s*(apply( now| online| for this (job|position|role|opportunity))?( online)?|start (your |my )?application|i'?m interested)\s*$/i })
+    .locator('a, button, [role="button"], input[type="submit"]')
+    .filter({ hasText: /^\s*(apply( now| online| here| today| for this (job|position|role|opportunity))?( online)?|start (your |my )?application|i'?m interested|submit (your )?(cv|resume|application))\s*(›|>|→)?\s*$/i })
     .first();
-  if (await opener.isVisible().catch(() => false)) {
+  if (await visible(opener)) {
+    const popup = ctx ? ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null) : Promise.resolve(null);
     await opener.click().catch(() => {});
     await site.waitForLoadState('domcontentloaded').catch(() => {});
     await pause(1500, 2500);
+    const tab = await popup;
+    if (tab) {
+      await tab.waitForLoadState('domcontentloaded').catch(() => {});
+      return tab;
+    }
   }
+  return site;
 }
 
-export async function findForm(site: Page): Promise<Locator | null> {
-  await site.waitForSelector('input[type="email"], input[type="file"], input[name*="email" i]', { timeout: 10000 }).catch(() => {});
+export async function findForm(site: Page, waitMs = 10000): Promise<Locator | null> {
+  await site.waitForSelector('input[type="email"], input[type="file"], input[name*="email" i]', { timeout: waitMs }).catch(() => {});
   const form = site.locator('form').filter({ has: site.locator('input[type="email"], input[name*="email" i], input[type="file"]') }).first();
   if (await form.count()) return form;
   // Some sites don't use a <form> element

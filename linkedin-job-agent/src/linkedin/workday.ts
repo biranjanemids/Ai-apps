@@ -6,6 +6,7 @@ import { answerQuestion, identityAnswer, type Applicant, type QuestionContext } 
 import { pause } from './browser.js';
 import type { ApplyResult } from './easyApply.js';
 import { siteDown, unavailable } from './externalApply.js';
+import { confirmByEmail } from '../mail.js';
 
 /**
  * Workday career sites (*.myworkdayjobs.com). They need an account per company, then walk
@@ -46,19 +47,27 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
 
   if (await siteDown(site)) return unavailable('Workday', site);
 
-  // 1. Apply → choose how
-  const apply = site.locator(`${aid('adventureButton')}, ${aid('applyButton')}`).first();
-  if (await visible(apply)) await press(site, apply);
-  for (const choice of ['useMyLastApplication', 'autofillWithResume', 'applyManually']) {
-    const b = site.locator(aid(choice)).first();
-    if (await visible(b)) {
-      await press(site, b);
-      break;
+  // 1. Apply → choose how, 2. sign in (or create the account the first time)
+  const since = new Date();
+  const begin = async () => {
+    const apply = site.locator(`${aid('adventureButton')}, ${aid('applyButton')}`).first();
+    if (await visible(apply)) await press(site, apply);
+    for (const choice of ['useMyLastApplication', 'autofillWithResume', 'applyManually']) {
+      const b = site.locator(aid(choice)).first();
+      if (await visible(b)) {
+        await press(site, b);
+        break;
+      }
     }
+    return signIn(site, tenant, me.email!, password);
+  };
+  let signedIn = await begin();
+  // "Verify your email": open the link from your inbox ourselves, then start again
+  if (signedIn !== 'ok' && /verif|activate/i.test(signedIn) && (await confirmByEmail(site, tenant.split('.')[0], since))) {
+    await site.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    await pause(2000, 3000);
+    signedIn = await begin();
   }
-
-  // 2. Sign in, or create the account the first time
-  const signedIn = await signIn(site, tenant, me.email, password);
   if (signedIn !== 'ok') return { status: 'needs_attention', note: signedIn, applyUrl };
 
   // 3. Resume (Workday reads it to pre-fill experience)

@@ -146,11 +146,22 @@
       </form>
     </section>
     <section class="card" id="portalcard">
-      <h2>Company job portals (Workday)</h2>
-      <p class="muted" style="margin:0 0 8px">Many companies use Workday, which needs an account. Set one password and the agent creates the account,
-        signs in, uploads your resume and submits. Use a new password you don't use anywhere else.</p>
+      <h2>Company job portals</h2>
+      <p class="muted" style="margin:0 0 8px">Workday, iCIMS, Taleo, SuccessFactors and many company sites need an account. Set one password and the agent creates
+        the accounts, signs in, uploads your resume and submits. Use a new password you don't use anywhere else.</p>
       <div id="portalstatus" class="muted" style="margin-bottom:8px"></div>
       <div class="row"><input type="password" id="portalpw" placeholder="Job-portal password" autocomplete="new-password"><button class="ghost" style="flex:0" onclick="savePortalPw()">Save</button></div>
+    </section>
+
+    <section class="card" id="mailcard">
+      <h2>Email access (verification emails)</h2>
+      <p class="muted" style="margin:0 0 8px">Job portals often email a link or code before you can apply. With an <b>app password</b> for your inbox, the agent opens
+        those emails itself, so nothing waits for you. It only reads recent verification emails.<br>
+        Gmail: turn on 2-Step Verification, then create one at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener">myaccount.google.com/apppasswords</a>.
+        Uses the email in "My answers".</p>
+      <div id="mailstatus" class="muted" style="margin-bottom:8px"></div>
+      <div id="mailbox"><div class="row"><input type="password" id="mailpw" placeholder="App password (e.g. abcd efgh ijkl mnop)" autocomplete="off"><button class="ghost" style="flex:0" onclick="saveMail()">Save</button></div></div>
+      <button class="ghost" id="mailoff" style="width:100%;margin-top:8px" onclick="if(confirm('Remove email access?'))api('/api/mail',{method:'DELETE'}).then(refresh)">Remove email access</button>
     </section>
 
     <section class="card" id="aicard">
@@ -176,6 +187,7 @@
         <option value="8">Every 8 hours</option><option value="12">Every 12 hours</option><option value="24">Once a day</option>
       </select>
       <p class="muted" id="nextrun" style="margin:4px 0 0;font-size:12px"></p>
+      <label class="toggle"><span><b>Autopilot — never ask me</b><br><span class="muted">Questions your profile doesn't cover get the most honest answer AI can give ("No", "0", "not yet") instead of waiting in "Needs you"</span></span><input type="checkbox" id="autopilot" onchange="set({autopilot:this.checked})"></label>
       <p class="muted" style="margin:8px 0 4px">Which jobs</p>
       <select id="applyMode" onchange="set({applyMode:this.value})">
         <option value="all">All jobs: Easy Apply + company websites</option>
@@ -347,6 +359,11 @@ async function saveAnswers(e) {
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
 
+async function saveMail() {
+  const r = await post('/api/mail', { password: $('mailpw').value });
+  $('mailstatus').innerHTML = r.error ? '<span class="bad">' + esc(r.error) + '</span>' : '<span class="ok">Connected ✓</span> ' + esc(r.detail);
+  if (!r.error) { $('mailpw').value = ''; refresh(); }
+}
 async function savePortalPw() {
   const r = await post('/api/portal-password', { password: $('portalpw').value });
   if (r.error) { $('portalstatus').innerHTML = '<span class="bad">' + esc(r.error) + '</span>'; return; }
@@ -441,11 +458,19 @@ async function refresh() {
   const portal = status.portal || {};
   if (!$('portalstatus').querySelector('.bad')) {
     $('portalstatus').innerHTML = portal.passwordSet
-      ? '<span class="ok">Password set ✓</span> — Workday jobs are applied automatically' +
+      ? '<span class="ok">Password set ✓</span> — portal jobs (Workday, iCIMS, Taleo…) are applied automatically' +
         (portal.accounts && portal.accounts.length ? '<br>Accounts created: ' + esc(portal.accounts.map((h) => h.split('.')[0]).join(', ')) : '')
-      : 'Not set — Workday jobs go to "Needs you".';
+      : 'Not set — Workday, iCIMS and other portal jobs go to "Needs you".';
   }
   $('portalcard').classList.toggle('warn', !portal.passwordSet);
+
+  const mail = status.mail;
+  if (!$('mailstatus').querySelector('.bad')) {
+    $('mailstatus').innerHTML = mail ? '<span class="ok">Connected ✓</span> ' + esc(mail.user) + ' — verification emails are handled automatically' : 'Not set — portals that email a link or code wait in "Needs you".';
+  }
+  $('mailbox').hidden = !!mail;
+  $('mailoff').hidden = !mail;
+  $('autopilot').checked = s.autopilot !== false;
 
   const ai = status.ai || {};
   $('aistatus').innerHTML = ai.enabled

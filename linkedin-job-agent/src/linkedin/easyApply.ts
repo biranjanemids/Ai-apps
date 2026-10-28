@@ -17,17 +17,25 @@ const MAX_STEPS = 12;
 
 /** Opens Easy Apply on the current job page and walks the form. Never guesses answers. */
 export async function easyApply(page: Page, ctx: QuestionContext, dryRun: boolean): Promise<ApplyResult> {
+  const jobId = page.url().match(/\/jobs\/view\/(\d+)/)?.[1];
   const btn = await findApplyButton(page);
-  if (!btn) return { status: 'failed', note: 'Easy Apply button not found' };
-  await btn.click();
-  await passInterstitials(page);
+  if (btn) {
+    await btn.click().catch(() => {});
+    await passInterstitials(page);
+  }
   // Classic LinkedIn opens a dialog; the newer one opens the form as its own page (/apply/)
   // The (visible) dialog that holds the form — not a dismissed reminder popup
   const modal = page
     .locator('div[role="dialog"]:visible')
     .filter({ has: page.locator('form, input, select, textarea, button[aria-label*="Submit" i], button[aria-label*="next step" i], button[aria-label*="Review" i]') })
     .first();
-  await Promise.race([modal.waitFor({ timeout: 20000 }), page.waitForURL(/\/apply\//, { timeout: 20000 })]).catch(() => {});
+  await Promise.race([modal.waitFor({ timeout: btn ? 20000 : 1000 }), page.waitForURL(/\/apply\//, { timeout: btn ? 20000 : 1000 })]).catch(() => {});
+  // No button, or it did nothing: open LinkedIn's apply page for this job directly
+  if (!(await modal.isVisible().catch(() => false)) && !/\/apply\//.test(page.url()) && jobId) {
+    await page.goto(`https://www.linkedin.com/jobs/view/${jobId}/apply/?openSDUIApplyFlow=true`, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    await passInterstitials(page);
+    await Promise.race([modal.waitFor({ timeout: 15000 }), page.locator('main form, main input, main select').first().waitFor({ timeout: 15000 })]).catch(() => {});
+  }
   const dialog = (await modal.isVisible().catch(() => false))
     ? modal
     : /\/apply\//.test(page.url())

@@ -1,3 +1,4 @@
+import { loadSettings } from './config.js';
 import type { Answers } from './config.js';
 import { mentions } from './matching.js';
 
@@ -16,13 +17,26 @@ export interface QuestionContext {
 
 /** Rules first (your saved answers); then the AI, if enabled; null if neither knows. */
 export async function answerQuestion(question: string, kind: FieldKind, options: string[], ctx: QuestionContext): Promise<string | null> {
-  const ruled = resolveAnswer(question, kind, options, ctx);
+  const ruled = resolveAnswer(question, kind, options, ctx) ?? (loadSettings().autopilot ? autopilotDefault(question, kind, options) : null);
   if (ruled !== null || !ctx.ai) return ruled;
   const real = options.filter((o) => !/^select an option$|^please select/i.test(o.trim()));
   const raw = await ctx.ai(question, kind, real).catch(() => null);
   const ans = raw === null ? null : fitToOptions(raw, kind, real);
   if (ans !== null) ctx.aiLog?.push({ q: question.replace(/\s+/g, ' ').trim(), a: ans });
   return ans;
+}
+
+/**
+ * Autopilot answers for questions that are about willingness or acknowledgement rather than
+ * facts ("I agree…", "Are you willing to undergo a background check?") — the answer you'd give
+ * by applying at all.
+ */
+export function autopilotDefault(question: string, kind: FieldKind, options: string[]): string | null {
+  const q = question.toLowerCase();
+  if (!/agree|acknowledge|consent|i understand|confirm that|certify|declare|background (check|verification)|drug (test|screen)|willing to (undergo|take|attend|work)|open to/.test(q)) return null;
+  if (/criminal|convict|felony|charged/.test(q)) return null; // a legal fact, not willingness
+  if (!options.length) return kind === 'number' ? null : 'Yes';
+  return options.find((o) => /^(yes|i agree|agree|i accept|accept|i acknowledge|acknowledged?|i understand|i confirm|confirm)\b/i.test(o.trim())) ?? null;
 }
 
 export type FieldKind = 'text' | 'number' | 'select' | 'radio' | 'checkbox' | 'textarea';

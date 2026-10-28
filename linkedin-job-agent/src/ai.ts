@@ -164,7 +164,7 @@ export async function aiAnswer(question: string, kind: FieldKind, options: strin
   if (!q || SENSITIVE.test(q) || !aiEnabled()) return null;
   const long = kind === 'textarea';
   // Long answers are about this job; short factual ones are the same everywhere
-  const key = `${kind}|${q.toLowerCase()}|${options.join('/')}${long ? `|${ctx.job.company}` : ''}`;
+  const key = `${loadSettings().autopilot ? 'auto|' : ''}${kind}|${q.toLowerCase()}|${options.join('/')}${long ? `|${ctx.job.company}` : ''}`;
   const cache = readCache();
   if (key in cache) return cache[key];
 
@@ -181,6 +181,24 @@ export async function aiAnswer(question: string, kind: FieldKind, options: strin
     long ? 400 : 120,
   );
   let ans = typeof out?.answer === 'string' ? out.answer.trim() : null;
+  // Autopilot: rather than stopping to ask you, give the most honest answer the facts allow
+  // ("No", "0", "not yet, but…") — still never claiming anything the resume doesn't show
+  if (out && ans === null && loadSettings().autopilot) {
+    const best = await chat(
+      'You fill in a job application for a candidate who is not available to answer. The question must be answered. ' +
+        'Give the most HONEST answer the candidate facts allow. If the facts do not show a skill, tool, certification or experience, ' +
+        'answer truthfully that the candidate does not have it (e.g. "No", "0", or for text "Not yet in a professional role, but I have related experience in …"). ' +
+        'For yes/no questions about willingness, availability or acknowledgement, answer "Yes". Never invent employers, degrees, certifications, numbers or skills. ' +
+        (options.length ? 'The answer must be exactly one of the given options. ' : '') +
+        (kind === 'number' ? 'Return a plain number. ' : '') +
+        (long ? 'Write 60-120 words, first person. ' : 'Keep it short. ') +
+        'Reply as JSON: {"answer": string}',
+      `CANDIDATE\n${candidateFacts(ctx.profile, ctx.years)}\n\n${jobFacts(ctx.job)}\n\n` +
+        `QUESTION: ${q}\nFIELD TYPE: ${kind}${options.length ? `\nOPTIONS: ${options.join(' | ')}` : ''}`,
+      long ? 400 : 120,
+    );
+    ans = typeof best?.answer === 'string' && best.answer.trim() ? best.answer.trim() : null;
+  }
   if (ans && options.length && !options.includes(ans)) ans = options.find((o) => o.toLowerCase() === ans!.toLowerCase()) ?? null;
   if (ans && kind === 'number') ans = ans.match(/\d+(\.\d+)?/)?.[0] ?? null;
   if (ans && !long && ans.length > 200) ans = null;
@@ -274,4 +292,24 @@ export async function aiHealth(): Promise<AiHealth> {
   } catch (e) {
     return { ok: false, detail: `can't reach api.groq.com (${(e as Error).message})` };
   }
+}
+
+// ── 5. Finding the way on an unfamiliar careers site ─────────────────────────
+
+/**
+ * Picks which link or button gets closer to the job application form, given what's on
+ * screen. Returns the item's index, or null when nothing on the page leads there.
+ */
+export async function aiPickClick(goal: string, heading: string, items: string[]): Promise<number | null> {
+  if (!aiEnabled() || !items.length) return null;
+  const out = await chat(
+    'You operate a web browser to apply for a job. Given the clickable items on the current page, choose the ONE item that ' +
+      'best moves toward the application form for this job (e.g. "Apply", "Apply now", "Start application", "I\'m interested", ' +
+      '"Continue", "Accept cookies" if a banner blocks the page). Never choose sign-out, other jobs, social media, search filters, ' +
+      'or "save job". If none helps, return null. Reply as JSON: {"index": number | null}',
+    `GOAL: ${goal}\nPAGE: ${heading}\nITEMS:\n${items.map((t, i) => `${i}: ${t}`).join('\n')}`,
+    60,
+  );
+  const i = Number(out?.index);
+  return out && out.index !== null && Number.isInteger(i) && i >= 0 && i < items.length ? i : null;
 }

@@ -3,7 +3,9 @@ import { portalPassword } from '../config.js';
 import type { Applicant, QuestionContext } from '../answers.js';
 import { pause } from './browser.js';
 import type { ApplyResult } from './easyApply.js';
-import { fillAndSubmit, fillForm, hasBlockingCaptcha, openForm, siteDown, unavailable } from './externalApply.js';
+import { aiStep, fillAndSubmit, fillForm, hasBlockingCaptcha, openForm, siteDown, unavailable } from './externalApply.js';
+import { confirmByEmail } from '../mail.js';
+import { mailAccess } from '../config.js';
 import { readAccounts, saveAccount } from './workday.js';
 
 /**
@@ -67,6 +69,18 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
   const short = host.replace(/^(www|careers?|jobs)[-.]/, '').split('.')[0];
   let signInTries = 0;
   let createTries = 0;
+  let verifyTries = 0;
+  let aiTries = 0;
+  const since = new Date();
+  /** Reads the verification email and finishes that step; false when it can't. */
+  const verifyByEmail = async () => {
+    if (!mailAccess() || verifyTries++ > 1) return false;
+    const done = await confirmByEmail(site, short, since);
+    if (done === 'link') await site.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+    return Boolean(done);
+  };
+  /** Unfamiliar page: let the AI pick the button that moves things along. */
+  const aiMove = async () => aiTries++ < 3 && (await aiStep(site)) === site;
 
   for (let step = 0; step < 10; step++) {
     await unwrapFrame(site);
@@ -104,12 +118,14 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
         await clickButton(site, /^\s*(sign ?in|log ?in|login|next|continue|submit)\s*$/i);
       }
       if (await site.getByText(VERIFY).first().isVisible().catch(() => false)) {
-        return { status: 'needs_attention', note: `${name} (${short}) wants to verify ${me.email} — tap the link in that email, then the next run carries on (if it asks for a code, finish this one yourself)`, applyUrl: site.url() };
+        if (await verifyByEmail()) continue;
+        return { status: 'needs_attention', note: `${name} (${short}) wants to verify ${me.email} — tap the link in that email (or add Email access on the dashboard so the agent does it), then the next run carries on`, applyUrl: site.url() };
       }
       continue;
     }
 
     if (await site.getByText(VERIFY).first().isVisible().catch(() => false)) {
+      if (await verifyByEmail()) continue;
       return { status: 'needs_attention', note: `${name} (${short}) sent a code to ${me.email} — finish this application yourself`, applyUrl: site.url() };
     }
 
@@ -124,7 +140,7 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
         const near = await box.evaluate((n) => ((n.closest('label') as HTMLElement | null)?.innerText ?? n.parentElement?.innerText ?? '')).catch(() => '');
         if (/agree|consent|accept|privacy|terms|acknowledge/i.test(near)) await box.check({ force: true }).catch(() => {});
       }
-      if (!(await clickButton(site, /^\s*(next|continue|submit|sign ?in|log ?in|login|go|start)\s*(›|>|→)?\s*$/i))) break;
+      if (!(await clickButton(site, /^\s*(next|continue|submit|sign ?in|log ?in|login|go|start)\s*(›|>|→)?\s*$/i)) && !(await aiMove())) break;
       continue;
     }
 
@@ -132,7 +148,7 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
     if (inputs === 0) {
       const before = site.url();
       await openForm(site, 'form');
-      if (site.url() === before && (await site.locator('input:visible').count()) === 0) break;
+      if (site.url() === before && (await site.locator('input:visible').count()) === 0 && !(await aiMove())) break;
       continue;
     }
 

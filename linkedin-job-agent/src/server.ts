@@ -5,7 +5,8 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import fs from 'node:fs';
 import { aiEnabled, aiHealth } from './ai.js';
 import { portalAccounts } from './linkedin/workday.js';
-import { DATA_DIR, VERSION, env, portalPassword, saveGroqKey, savePortalPassword, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
+import { mailHealth } from './mail.js';
+import { DATA_DIR, VERSION, env, mailAccess, portalPassword, saveGroqKey, saveMailAccess, savePortalPassword, loadAnswers, loadSettings, saveAnswers, saveSettings, type Answers, type Settings } from './config.js';
 import { agent, effectiveExclusions, LAST_ERROR_SHOT, lastRunEndedAt, RUN_STATE, searchKeywords } from './agent.js';
 import { currentEmployers, loadProfile, yearsFromResume } from './profile.js';
 import { extractSkillsFromText } from './matching.js';
@@ -43,6 +44,7 @@ export function startServer() {
       linkedin: getSession(),
       resume: env.resumePath ? path.basename(env.resumePath) : null,
       portal: { passwordSet: Boolean(portalPassword()), accounts: Object.keys(portalAccounts()) },
+      mail: mailAccess() ? { user: mailAccess()!.user, host: mailAccess()!.host } : null,
       ai: { configured: Boolean(env.groqApiKey), enabled: aiEnabled(), keywords: readAiKeywords() },
       nextRunAt: (() => {
         const h = loadSettings().autoRunHours;
@@ -114,6 +116,25 @@ export function startServer() {
     res.json({ ok: true });
   });
 
+  app.post('/api/mail', async (req, res) => {
+    const { password, host } = req.body as { password?: string; host?: string };
+    if (!loadAnswers().email) return res.status(400).json({ error: 'Add your email under "My answers" first' });
+    if (!password || password.replace(/\s+/g, '').length < 8) return res.status(400).json({ error: 'Paste the app password (16 letters for Gmail)' });
+    saveMailAccess(password, host);
+    const h = await mailHealth();
+    if (!h.ok) {
+      saveMailAccess('', undefined);
+      return res.status(400).json({ error: `Couldn't sign in to your inbox: ${h.detail}` });
+    }
+    agent.log('Email access saved — job-portal verification emails are now handled automatically');
+    res.json(h);
+  });
+  app.delete('/api/mail', (_req, res) => {
+    saveMailAccess('', undefined);
+    res.json({ ok: true });
+  });
+  app.get('/api/mail/test', async (_req, res) => res.json(await mailHealth()));
+
   app.get('/api/ai/test', async (_req, res) => res.json(await aiHealth()));
 
   app.post('/api/jobs/recheck', (_req, res) => {
@@ -148,6 +169,7 @@ export function startServer() {
     if (b.yearsExperience === null || Number.isFinite(b.yearsExperience)) patch.yearsExperience = b.yearsExperience ?? null;
     if (Number.isFinite(b.autoRunHours)) patch.autoRunHours = Math.max(0, Math.min(48, Number(b.autoRunHours)));
     if (b.applyMode === 'all' || b.applyMode === 'easy') patch.applyMode = b.applyMode;
+    if (typeof b.autopilot === 'boolean') patch.autopilot = b.autopilot;
     if (b.postedWithin && ['r86400', 'r604800', 'r2592000'].includes(b.postedWithin)) patch.postedWithin = b.postedWithin;
     res.json(saveSettings(patch));
   });

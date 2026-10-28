@@ -11,7 +11,7 @@ import { isLoggedIn, openBrowser, pause } from './linkedin/browser.js';
 import { scrapeOwnProfile } from './linkedin/profile.js';
 import { jobDetails, searchJobIds } from './linkedin/jobs.js';
 import { easyApply, type ApplyResult } from './linkedin/easyApply.js';
-import { findApplyButton } from './linkedin/jobs.js';
+import { applyMethod, findApplyButton } from './linkedin/jobs.js';
 import { externalApply } from './linkedin/externalApply.js';
 import { splitName, type Applicant } from './answers.js';
 import { aiAnswer, aiCoverNote, aiEnabled, aiFit, aiKeywords } from './ai.js';
@@ -21,7 +21,7 @@ import { notify, progress } from './notify.js';
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
 /** Bump when applying gets smarter so jobs that failed to open the form are tried again. */
-const APPLY_VERSION = 6;
+const APPLY_VERSION = 7;
 
 /** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
 export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
@@ -309,13 +309,16 @@ class Agent {
             await pause(1500, 2500);
             const btn = await findApplyButton(p);
             const btnText = btn ? `${await btn.innerText().catch(() => '')} ${(await btn.getAttribute('aria-label').catch(() => '')) ?? ''}` : '';
-            if (!btn && !job.externalUrl) {
+            // No visible button (hidden, renamed or a new layout): LinkedIn's data still says how to apply
+            const method = btn ? null : await applyMethod(p, job.id);
+            if (!btn && !method?.url && !method?.easy && !job.externalUrl) {
               if (await p.getByText(/no longer accepting applications/i).first().isVisible().catch(() => false)) {
                 return { status: 'failed' as const, note: 'no longer accepting applications' };
               }
               return { status: 'failed' as const, note: "couldn't find the Apply button on the job page", shot: await p.screenshot().catch(() => undefined) };
             }
-            const isEasy = btn ? /easy apply/i.test(btnText) : false;
+            const isEasy = btn ? /easy apply/i.test(btnText) : Boolean(method?.easy);
+            if (method?.url) job.externalUrl = method.url;
             const r = await (isEasy
               ? easyApply(p, jobQctx, settings.dryRun)
               : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl));
@@ -373,9 +376,9 @@ class Agent {
             (prev.status === 'needs_attention' && /verif|tap the link/i.test(prev.note ?? '') && Date.now() - Date.parse(prev.at) > 3600e3) ||
             // career site was down for maintenance — try again, at most every 3 hours
             (prev.status === 'failed' && /temporarily unavailable/.test(prev.note ?? '') && Date.now() - Date.parse(prev.at) > 3 * 3600e3) ||
-            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION) ||
+            (prev.status === 'failed' && /couldn't open the job page|crash|closed|Target|didn't open|did not open|button not found|find the Apply button|no confirmation/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION) ||
             // Needs-you jobs the agent can now handle itself (Workday accounts, dropdowns, address…)
-            (prev.status === 'needs_attention' && /needs an account|couldn't answer|no Submit button|no Next\/Submit|currently unavailable/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
+            (prev.status === 'needs_attention' && /needs an account|couldn't answer|no Submit button|no Next\/Submit|currently unavailable|couldn't find an application form|couldn't get from sign-in|verif/i.test(prev.note ?? '') && (prev.v ?? 1) < APPLY_VERSION);
           if (seen.has(id) || !retry) {
             tally['seen before'] = (tally['seen before'] ?? 0) + 1;
             continue;

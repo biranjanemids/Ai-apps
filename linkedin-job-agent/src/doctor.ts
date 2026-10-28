@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR, VERSION, env, loadAnswers, loadSettings } from './config.js';
+import { DATA_DIR, VERSION, env, loadAnswers, loadSettings, mailAccess, portalPassword } from './config.js';
+import { mailHealth } from './mail.js';
 import { effectiveExclusions } from './agent.js';
 import { aiHealth } from './ai.js';
 import { getSession, isLoggedIn, openBrowser, userAgent } from './linkedin/browser.js';
@@ -149,6 +150,16 @@ export async function doctor(): Promise<void> {
   const a = loadAnswers();
   const missing = (['phone', 'noticePeriodDays', 'currentCtcLakhs', 'expectedCtcLakhs'] as const).filter((k) => a[k] === undefined);
   line(missing.length ? 'warn' : 'ok', missing.length ? `Answers missing: ${missing.join(', ')}` : 'Application answers filled', missing.length ? 'more jobs will land in "Needs you"' : '');
+
+  // Things that would otherwise stop and wait for you
+  line(portalPassword() ? 'ok' : 'warn', portalPassword() ? 'Job-portal password set (Workday, iCIMS, Taleo… accounts are automatic)' : 'Job-portal password not set', portalPassword() ? '' : 'dashboard → Company job portals');
+  if (mailAccess()) {
+    const m = await mailHealth();
+    line(m.ok ? 'ok' : 'fail', m.ok ? 'Email access works — verification emails are handled automatically' : 'Email access fails', m.detail);
+  } else {
+    line('warn', 'Email access not set', 'portals that email a verification link wait for you — dashboard → Email access');
+  }
+  console.log(`   autopilot: ${loadSettings().autopilot ? 'on (never stops to ask)' : 'off (unknown questions go to "Needs you")'}`);
 
   // Work waiting from an interrupted run
   const queued = store.list('queued').length;
