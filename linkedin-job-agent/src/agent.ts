@@ -22,7 +22,7 @@ import { notify, progress } from './notify.js';
 /** Bump when scoring changes so jobs skipped as "low match" are scored again. */
 const SCORING_VERSION = 2;
 /** Bump when applying gets smarter so jobs that failed to open the form are tried again. */
-const APPLY_VERSION = 7;
+const APPLY_VERSION = 8;
 
 /** Present while a run is in progress; if the app is killed it stays, and the run resumes on restart. */
 export const RUN_STATE = path.join(DATA_DIR, 'run-state.json');
@@ -170,13 +170,13 @@ class Agent {
     progress('Starting…');
     try {
       // On a phone, Android sometimes kills the browser mid-run. Finished jobs and the queue are
-      // saved, so start a fresh browser and carry on (up to twice).
+      // saved, so start a fresh browser and carry on (up to 4 times).
       for (let attempt = 1; ; attempt++) {
         try {
           return await this.runInner();
         } catch (e) {
-          if (!(e instanceof BrowserGone || isCrash(e)) || this.stopRequested || attempt > 2) throw e;
-          this.log(`${(e as Error).message} — restarting the browser and continuing (${attempt}/2)…`);
+          if (!(e instanceof BrowserGone || isCrash(e)) || this.stopRequested || attempt > 4) throw e;
+          this.log(`${(e as Error).message} — restarting the browser and continuing (${attempt}/4)…`);
           await pause(5000, 8000);
         }
       }
@@ -346,7 +346,20 @@ class Agent {
         }
       };
 
-      // 0. Matches left over from a run that crashed or was stopped go first
+      // 0. Jobs an older version gave up on, that this version can handle, get another go
+      const again = store
+        .list()
+        .filter(
+          (r) =>
+            (r.status === 'needs_attention' || r.status === 'failed') &&
+            (r.v ?? 1) < APPLY_VERSION &&
+            Date.now() - Date.parse(r.at) < 30 * 86400e3 &&
+            !/captcha|Naukri|Indeed|no longer accepting|your own .* login/i.test(r.note ?? ''),
+        );
+      for (const r of again) store.save({ ...r, status: 'queued', note: 'retrying with the improved agent', v: APPLY_VERSION, job: r.job ?? { easyApply: false, externalApply: true, description: '' } });
+      if (again.length) this.log(`Retrying ${again.length} earlier job(s) that the improved agent can now handle`);
+
+      // Matches left over from a run that crashed or was stopped go first
       await applyQueue();
 
       // 1. Find and score; good matches are queued (saved) immediately
@@ -474,7 +487,7 @@ class Agent {
     store.save({
       id: job.id, title: job.title, company: job.company, location: job.location, url: job.url, score, reasons, status, note, applyUrl,
       aiAnswers: aiAnswers?.length ? aiAnswers : undefined, shot: shot || undefined, v: status === 'failed' || status === 'needs_attention' ? APPLY_VERSION : SCORING_VERSION, at: new Date().toISOString(),
-      job: status === 'queued'
+      job: status !== 'skipped' && status !== 'excluded'
         ? { easyApply: job.easyApply, externalApply: job.externalApply, externalUrl: job.externalUrl, description: job.description.slice(0, 6000) }
         : undefined,
     });

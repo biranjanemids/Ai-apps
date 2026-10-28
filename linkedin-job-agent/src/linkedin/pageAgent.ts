@@ -17,9 +17,34 @@ import { trailClick } from './siteMemory.js';
 
 const MARK = 'data-ja';
 
-/** Numbers every visible field and button and describes them in one line each. */
+type FrameShot = { head: string; fields: string[]; buttons: string[]; next: number };
+
+/**
+ * Numbers every visible field and button and describes them in one line each — including
+ * those inside embedded frames (iCIMS, some login pages and many older career sites use them).
+ */
 async function snapshot(site: Page): Promise<string> {
-  return site.evaluate((MARK) => {
+  let next = 0;
+  let head = '';
+  const fields: string[] = [];
+  const buttons: string[] = [];
+  for (const frame of site.frames()) {
+    const main = frame === site.mainFrame();
+    const shot = await frame.evaluate(shootFrame, { MARK, start: next }).catch(() => null);
+    if (!shot) continue;
+    next = shot.next;
+    const where = main ? '' : ` (inside embedded frame ${(() => { try { return new URL(frame.url()).host; } catch { return ''; } })()})`;
+    if (main) head = shot.head;
+    fields.push(...shot.fields.map((f) => f + where));
+    buttons.push(...shot.buttons.map((b) => b + where));
+    if (next >= 120) break;
+  }
+  return [head, `FIELDS:\n${fields.join('\n') || '(none)'}`, `BUTTONS & LINKS:\n${buttons.join('\n') || '(none)'}`].join('\n');
+}
+
+/** Runs inside one frame: marks and describes its fields and buttons, numbering from `start`. */
+function shootFrame({ MARK, start }: { MARK: string; start: number }): FrameShot {
+  {
     document.querySelectorAll(`[${MARK}]`).forEach((e) => e.removeAttribute(MARK));
     const shown = (e: Element) => {
       const r = (e as HTMLElement).getBoundingClientRect();
@@ -45,12 +70,12 @@ async function snapshot(site: Page): Promise<string> {
 
     const fields: string[] = [];
     const buttons: string[] = [];
-    let i = 0;
+    let i = start;
     const sel =
       'input:not([type="hidden"]), select, textarea, [contenteditable="true"], [role="combobox"], [role="checkbox"], [role="radio"], [role="option"], ' +
       'button, a[href], [role="button"], [role="link"]';
     for (const el of Array.from(document.querySelectorAll(sel)) as HTMLElement[]) {
-      if (i >= 90 || !shown(el)) continue;
+      if (i - start >= 90 || !shown(el)) continue;
       const tag = el.tagName.toLowerCase();
       const type = ((el as HTMLInputElement).type || '').toLowerCase();
       const role = el.getAttribute('role') ?? '';
@@ -68,7 +93,8 @@ async function snapshot(site: Page): Promise<string> {
         line = `button "${clean((el as HTMLInputElement).value || el.getAttribute('aria-label'))}"`;
       } else if (tag === 'input' || tag === 'textarea' || el.isContentEditable || role === 'combobox') {
         const v = type === 'password' ? ((el as HTMLInputElement).value ? '[filled]' : '') : clean((el as HTMLInputElement).value ?? el.innerText, 60);
-        line = `${type === 'password' ? 'password' : tag === 'textarea' ? 'textarea' : role === 'combobox' ? 'dropdown/search' : `text(${type || 'text'})`} "${labelOf(el)}"${req}${v ? ` = "${v}"` : ' (empty)'}`;
+        const listbox = role === 'combobox' || el.getAttribute('aria-haspopup') === 'listbox' || !!el.getAttribute('aria-autocomplete');
+        line = `${type === 'password' ? 'password' : tag === 'textarea' ? 'textarea' : listbox ? 'dropdown/search (options appear when opened — use "select" with the option text)' : `text(${type || 'text'})`} "${labelOf(el)}"${req}${v ? ` = "${v}"` : ' (empty)'}`;
       } else if (role === 'checkbox' || role === 'radio') {
         line = `${role} "${clean(el.innerText || el.getAttribute('aria-label'))}"${el.getAttribute('aria-checked') === 'true' ? ' [checked]' : ''}`;
       } else if (role === 'option') {
@@ -76,6 +102,14 @@ async function snapshot(site: Page): Promise<string> {
       } else {
         const text = clean(el.innerText || el.getAttribute('aria-label') || el.getAttribute('title'));
         if (!text) continue;
+        if (el.getAttribute('aria-haspopup') === 'listbox') {
+          line = `dropdown (options appear when opened — use "select" with the option text) "${labelOf(el) || text}" = "${text}"`;
+          el.setAttribute(MARK, String(i));
+          el.setAttribute(`${MARK}-l`, (labelOf(el) || text).slice(0, 60));
+          fields.push(`[${i}] ${line}`);
+          i++;
+          continue;
+        }
         const href = el.getAttribute('href');
         const away = href && /^https?:/.test(href) && new URL(href).host !== location.host ? ` → ${new URL(href).host}` : '';
         line = `${tag === 'a' ? 'link' : 'button'} "${text}"${away}`;
@@ -91,17 +125,25 @@ async function snapshot(site: Page): Promise<string> {
       .filter(Boolean)
       .slice(0, 5);
     const heading = clean((document.querySelector('h1, h2, h3') as HTMLElement | null)?.innerText, 100);
-    return [
+    const head = [
       `URL: ${location.href.split('?')[0]}`,
       `TITLE: ${clean(document.title)} | ${heading}`,
       errors.length ? `ERRORS: ${errors.join(' / ')}` : '',
-      `TEXT: ${clean(document.body.innerText, 500)}`,
-      `FIELDS:\n${fields.join('\n') || '(none)'}`,
-      `BUTTONS & LINKS:\n${buttons.join('\n') || '(none)'}`,
+      `TEXT: ${clean(document.body?.innerText, 500)}`,
     ]
       .filter(Boolean)
       .join('\n');
-  }, MARK);
+    return { head, fields, buttons, next: i };
+  }
+}
+
+/** The element numbered `i` in the last snapshot, in whichever frame it is. */
+async function marked(site: Page, i: number) {
+  for (const frame of site.frames()) {
+    const el = frame.locator(`[${MARK}="${i}"]`).first();
+    if (await el.count().catch(() => 0)) return el;
+  }
+  return null;
 }
 
 const VERIFY = /verification code|enter (the|your) code|one[- ]time (pass(word|code)|code)|verify your (e-?mail|account)|check your (e-?mail|inbox)|activate your account/i;
@@ -122,6 +164,7 @@ export async function pageAgent(
   const history: string[] = [`(the built-in filler stopped: ${reason})`];
   let filledAny = false;
   let filledPage = false;
+  let waits = 0;
   let same = 0;
   let last = '';
   let verified = 0;
@@ -143,7 +186,13 @@ export async function pageAgent(
       }
     }
 
-    const page = await snapshot(site).catch(() => '');
+    // Single-page apps keep loading after the first paint (Workday, Microsoft, iCIMS…)
+    await site.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    let page = await snapshot(site).catch(() => '');
+    for (let w = 0; w < 2 && /FIELDS:\n\(none\)/.test(page) && (page.match(/^\[\d+\] (button|link)/gm) ?? []).length < 6; w++) {
+      await site.waitForTimeout(5000); // still loading — look again before asking the AI
+      page = await snapshot(site).catch(() => '');
+    }
     if (!page) break;
     same = page === last ? same + 1 : 0;
     last = page;
@@ -157,13 +206,17 @@ export async function pageAgent(
       history.push('(you said submitted, but no confirmation is visible — check the page again)');
       continue;
     }
+    if (plan.status === 'working' && !plan.actions.length && waits++ < 2) {
+      await site.waitForTimeout(6000); // the AI thinks the page is still loading
+      continue;
+    }
     if (plan.status === 'stuck' || !plan.actions.length) {
       return done({ status: 'needs_attention', note: `${name}: ${plan.why || 'the AI agent could not continue'}`, applyUrl: site.url() });
     }
 
     for (const a of plan.actions) {
-      const el = site.locator(`[${MARK}="${a.i}"]`).first();
-      if (!(await el.count())) continue;
+      const el = await marked(site, a.i);
+      if (!el) continue;
       const desc = (await el.getAttribute(`${MARK}-l`).catch(() => '')) || `#${a.i}`;
       // Dry run: after filling a page, only buttons that clearly go to the next step are pressed
       if (a.do === 'click' && dryRun && (FINAL.test(desc) || (filledPage && !NEXT.test(desc)))) {
@@ -219,8 +272,29 @@ async function act(
         if (tag === 'select') {
           await el.selectOption({ label: a.option }).catch(() => el.selectOption(a.option));
         } else {
+          // Custom dropdowns: open it, type to filter if it takes typing, then pick the option
           await el.click();
-          await site.locator('[role="option"]:visible, li:visible').filter({ hasText: a.option }).first().click({ timeout: 4000 });
+          await pause(500, 900);
+          const typable = await el.evaluate((n) => n.tagName === 'INPUT' || (n as HTMLElement).isContentEditable).catch(() => false);
+          if (typable) await el.fill(a.option).catch(() => {});
+          else await site.keyboard.type(a.option.slice(0, 12), { delay: 60 }).catch(() => {});
+          await pause(800, 1400);
+          const want = a.option.trim().toLowerCase();
+          const opts = site.locator('[role="option"]:visible, [role="menuitem"]:visible, [role="listbox"] li:visible, ul[class*="option" i] li:visible');
+          let picked = false;
+          for (const o of await opts.all()) {
+            const t = ((await o.innerText().catch(() => '')) || '').trim().toLowerCase();
+            if (t === want || (t.startsWith(want) && t.length - want.length < 25)) {
+              await o.click().catch(() => {});
+              picked = true;
+              break;
+            }
+          }
+          if (!picked) {
+            const loose = opts.filter({ hasText: a.option }).first();
+            if (await loose.isVisible().catch(() => false)) await loose.click();
+            else await site.keyboard.press('Enter');
+          }
         }
         return true;
       }

@@ -1,4 +1,4 @@
-import type { BrowserContext, Locator, Page } from 'playwright';
+import type { BrowserContext, Locator, Page, Request } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, env } from '../config.js';
@@ -63,14 +63,41 @@ export async function externalApply(
   const jobId = page.url().match(/\/jobs\/view\/(\d+)/)?.[1];
   const btn = await findApplyButton(page);
   let site: Page = page;
+  // Where the button tries to go, even if the new tab is blocked or the page load is cancelled
+  const tried: string[] = [];
+  const watch = (r: Request) => {
+    try {
+      if (r.isNavigationRequest() && !/linkedin\.com|licdn\.com/.test(new URL(r.url()).hostname)) tried.push(r.url());
+    } catch {
+      // not a URL we care about
+    }
+  };
   if (btn) {
     directUrl = directUrl ?? (await applyHref(btn));
+    await page
+      .evaluate(() => {
+        const w = window as unknown as { __jaOpened?: string[]; open: typeof window.open };
+        w.__jaOpened = [];
+        const orig = window.open.bind(window);
+        w.open = (url?: string | URL, ...rest: unknown[]) => {
+          if (url) w.__jaOpened!.push(String(url));
+          return orig(url as string, ...(rest as [string?, string?]));
+        };
+      })
+      .catch(() => {});
+    ctx.on('request', watch);
     const popup = ctx.waitForEvent('page', { timeout: 20000 }).catch(() => null);
     await btn.click().catch(() => {});
     // LinkedIn sometimes asks before leaving ("Continue to company site" / share profile)
     await passInterstitials(page);
     site = (await popup) ?? page;
     await site.waitForURL((u) => !/linkedin\.com/.test(u.hostname), { timeout: 20000 }).catch(() => {});
+    ctx.off('request', watch);
+    if (/linkedin\.com/.test(site.url())) {
+      const opened = (await page.evaluate(() => (window as unknown as { __jaOpened?: string[] }).__jaOpened ?? []).catch(() => [])) as string[];
+      const seen = [...tried, ...opened.map((u) => unwrapLinkedIn(new URL(u, 'https://www.linkedin.com').toString()) ?? '')].find((u) => /^https?:/.test(u) && !/linkedin\.com/.test(u));
+      directUrl = directUrl && !/linkedin\.com/.test(directUrl) ? directUrl : seen ?? directUrl;
+    }
   }
   // The button did nothing: ask LinkedIn's own data where this job is applied to
   if (/linkedin\.com/.test(site.url()) && (!directUrl || /linkedin\.com/.test(directUrl)) && jobId) {
@@ -267,7 +294,12 @@ export async function fillAndSubmit(
   for (let pageNo = 0; pageNo < 10; pageNo++) {
     const unanswered = await fillForm(site, form, me, qctx);
     if (unanswered.length) {
-      return { status: 'needs_attention', note: `${name}: couldn't answer ${unanswered.slice(0, 3).join(' | ')}`, applyUrl: site.url() };
+      // Odd widgets or unlabelled fields: the AI agent can see the whole page and finish it
+      return (await pageAgent(site, site.context(), name, qctx, dryRun, `these required fields are still empty: ${unanswered.slice(0, 5).join(' | ')}`)) ?? {
+        status: 'needs_attention',
+        note: `${name}: couldn't answer ${unanswered.slice(0, 3).join(' | ')}`,
+        applyUrl: site.url(),
+      };
     }
     if (await hasBlockingCaptcha(site)) {
       return { status: 'needs_attention', note: `${name} has a captcha — apply yourself (takes a minute)`, applyUrl: site.url() };
@@ -443,6 +475,8 @@ export async function fillForm(site: Page, form: Locator, me: Applicant, qctx: Q
   for (const el of await texts.all()) {
     if (!(await el.isVisible().catch(() => false)) || (await el.inputValue().catch(() => 'x'))) continue;
     if ((await el.getAttribute('role')) === 'combobox') continue; // handled above
+    // Helper inputs of custom widgets (hidden from screen readers) aren't questions
+    if (await el.evaluate((n) => !!n.closest('[aria-hidden="true"]') || (n as HTMLInputElement).readOnly).catch(() => false)) continue;
     const label = await labelOf(el);
     const type = ((await el.getAttribute('type')) ?? 'text').toLowerCase();
     const required = await isRequired(el, label);

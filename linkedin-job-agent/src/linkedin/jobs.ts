@@ -106,7 +106,7 @@ interface GuestPosting {
 }
 
 /** Title/company/location/description from LinkedIn's public job page for this ID. */
-async function guestPosting(page: Page, id: string): Promise<GuestPosting | null> {
+export async function guestPosting(page: Page, id: string): Promise<GuestPosting | null> {
   const html = await fetchText(page, `${GUEST}/jobPosting/${id}`);
   if (!html) return null;
   return page.evaluate((h) => {
@@ -289,11 +289,14 @@ export async function applyMethod(page: Page, id: string): Promise<{ easy: boole
       // 1. LinkedIn's own API, as the page calls it
       const csrf = document.cookie.match(/JSESSIONID="?([^";]+)/)?.[1];
       if (csrf) {
-        const r = await fetch(`/voyager/api/jobs/jobPostings/${jobId}`, {
-          headers: { 'csrf-token': csrf, 'x-restli-protocol-version': '2.0.0', accept: 'application/vnd.linkedin.normalized+json+2.1' },
-          credentials: 'include',
-        }).catch(() => null);
-        if (r?.ok) return r.text();
+        for (const q of ['', '?decorationId=com.linkedin.voyager.deco.jobs.web.shared.WebFullJobPosting-65', '?decorationId=com.linkedin.voyager.deco.jobs.web.shared.WebLightJobPosting-23']) {
+          const r = await fetch(`/voyager/api/jobs/jobPostings/${jobId}${q}`, {
+            headers: { 'csrf-token': csrf, 'x-restli-protocol-version': '2.0.0', accept: 'application/vnd.linkedin.normalized+json+2.1' },
+            credentials: 'include',
+          }).catch(() => null);
+          const t = r?.ok ? await r.text() : '';
+          if (/companyApplyUrl|OnsiteApply|applyMethod/.test(t)) return t;
+        }
       }
       // 2. The job page itself often embeds the link
       const embedded = document.documentElement.innerHTML.match(/companyApplyUrl&quot;:&quot;(.*?)&quot;|"companyApplyUrl":"(.*?)"/);
@@ -301,7 +304,11 @@ export async function applyMethod(page: Page, id: string): Promise<{ easy: boole
       return null;
     }, id)
     .catch(() => null);
-  if (!raw) return null;
+  if (!raw) {
+    // 3. The public job page lists the company link too
+    const guest = await guestPosting(page, id);
+    return guest?.externalUrl ? { easy: false, url: unwrapLinkedIn(guest.externalUrl) ?? guest.externalUrl } : null;
+  }
   const m = raw.match(/"companyApplyUrl"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   let url: string | undefined;
   if (m) {

@@ -349,7 +349,10 @@ export async function aiNextActions(facts: string, page: string, opts: { dryRun:
     'You operate a web browser to submit a job application for the candidate on an unfamiliar careers website. ' +
       'You see the page as a numbered list of elements. Return the next actions (at most 8) that move toward a submitted application: ' +
       'fill empty required fields, choose options, tick consent boxes, upload the resume, then click Next/Continue/Submit. ' +
-      'If the site needs an account, register or sign in with the candidate email and the password token {{PASSWORD}} (type it exactly like that). ' +
+      'You HAVE login credentials for every site: the candidate email and the password token {{PASSWORD}} (type it exactly like that; the browser fills the real password). ' +
+      'If the site needs an account, sign in, or register first if sign-in fails or there is a "Create account" option. Choose "sign in with email" over Google/Microsoft/LinkedIn buttons. ' +
+      'Never say credentials are missing. Elements marked "inside embedded frame" are part of the page — use them normally. ' +
+      'If the page looks empty or still loading, return {"status":"working","actions":[]} and it will be read again shortly. ' +
       'Answer questions truthfully from the CANDIDATE facts only; when the facts do not cover a question, give the most honest answer ' +
       '("No", "0", "Not yet"). Never invent employers, degrees or skills. For gender, race, disability or veteran questions choose a "decline to answer" option if there is one. ' +
       'Do not fill optional fields you have no facts for. Do not click links to other jobs, social media, sign-out, or search filters. ' +

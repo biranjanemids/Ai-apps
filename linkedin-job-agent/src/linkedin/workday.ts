@@ -51,12 +51,17 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
   // 1. Apply → choose how, 2. sign in (or create the account the first time)
   const since = new Date();
   const begin = async () => {
+    await settle(site);
     const apply = site.locator(`${aid('adventureButton')}, ${aid('applyButton')}`).first();
-    if (await visible(apply)) await press(site, apply);
+    if (await visible(apply)) {
+      await press(site, apply);
+      await settle(site);
+    }
     for (const choice of ['useMyLastApplication', 'autofillWithResume', 'applyManually']) {
       const b = site.locator(aid(choice)).first();
       if (await visible(b)) {
         await press(site, b);
+        await settle(site);
         break;
       }
     }
@@ -64,7 +69,7 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
   };
   let signedIn = await begin();
   // "Verify your email": open the link from your inbox ourselves, then start again
-  if (signedIn !== 'ok' && /verif|activate/i.test(signedIn) && (await confirmByEmail(site, tenant.split('.')[0], since))) {
+  if (signedIn !== 'ok' && /verif|activat/i.test(signedIn) && (await confirmByEmail(site, tenant.split('.')[0], since))) {
     await site.goto(applyUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
     await pause(2000, 3000);
     signedIn = await begin();
@@ -82,6 +87,7 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
   let lastHeading = '';
   const uploadedOn = new Set<string>();
   for (let step = 0; step < 12; step++) {
+    await settle(site);
     const heading = (await site.locator(`${aid('progressBarActiveStep')}, h2, h3`).first().innerText().catch(() => '')).trim();
     // "My Experience" (or the autofill page) asks for the resume — upload it once per step
     const fileInput = site.locator(`${aid('file-upload-input-ref')}, input[type="file"]`).first();
@@ -95,7 +101,11 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
     }
     const unanswered = await fillWorkdayPage(site, me, qctx);
     if (unanswered.length) {
-      return { status: 'needs_attention', note: `Workday (${heading || 'form'}): couldn't answer ${unanswered.slice(0, 3).join(' | ')}`, applyUrl: site.url() };
+      return (await pageAgent(site, site.context(), 'Workday', qctx, dryRun, `these required fields are still empty: ${unanswered.slice(0, 5).join(' | ')}`)) ?? {
+        status: 'needs_attention',
+        note: `Workday (${heading || 'form'}): couldn't answer ${unanswered.slice(0, 3).join(' | ')}`,
+        applyUrl: site.url(),
+      };
     }
     const next = site
       .locator(`${aid('bottom-navigation-next-button')}, ${aid('bottom-navigation-next-btn')}, ${aid('pageFooterNextButton')}`)
@@ -132,16 +142,51 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
   return { status: 'needs_attention', note: 'Workday: too many steps', applyUrl: site.url() };
 }
 
+const AUTH = [aid('email'), aid('SignInWithEmailButton'), aid('signInWithEmailButton'), aid('createAccountLink'), aid('signInLink')].join(', ');
+const READY = [
+  AUTH, aid('adventureButton'), aid('applyButton'), aid('applyManually'), aid('autofillWithResume'), aid('useMyLastApplication'),
+  aid('progressBarActiveStep'), aid('bottom-navigation-next-button'), aid('pageFooterNextButton'), '[data-automation-id^="formField-"]',
+].join(', ');
+
+/** Workday renders slowly (especially on a phone): wait until something usable is on screen. */
+export async function settle(site: Page): Promise<void> {
+  await site.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  await site.locator(READY).first().waitFor({ state: 'visible', timeout: 30000 }).catch(() => {});
+  await site.locator(aid('loadingSpinner')).first().waitFor({ state: 'hidden', timeout: 15000 }).catch(() => {});
+  // Cookie notice (EU tenants) sits on top of everything
+  const cookies = site.locator(aid('legalNoticeAcceptButton')).or(site.locator('button').filter({ hasText: /^\s*accept( all)?( cookies)?\s*$/i })).first();
+  if (await visible(cookies)) await press(site, cookies);
+}
+
+const errorText = async (site: Page) =>
+  (await site.locator(`${aid('errorMessage')}, ${aid('errorBanner')}, [role="alert"]`).allInnerTexts().catch(() => [])).join(' ').replace(/\s+/g, ' ').trim();
+
+/** "Sign in with email" (newer Workday shows Google/LinkedIn/email choices first). */
+async function chooseEmail(site: Page) {
+  const withEmail = site.locator(`${aid('SignInWithEmailButton')}, ${aid('signInWithEmailButton')}`).first();
+  if (await visible(withEmail)) {
+    await press(site, withEmail);
+    await settle(site);
+  }
+}
+
+const VERIFY_NOTE = (email: string, tenant: string) =>
+  `Workday sent a verification email to ${email} for ${tenant.split('.')[0]} — tap the link in it (or add Email access on the dashboard), then the next run continues`;
+
 /** Returns 'ok' when signed in, otherwise a note for "Needs you". */
 async function signIn(site: Page, tenant: string, email: string, password: string): Promise<string> {
-  const emailBox = site.locator(aid('email')).first();
-  if (!(await visible(emailBox))) return 'ok'; // already signed in to this company's Workday
+  await settle(site);
+  if (!(await visible(site.locator(AUTH).first()))) return 'ok'; // already signed in to this company's Workday
   const known = readAccounts()[tenant];
 
-  if (!known) {
-    // Switch to "Create Account" if the sign-in form is showing
-    const create = site.locator(aid('createAccountLink')).first();
-    if (await visible(create)) await press(site, create);
+  const createAccount = async (): Promise<string> => {
+    await chooseEmail(site);
+    const link = site.locator(aid('createAccountLink')).first();
+    if (await visible(link)) {
+      await press(site, link);
+      await settle(site);
+    }
+    if (!(await visible(site.locator(aid('verifyPassword')).first())) && !(await visible(site.locator(aid('createAccountSubmitButton')).first()))) return 'no-form';
     await site.locator(aid('email')).first().fill(email);
     await site.locator(aid('password')).first().fill(password);
     const verify = site.locator(aid('verifyPassword')).first();
@@ -149,27 +194,58 @@ async function signIn(site: Page, tenant: string, email: string, password: strin
     const agree = site.locator(aid('createAccountCheckbox')).first();
     if ((await agree.count()) && !(await agree.isChecked().catch(() => true))) await agree.check({ force: true }).catch(() => {});
     await press(site, site.locator(aid('createAccountSubmitButton')).first());
-    saveAccount(tenant, { email, created: new Date().toISOString() });
+    await settle(site);
     if (await site.getByText(/verify|verification (email|link)|check your email|activate your account/i).first().isVisible().catch(() => false)) {
-      return `Workday sent a verification email to ${email} for ${tenant.split('.')[0]} — tap the link in it, then the next run continues`;
+      saveAccount(tenant, { email, created: new Date().toISOString(), verified: false });
+      return 'verify';
     }
-  }
+    const err = await errorText(site);
+    if (/already (exists|in use|registered)|account with this email/i.test(err)) return 'exists';
+    if (await visible(site.locator(aid('verifyPassword')).first())) return `error:${err || 'the site did not accept the new account'}`;
+    saveAccount(tenant, { email, created: new Date().toISOString() });
+    return 'created';
+  };
 
-  // Sign in (also right after creating, on tenants that don't sign you in automatically)
-  if (await visible(site.locator(aid('email')).first())) {
-    const signInLink = site.locator(aid('signInLink')).first();
-    if (await visible(signInLink)) await press(site, signInLink);
-    await site.locator(aid('email')).first().fill(email);
-    await site.locator(aid('password')).first().fill(password);
+  const signInNow = async (): Promise<string> => {
+    await chooseEmail(site);
+    if (!(await visible(site.locator(aid('password')).first()))) {
+      const link = site.locator(aid('signInLink')).first();
+      if (await visible(link)) {
+        await press(site, link);
+        await settle(site);
+        await chooseEmail(site);
+      }
+    }
+    await site.locator(aid('email')).first().fill(email).catch(() => {});
+    await site.locator(aid('password')).first().fill(password).catch(() => {});
     await press(site, site.locator(`${aid('signInSubmitButton')}, button:has-text("Sign In")`).first());
+    await settle(site);
+    if (!(await visible(site.locator(`${aid('email')}, ${aid('password')}`).first()))) return 'ok';
+    return `error:${await errorText(site)}`;
+  };
+
+  let triedCreate = false;
+  if (!known) {
+    triedCreate = true;
+    const made = await createAccount();
+    if (made === 'verify') return VERIFY_NOTE(email, tenant);
+    if (made.startsWith('error:')) return `Workday ${tenant.split('.')[0]}: couldn't create the account — ${made.slice(6, 120)}`;
+    if (made === 'created' && !(await visible(site.locator(AUTH).first()))) return 'ok';
   }
-  if (await visible(site.locator(aid('email')).first())) {
-    const msg = (await site.locator(`${aid('errorMessage')}, [role="alert"]`).first().innerText().catch(() => '')).trim();
-    if (/verify|activate/i.test(msg)) return `Workday: verify your email for ${tenant.split('.')[0]} (link in your inbox), then the next run continues`;
-    return `Workday sign-in failed for ${tenant.split('.')[0]}${msg ? `: ${msg.slice(0, 80)}` : ''} — if you already had an account there, use the same job-portal password`;
+  let res = await signInNow();
+  // We thought an account existed but it doesn't (an earlier sign-up didn't finish): create it now
+  if (res !== 'ok' && !triedCreate && !/verif|activat|locked/i.test(res)) {
+    const made = await createAccount();
+    if (made === 'verify') return VERIFY_NOTE(email, tenant);
+    if (made === 'created') res = (await visible(site.locator(AUTH).first())) ? await signInNow() : 'ok';
   }
-  saveAccount(tenant, { email, created: known?.created ?? new Date().toISOString(), verified: true });
-  return 'ok';
+  if (res === 'ok') {
+    saveAccount(tenant, { email, created: known?.created ?? new Date().toISOString(), verified: true });
+    return 'ok';
+  }
+  const msg = res.slice(6);
+  if (/verif|activat/i.test(msg)) return VERIFY_NOTE(email, tenant);
+  return `Workday sign-in failed for ${tenant.split('.')[0]}${msg ? `: ${msg.slice(0, 100)}` : ''} — if you already had an account there with another password, reset it to your job-portal password`;
 }
 
 /** Fills the current Workday step; returns required questions it couldn't answer. */
