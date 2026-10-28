@@ -5,6 +5,7 @@ import { pause } from './browser.js';
 import type { ApplyResult } from './easyApply.js';
 import { aiStep, fillAndSubmit, fillForm, hasBlockingCaptcha, openForm, siteDown, unavailable } from './externalApply.js';
 import { confirmByEmail } from '../mail.js';
+import { pageAgent } from './pageAgent.js';
 import { mailAccess } from '../config.js';
 import { readAccounts, saveAccount } from './workday.js';
 
@@ -100,6 +101,10 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
       const creating = pwCount >= 2 || !known;
       if (creating ? createTries++ > 1 : signInTries++ > 1) {
         const err = (await site.locator('[role="alert"]:visible, [class*="error"]:visible').allInnerTexts().catch(() => [])).join(' ').trim();
+        if (!err) {
+          const ai = await pageAgent(site, site.context(), name, qctx, dryRun, creating ? 'account sign-up page not recognised' : 'sign-in page not recognised');
+          if (ai) return ai;
+        }
         return {
           status: 'needs_attention',
           note: `${name}: ${creating ? 'couldn\'t create an account' : 'sign-in failed'} on ${short}${err ? `: ${err.slice(0, 100)}` : ''} — if you already have an account there, set the same job-portal password or reset it`,
@@ -112,10 +117,10 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
         // Registration pages also ask for name, phone, country and consent
         const missing = await fillForm(site, site.locator('body'), me, qctx);
         if (missing.length) return { status: 'needs_attention', note: `${name} account form: couldn't answer ${missing.slice(0, 3).join(' | ')}`, applyUrl: site.url() };
-        await clickButton(site, /^\s*(create( (an |my )?account)?|register|sign ?up|submit|next|continue|save)\s*$/i);
+        if (!(await clickButton(site, /^\s*(create( (an |my )?account)?|register|sign ?up|submit|next|continue|save)\s*$/i))) await aiMove();
         saveAccount(host, { email: me.email, created: new Date().toISOString() });
       } else {
-        await clickButton(site, /^\s*(sign ?in|log ?in|login|next|continue|submit)\s*$/i);
+        if (!(await clickButton(site, /^\s*(sign ?in|log ?in|login|next|continue|submit)\s*$/i))) await aiMove();
       }
       if (await site.getByText(VERIFY).first().isVisible().catch(() => false)) {
         if (await verifyByEmail()) continue;
@@ -155,5 +160,11 @@ export async function accountPortalApply(site: Page, name: string, me: Applicant
     // Signed in and on the application itself
     return await fillAndSubmit(site, site.locator('body'), name, me, qctx, dryRun, applyUrl);
   }
-  return { status: 'needs_attention', note: `${name}: couldn't get from sign-in to the application form — apply yourself`, applyUrl: site.url() };
+  return (
+    (await pageAgent(site, site.context(), name, qctx, dryRun, 'could not get from sign-in to the application form')) ?? {
+      status: 'needs_attention',
+      note: `${name}: couldn't get from sign-in to the application form — apply yourself`,
+      applyUrl: site.url(),
+    }
+  );
 }

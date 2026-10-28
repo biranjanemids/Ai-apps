@@ -12,9 +12,10 @@ import { scrapeOwnProfile } from './linkedin/profile.js';
 import { jobDetails, searchJobIds } from './linkedin/jobs.js';
 import { easyApply, type ApplyResult } from './linkedin/easyApply.js';
 import { applyMethod, findApplyButton } from './linkedin/jobs.js';
+import { rememberOutcome } from './linkedin/siteMemory.js';
 import { externalApply } from './linkedin/externalApply.js';
-import { splitName, type Applicant } from './answers.js';
-import { aiAnswer, aiCoverNote, aiEnabled, aiFit, aiKeywords } from './ai.js';
+import { applicantFacts, splitName, type Applicant } from './answers.js';
+import { aiAnswer, aiCoverNote, aiEnabled, aiFit, aiKeywords, applicationFacts } from './ai.js';
 import type { QuestionContext } from './answers.js';
 import { notify, progress } from './notify.js';
 
@@ -302,6 +303,7 @@ class Agent {
             ...qctx,
             ai: aiEnabled() ? (q, kind, options) => aiAnswer(q, kind, options, aiCtx) : undefined,
             coverNote: aiEnabled() ? () => aiCoverNote(aiCtx) : undefined,
+            facts: aiEnabled() ? `${applicationFacts(profile, years, job)}\n${applicantFacts(applicant, answers)}` : undefined,
             aiLog: [],
           };
           const res: ApplyResult = await onPage(async (p) => {
@@ -322,6 +324,8 @@ class Agent {
             const r = await (isEasy
               ? easyApply(p, jobQctx, settings.dryRun)
               : externalApply(p, ctx, applicant, jobQctx, settings.dryRun, job.externalUrl));
+            // Remember how each careers site went (the AI agent learns sites without built-in support)
+            if (!isEasy && r.applyUrl) rememberOutcome(r.applyUrl, r.status, r.note, /AI agent/.test(r.note));
             if (r.status === 'failed' && !p.isClosed()) r.shot = await p.screenshot().catch(() => undefined);
             // The form "failed" only because the browser died under it — retry, don't give up
             if (r.status === 'failed' && p.isClosed()) throw new Error('Target page closed during apply');

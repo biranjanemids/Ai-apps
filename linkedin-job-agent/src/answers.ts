@@ -11,6 +11,8 @@ export interface QuestionContext {
   ai?: (question: string, kind: FieldKind, options: string[]) => Promise<string | null>;
   /** AI cover note for this job */
   coverNote?: () => Promise<string | null>;
+  /** Candidate + job facts for the AI page agent (unfamiliar sites) */
+  facts?: string;
   /** What the AI wrote, so you can review it on the dashboard */
   aiLog?: { q: string; a: string }[];
 }
@@ -186,4 +188,19 @@ export function identityAnswer(label: string, inputType: string, a: Applicant): 
 export function splitName(full: string): { firstName: string; lastName: string } {
   const parts = full.trim().split(/\s+/).map((p) => p.charAt(0).toUpperCase() + p.slice(1));
   return { firstName: parts[0] ?? '', lastName: parts.slice(1).join(' ') };
+}
+
+/** Your contact details and standard answers, as plain facts for the AI page agent. */
+export function applicantFacts(me: Applicant, a: Answers): string {
+  const yn = (b: boolean | undefined) => (b === undefined ? undefined : b ? 'Yes' : 'No');
+  const rows: [string, unknown][] = [
+    ['First name', me.firstName], ['Last name', me.lastName], ['Email', me.email], ['Phone (India)', me.phone],
+    ['Address', me.addressLine1], ['City', me.city ?? 'Bengaluru'], ['State', me.state ?? 'Karnataka'], ['PIN code', me.postalCode], ['Country', 'India'],
+    ['LinkedIn', me.linkedinUrl], ['Portfolio', me.portfolioUrl], ['Current employer', me.currentCompany], ['Current title', me.currentTitle],
+    ['Notice period (days)', a.noticePeriodDays], ['Current CTC (lakhs INR/year)', a.currentCtcLakhs], ['Expected CTC (lakhs INR/year)', a.expectedCtcLakhs],
+    ['Authorized to work in India', yn(a.authorizedToWorkInIndia ?? true)], ['Needs visa sponsorship', yn(a.requiresSponsorship ?? false)],
+    ['Willing to relocate', yn(a.willingToRelocate)], ['OK to work onsite', yn(a.comfortableOnsite)], ['How did you hear about us', 'LinkedIn'],
+    ...(a.custom ?? []).map((r) => [`Answer for "${r.match}"`, r.answer] as [string, unknown]),
+  ];
+  return rows.filter(([, v]) => v !== undefined && v !== null && v !== '').map(([k, v]) => `${k}: ${v}`).join('\n');
 }

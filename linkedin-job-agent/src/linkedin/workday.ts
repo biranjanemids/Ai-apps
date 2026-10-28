@@ -7,6 +7,7 @@ import { pause } from './browser.js';
 import type { ApplyResult } from './easyApply.js';
 import { siteDown, unavailable } from './externalApply.js';
 import { confirmByEmail } from '../mail.js';
+import { pageAgent } from './pageAgent.js';
 
 /**
  * Workday career sites (*.myworkdayjobs.com). They need an account per company, then walk
@@ -101,7 +102,10 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
       .or(site.locator('button').filter({ hasText: /^\s*(save and continue|next|continue|submit)\s*$/i }))
       .first();
     if (!(await visible(next)) && (await siteDown(site))) return unavailable('Workday', site);
-    if (!(await visible(next))) return { status: 'needs_attention', note: `Workday (${heading}): no Next/Submit button`, applyUrl: site.url() };
+    if (!(await visible(next))) {
+      return (await pageAgent(site, site.context(), 'Workday', qctx, dryRun, `no Next/Submit button on "${heading}"`)) ??
+        { status: 'needs_attention', note: `Workday (${heading}): no Next/Submit button`, applyUrl: site.url() };
+    }
     const isSubmit = /submit/i.test(await next.innerText().catch(() => ''));
     if (isSubmit && dryRun) return { status: 'dry_run', note: 'Workday: reached Submit (dry run — not sent)', applyUrl: site.url() };
     await press(site, next);
@@ -119,6 +123,8 @@ export async function workdayApply(site: Page, me: Applicant, qctx: QuestionCont
       .map((t) => t.trim())
       .filter(Boolean);
     if (errors.length && heading === lastHeading) {
+      const ai = await pageAgent(site, site.context(), 'Workday', qctx, dryRun, `Workday showed errors: ${errors.join(' ').slice(0, 200)}`);
+      if (ai) return ai;
       return { status: 'needs_attention', note: `Workday (${heading}): ${errors.join(' ').slice(0, 140)}`, applyUrl: site.url() };
     }
     lastHeading = heading;

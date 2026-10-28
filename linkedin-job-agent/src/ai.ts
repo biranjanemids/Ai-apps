@@ -87,6 +87,12 @@ const groqChat: Chat = async (system, user, maxTokens) => {
       const model = await groqModel(attempt > 0);
       if (!model) return null;
       let res = await complete(model, messages, maxTokens, true);
+      // Free plan: a few requests/tokens per minute — wait it out rather than give up
+      for (let wait = 0; res.status === 429 && wait < 3; wait++) {
+        const after = Number(res.headers.get('retry-after')) || 12;
+        await new Promise((r) => setTimeout(r, Math.min(60, after) * 1000));
+        res = await complete(model, messages, maxTokens, true);
+      }
       if (!res.ok) {
         const body = await res.text();
         if (retired(res.status, body)) continue; // pick another model and retry
@@ -108,14 +114,14 @@ export const setChatForTests = (fn: Chat | null) => (chat = fn ?? groqChat);
 
 export const aiEnabled = () => Boolean(env.groqApiKey) && loadSettings().useAI;
 
-function candidateFacts(p: Profile, years: number): string {
+function candidateFacts(p: Profile, years: number, resumeChars = 7000): string {
   return [
     `Name: ${p.name}`,
     `Headline: ${p.headline}`,
     `Total experience: ${years} years`,
     `Roles: ${p.experiences.map((e) => `${e.title} at ${e.company} (${e.dates})`).join('; ') || 'see resume'}`,
     `Skills: ${p.skills.join(', ')}`,
-    p.resumeText ? `Resume:\n${p.resumeText.slice(0, 7000)}` : '',
+    p.resumeText ? `Resume:\n${p.resumeText.slice(0, resumeChars)}` : '',
   ].join('\n');
 }
 
@@ -312,4 +318,51 @@ export async function aiPickClick(goal: string, heading: string, items: string[]
   );
   const i = Number(out?.index);
   return out && out.index !== null && Number.isInteger(i) && i >= 0 && i < items.length ? i : null;
+}
+
+// ── 6. Driving any application site, step by step ────────────────────────────
+
+/** Short facts for the page agent (it runs many steps, so less resume text). */
+export const applicationFacts = (p: Profile, years: number, job: Pick<JobDetails, 'title' | 'company' | 'description'>) =>
+  `${candidateFacts(p, years, 2500)}\n\nJob: ${job.title} at ${job.company}`;
+
+export type PageAction =
+  | { do: 'fill'; i: number; value: string }
+  | { do: 'select'; i: number; option: string }
+  | { do: 'check'; i: number }
+  | { do: 'click'; i: number }
+  | { do: 'upload'; i: number; file: 'resume' | 'cover' };
+
+export interface PagePlan {
+  status: 'working' | 'submitted' | 'stuck';
+  why: string;
+  actions: PageAction[];
+}
+
+/**
+ * Looks at a numbered list of what's on the page and decides the next few actions to get the
+ * application submitted. The password is never sent: the model writes {{PASSWORD}} instead.
+ */
+export async function aiNextActions(facts: string, page: string, opts: { dryRun: boolean; history: string[] }): Promise<PagePlan | null> {
+  if (!aiEnabled()) return null;
+  const out = await chat(
+    'You operate a web browser to submit a job application for the candidate on an unfamiliar careers website. ' +
+      'You see the page as a numbered list of elements. Return the next actions (at most 8) that move toward a submitted application: ' +
+      'fill empty required fields, choose options, tick consent boxes, upload the resume, then click Next/Continue/Submit. ' +
+      'If the site needs an account, register or sign in with the candidate email and the password token {{PASSWORD}} (type it exactly like that). ' +
+      'Answer questions truthfully from the CANDIDATE facts only; when the facts do not cover a question, give the most honest answer ' +
+      '("No", "0", "Not yet"). Never invent employers, degrees or skills. For gender, race, disability or veteran questions choose a "decline to answer" option if there is one. ' +
+      'Do not fill optional fields you have no facts for. Do not click links to other jobs, social media, sign-out, or search filters. ' +
+      (opts.dryRun ? 'DRY RUN: fill everything but do NOT click the final submit button; when only that is left, return status "submitted" with no actions. ' : '') +
+      'If the page says the application was received, return status "submitted". If a captcha, phone OTP or something impossible blocks you, return status "stuck" and say why. ' +
+      'Reply as JSON: {"status":"working"|"submitted"|"stuck","why":"short","actions":[{"do":"fill","i":3,"value":"…"},{"do":"select","i":4,"option":"…"},{"do":"check","i":5},{"do":"upload","i":6,"file":"resume"},{"do":"click","i":7}]}',
+    `CANDIDATE\n${facts}\n\n${opts.history.length ? `ALREADY DONE\n${opts.history.slice(-12).join('\n')}\n\n` : ''}PAGE\n${page}`,
+    700,
+  );
+  if (!out) return null;
+  const status = out.status === 'submitted' || out.status === 'stuck' ? out.status : 'working';
+  const actions = (Array.isArray(out.actions) ? out.actions : [])
+    .filter((a): a is PageAction => !!a && typeof a === 'object' && Number.isInteger((a as PageAction).i) && ['fill', 'select', 'check', 'click', 'upload'].includes((a as PageAction).do))
+    .slice(0, 8);
+  return { status, why: String(out.why ?? '').slice(0, 200), actions };
 }

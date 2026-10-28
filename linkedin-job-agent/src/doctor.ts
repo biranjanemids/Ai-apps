@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, VERSION, env, loadAnswers, loadSettings, mailAccess, portalPassword } from './config.js';
 import { mailHealth } from './mail.js';
+import { readMemory } from './linkedin/siteMemory.js';
 import { effectiveExclusions } from './agent.js';
 import { aiHealth } from './ai.js';
 import { getSession, isLoggedIn, openBrowser, userAgent } from './linkedin/browser.js';
@@ -158,6 +159,11 @@ export async function doctor(): Promise<void> {
     line(m.ok ? 'ok' : 'fail', m.ok ? 'Email access works — verification emails are handled automatically' : 'Email access fails', m.detail);
   } else {
     line('warn', 'Email access not set', 'portals that email a verification link wait for you — dashboard → Email access');
+  }
+  const sites = Object.entries(readMemory());
+  if (sites.length) {
+    const learned = sites.filter(([, m]) => m.learned).map(([k]) => k);
+    console.log(`   careers sites seen: ${sites.length}${learned.length ? ` — learned by the AI agent: ${learned.slice(0, 8).join(', ')}` : ''}`);
   }
   console.log(`   autopilot: ${loadSettings().autopilot ? 'on (never stops to ask)' : 'off (unknown questions go to "Needs you")'}`);
 

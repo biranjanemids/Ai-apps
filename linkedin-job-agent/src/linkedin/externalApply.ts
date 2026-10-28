@@ -8,6 +8,8 @@ import { workdayApply } from './workday.js';
 import { accountPortalApply } from './accountPortal.js';
 import { applyHref, applyMethod, findApplyButton, passInterstitials, unwrapLinkedIn } from './jobs.js';
 import { aiPickClick } from '../ai.js';
+import { pageAgent } from './pageAgent.js';
+import { navFor, saveTrail, startTrail, trailClick } from './siteMemory.js';
 import type { ApplyResult } from './easyApply.js';
 
 /** Portals that need an account first. The agent creates one with your job-portal password. */
@@ -43,7 +45,7 @@ export function detectPortal(url: string): { kind: 'account' | 'greenhouse' | 'l
   return { kind: 'form', name: 'company site' };
 }
 
-const SUCCESS = /thank you for (applying|your (application|interest))|application (has been |was )?(received|submitted|sent)|we('ve| have) received your application|successfully (applied|submitted)|application complete/i;
+export const SUCCESS = /thank you for (applying|your (application|interest))|application (has been |was )?(received|submitted|sent)|we('ve| have) received your application|successfully (applied|submitted)|application complete/i;
 
 /**
  * Applies on the company's own careers site (the job's "Apply" button). Fills standard
@@ -92,10 +94,21 @@ export async function externalApply(
     return { status: 'failed', note: `Apply button didn't open the company site (stayed on ${site.url().split('?')[0]})` };
   }
 
+  startTrail(applyUrl);
   try {
+    const res = await route();
+    if (res.status === 'applied' || res.status === 'dry_run') saveTrail();
+    return res;
+  } finally {
+    await close();
+  }
+
+  async function route(): Promise<ApplyResult> {
     // Career pages often hand over to another site (jobs.company.com → Workday/iCIMS…), so
     // re-check where we are after every hop
     let aiClicks = 0;
+    const navClicks: string[] = [];
+    let replayed = false;
     for (let hop = 0; hop < 6; hop++) {
       await dismissCookies(site);
       const portal = detectPortal(site.url());
@@ -118,19 +131,36 @@ export async function externalApply(
         return await accountPortalApply(site, portal.name, me, qctx, dryRun);
       }
       const form = await findForm(site, 6000);
-      if (form) return await fillAndSubmit(site, form, portal.name, me, qctx, dryRun, applyUrl);
+      if (form) {
+        return await fillAndSubmit(site, form, portal.name, me, qctx, dryRun, applyUrl);
+      }
+      // Been here before: repeat the clicks that reached the form last time
+      if (!replayed) {
+        replayed = true;
+        const before = site.url();
+        for (const text of navFor(applyUrl)) {
+          const el = site.locator('a, button, [role="button"], input[type="submit"]').filter({ hasText: new RegExp(`^\\s*${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`, 'i') }).first();
+          if (!(await visible(el))) break;
+          await el.click().catch(() => {});
+          await site.waitForLoadState('domcontentloaded').catch(() => {});
+          await pause(1500, 2500);
+          navClicks.push(text);
+          trailClick(text);
+        }
+        if (site.url() !== before || navClicks.length) continue;
+      }
       // Unfamiliar page: let the AI pick the button that leads to the application
       if (aiClicks++ >= 3) break;
-      const moved = await aiStep(site, ctx);
+      const moved = await aiStep(site, ctx, navClicks);
       if (!moved) break;
       if (moved !== site) {
         opened.add(moved);
         site = moved;
       }
     }
-    return { status: 'needs_attention', note: `couldn't find an application form on ${new URL(site.url()).host}`, applyUrl: site.url() };
-  } finally {
-    await close();
+    // Nothing built in fits this site: the AI page agent drives it step by step
+    const learned = await pageAgent(site, ctx, new URL(site.url()).host, qctx, dryRun, 'no application form recognised');
+    return learned ?? { status: 'needs_attention', note: `couldn't find an application form on ${new URL(site.url()).host}`, applyUrl: site.url() };
   }
 }
 
@@ -152,7 +182,7 @@ async function dismissCookies(site: Page) {
 }
 
 /** Asks the AI which link/button leads to the application; clicks it. Returns the page now showing. */
-export async function aiStep(site: Page, ctx: BrowserContext = site.context()): Promise<Page | null> {
+export async function aiStep(site: Page, ctx: BrowserContext = site.context(), clicked?: string[]): Promise<Page | null> {
   const items: Locator[] = [];
   const labels: string[] = [];
   for (const el of await site.locator('a, button, [role="button"], input[type="submit"], input[type="button"]').all()) {
@@ -175,6 +205,8 @@ export async function aiStep(site: Page, ctx: BrowserContext = site.context()): 
   if (i === null) return null;
   const before = site.url();
   const popup = ctx.waitForEvent('page', { timeout: 8000 }).catch(() => null);
+  clicked?.push(labels[i].replace(/ → .*$/, ''));
+  trailClick(labels[i].replace(/ → .*$/, ''));
   await items[i].click().catch(() => {});
   await site.waitForLoadState('domcontentloaded').catch(() => {});
   await pause(1500, 2500);
@@ -257,7 +289,8 @@ export async function fillAndSubmit(
 
     const submit = submitBtn();
     if (!(await visible(submit))) {
-      return { status: 'needs_attention', note: `${name}: no Submit button found`, applyUrl: site.url() };
+      return (await pageAgent(site, site.context(), name, qctx, dryRun, 'no Submit button found')) ??
+        { status: 'needs_attention', note: `${name}: no Submit button found`, applyUrl: site.url() };
     }
     if (dryRun) return { status: 'dry_run', note: `${name}: form filled (dry run — not sent)`, applyUrl: site.url() };
     await submit.click();
@@ -267,13 +300,17 @@ export async function fillAndSubmit(
     ]).catch(() => false);
     if (done) return { status: 'applied', note: `submitted on ${name}`, applyUrl };
     const errors = await visibleErrors(site);
-    if (errors.length) return { status: 'needs_attention', note: `${name} rejected the form: ${errors.join(' ').slice(0, 120)}`, applyUrl: site.url() };
+    if (errors.length) {
+      return (await pageAgent(site, site.context(), name, qctx, dryRun, `the site showed errors: ${errors.join(' ').slice(0, 200)}`)) ??
+        { status: 'needs_attention', note: `${name} rejected the form: ${errors.join(' ').slice(0, 120)}`, applyUrl: site.url() };
+    }
     // "Submit" sometimes just saves a step (e.g. before a review page) — keep going if the page moved on
     const moved = (await pageSignature(site)) !== before;
     const fields = await site.locator('input:visible, select:visible, textarea:visible, button[type="submit"]:visible').count().catch(() => 0);
     if (!moved || !fields) break;
   }
-  return { status: 'failed', note: `${name}: clicked Submit but saw no confirmation`, applyUrl: site.url() };
+  return (await pageAgent(site, site.context(), name, qctx, dryRun, 'clicked Submit but saw no confirmation')) ??
+    { status: 'failed', note: `${name}: clicked Submit but saw no confirmation`, applyUrl: site.url() };
 }
 
 /** Application systems career pages link out to — following the link beats hunting for buttons. */
@@ -484,7 +521,7 @@ export async function hasBlockingCaptcha(site: Page): Promise<boolean> {
 }
 
 /** Turns the AI cover note into a PDF for forms that want a cover-letter file. */
-async function coverLetterPdf(site: Page, qctx: QuestionContext): Promise<string | null> {
+export async function coverLetterPdf(site: Page, qctx: QuestionContext): Promise<string | null> {
   const note = qctx.coverNote ? await qctx.coverNote() : null;
   if (!note) return null;
   qctx.aiLog?.push({ q: 'Cover letter (PDF)', a: note });
