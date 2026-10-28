@@ -41,10 +41,16 @@ That needs Render's Starter plan (about US$7/month); the free plan has no disk.
 ```bash
 cd linkedin-job-agent
 docker build -t job-agent .
-docker run -d --name job-agent -p 8787:8787 -v job-agent-data:/data \
+docker run -d --name job-agent --restart unless-stopped -p 8787:8787 -v job-agent-data:/data \
   -e DASHBOARD_TOKEN=$(openssl rand -hex 24) -e EXCLUDED_COMPANIES="Your Company,Parent Group" job-agent
 docker logs job-agent   # prints the dashboard link with your token
 ```
+
+The web version has everything the phone version has: Easy Apply, company sites, Workday/iCIMS/Taleo accounts, the AI page agent for unknown sites,
+email verification, autopilot and the company block. Set the job-portal password, Email access and the AI key on the dashboard (or as `PORTAL_PASSWORD`,
+`MAIL_APP_PASSWORD` and `GROQ_API_KEY` in Render's Environment), then pick **Settings → Run automatically**.
+A server never sleeps or gets killed by Android, so this is the most reliable way to run without supervision.
+Instead of `check.sh` / `report.sh`, use the **Health check** and **Application report** buttons under Activity.
 
 Notes for the web version:
 - Anyone with the dashboard link and token can control the agent, so keep the token private.

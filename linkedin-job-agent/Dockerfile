@@ -15,7 +15,8 @@ RUN npm run build && npm prune --omit=dev
 
 # Login session, profile, resume, answers and job history live on a persistent disk
 RUN mkdir -p /data && chown node:node /data
-ENV NODE_ENV=production DATA_DIR=/data ANSWERS_PATH=/data/answers.json HEADLESS=true PORT=8787
+# CHROME_LEAN: one browser process — fits small servers (Render Starter has 512 MB)
+ENV NODE_ENV=production DATA_DIR=/data ANSWERS_PATH=/data/answers.json HEADLESS=true PORT=8787 CHROME_LEAN=1 AUTOPILOT=true
 VOLUME /data
 USER node
 EXPOSE 8787

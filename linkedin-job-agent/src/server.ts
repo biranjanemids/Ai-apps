@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import fs from 'node:fs';
+import { execFile } from 'node:child_process';
 import { aiEnabled, aiHealth } from './ai.js';
 import { portalAccounts } from './linkedin/workday.js';
 import { mailHealth } from './mail.js';
@@ -197,6 +198,16 @@ export function startServer() {
     return { ok };
   }));
   app.post('/api/login/cancel', wrap(() => login.stop()));
+
+  // The phone's check.sh / report.sh, for the web version (no terminal there)
+  const cliText = (cmd: 'doctor' | 'report') => (_req: Request, res: Response) => {
+    const cli = path.join(path.dirname(fileURLToPath(import.meta.url)), 'cli.js');
+    execFile(process.execPath, [cli, cmd], { timeout: 120000, maxBuffer: 2_000_000, env: process.env }, (err, stdout, stderr) => {
+      res.type('text/plain').send((stdout || '') + (err && !stdout ? `\n${stderr || err.message}` : ''));
+    });
+  };
+  app.get('/api/doctor', cliText('doctor'));
+  app.get('/api/report', cliText('report'));
 
   app.get('/api/debug/last-error.png', (_req, res) => {
     if (!fs.existsSync(LAST_ERROR_SHOT)) return res.status(404).json({ error: 'none' });

@@ -236,6 +236,14 @@
         <img id="shotimg" alt="Browser screenshot at the last error" hidden style="width:100%;margin-top:8px;border-radius:8px;border:1px solid var(--line)">
       </div>
       <pre id="logs"></pre>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" onclick="showText('/api/report', 'Application report')">Application report</button>
+        <button class="ghost" onclick="showText('/api/doctor', 'Health check')">Health check</button>
+      </div>
+      <div id="textbox" hidden style="margin-top:10px">
+        <div class="row" style="align-items:center"><b id="texttitle"></b><button class="ghost" style="flex:0" onclick="copyText()">Copy</button><button class="ghost" style="flex:0" onclick="$('textbox').hidden=true">Close</button></div>
+        <pre id="textout" style="max-height:60vh;overflow:auto;white-space:pre-wrap"></pre>
+      </div>
     </section>
     </div>
   </div>
@@ -359,6 +367,19 @@ async function saveAnswers(e) {
   setTimeout(() => ($('anssaved').textContent = ''), 2500);
 }
 
+async function showText(path, title) {
+  $('textbox').hidden = false;
+  $('texttitle').textContent = title;
+  $('textout').textContent = 'Working… (the health check takes up to a minute)';
+  const r = await fetch(path, { headers: { Authorization: 'Bearer ' + token } });
+  $('textout').textContent = r.status === 401 ? 'Not signed in' : await r.text();
+}
+function copyText() {
+  const t = $('textout').textContent;
+  (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => alert('Copied — paste it when asking for help'), () => {
+    const r = document.createRange(); r.selectNodeContents($('textout')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+  });
+}
 async function saveMail() {
   const r = await post('/api/mail', { password: $('mailpw').value });
   $('mailstatus').innerHTML = r.error ? '<span class="bad">' + esc(r.error) + '</span>' : '<span class="ok">Connected ✓</span> ' + esc(r.detail);

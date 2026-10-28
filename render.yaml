@@ -27,5 +27,13 @@ services:
         value: "0"
       - key: GROQ_API_KEY
         sync: false
+      # Password the agent uses to create Workday / iCIMS / Taleo accounts (or set it on the dashboard)
+      - key: PORTAL_PASSWORD
+        sync: false
+      # Inbox app password so the agent opens verification emails itself (or set it on the dashboard)
+      - key: MAIL_APP_PASSWORD
+        sync: false
+      - key: AUTOPILOT
+        value: "true"
       - key: NTFY_TOPIC
         sync: false
