@@ -69,7 +69,14 @@ export async function doctor(): Promise<void> {
     );
     const android = Number(sh('getprop', ['ro.build.version.release']).split('.')[0]) || 0;
     if (android >= 12) {
-      console.log(`   Android ${android}: if runs stop in the background, turn off "phantom process" killing — see README "Keep it running"`);
+      // "[Process completed (signal 9)]" in Termux is this killer at work
+      const monitor = sh('/system/bin/settings', ['get', 'global', 'settings_enable_monitor_phantom_procs']);
+      const fixed = monitor === 'false' || fs.existsSync(path.join(DATA_DIR, 'android-fixed'));
+      line(
+        fixed ? 'ok' : 'warn',
+        fixed ? `Android ${android}: background process killer is off` : `Android ${android} may kill the agent mid-application ("Process completed (signal 9)")`,
+        fixed ? '' : 'fix it once from the phone: bash termux/fix-android-kill.sh',
+      );
     }
     const hours = loadSettings().autoRunHours;
     console.log(`   automatic runs: ${hours ? `every ${hours} h` : 'off (Settings → Run automatically)'}`);

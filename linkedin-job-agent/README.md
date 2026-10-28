@@ -82,7 +82,9 @@ Android may still pause or kill Termux in the background, so do these once:
 
 1. **Battery:** Settings → Apps → Termux → Battery → **Unrestricted**. On Xiaomi/Redmi/POCO also turn on **Autostart**; on Samsung, add Termux to **Never sleeping apps**; on Oppo/Vivo/Realme allow **background activity**.
 2. **Keep Termux in Recents:** don't swipe Termux away. Lock it in the recent-apps screen if your phone offers that (long-press its card → Lock).
-3. **Android 12 and newer:** Android kills apps that run many background processes, and Chromium does. To stop that:
+3. **Android 12 and newer:** Android kills apps that run many background processes. If Termux shows `[Process completed (signal 9)]`, this is why.
+   The agent's browser now runs as a single process to avoid it, but the sure fix is to switch the killer off. **From the phone itself, no computer needed:**
+   `bash ~/Ai-apps/linkedin-job-agent/termux/fix-android-kill.sh` (uses Wireless debugging; it walks you through the steps). Other ways:
    - **Android 14+:** Settings → About phone → tap *Build number* 7 times → Developer options → turn on **Disable child process restrictions**.
    - **Android 12–13:** from a computer with ADB:
      `adb shell "/system/bin/device_config set_sync_disabled_for_tests persistent; /system/bin/device_config put activity_manager max_phantom_processes 2147483647"`
@@ -96,6 +98,8 @@ The agent also protects itself:
 - With **Settings → Run automatically**, it searches and applies every few hours without you opening anything.
 
 To update later, run the same `curl … | bash` line again. Your data and `.env` are kept.
+
+**What happened to each job?** Run `bash ~/Ai-apps/linkedin-job-agent/termux/report.sh` (or the **Job Agent Report** widget). It's light enough to run while a search is going.
 
 **Is it working?** Run `bash ~/Ai-apps/linkedin-job-agent/termux/check.sh`, or tap the **Check Job Agent** widget.
 It checks Node.js, Chromium, the dashboard, internet access to LinkedIn, your LinkedIn login, profile, resume,

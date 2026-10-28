@@ -35,7 +35,8 @@ export async function openBrowser(
   opts: { headless?: boolean; viewport?: { width: number; height: number }; lite?: boolean } = {},
 ): Promise<BrowserContext> {
   const args = ['--disable-blink-features=AutomationControlled'];
-  if (process.platform === 'android') {
+  const android = process.platform === 'android';
+  if (android || process.env.CHROME_LEAN === '1') {
     // Termux's Chromium can't use the Linux sandbox and has a tiny /dev/shm; keep memory low
     // so Android doesn't kill the browser mid-run
     args.push(
@@ -44,6 +45,9 @@ export async function openBrowser(
       '--disable-features=Translate,BackForwardCache,MediaRouter,OptimizationHints,site-per-process',
       '--js-flags=--max-old-space-size=384',
     );
+    // One process instead of 5-8: Android 12+ kills apps with many child processes
+    // ("Process completed (signal 9)" in Termux). CHROME_MULTI_PROCESS=1 turns this off.
+    if (process.env.CHROME_MULTI_PROCESS !== '1') args.push('--single-process', '--no-zygote', '--in-process-gpu', '--disable-breakpad', '--disable-crash-reporter', '--no-crashpad');
   }
   const ctx = await chromium.launchPersistentContext(USER_DATA, {
     headless: opts.headless ?? env.headless,

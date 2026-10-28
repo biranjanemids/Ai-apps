@@ -39,6 +39,7 @@ mkdir -p "$HOME/.shortcuts"
 cp termux/start.sh "$HOME/.shortcuts/Job Agent"
 cp termux/stop.sh "$HOME/.shortcuts/Stop Job Agent"
 cp termux/check.sh "$HOME/.shortcuts/Check Job Agent"
+cp termux/report.sh "$HOME/.shortcuts/Job Agent Report"
 chmod +x "$HOME/.shortcuts/"*
 
 # Start automatically when the phone boots (needs the Termux:Boot app, opened once)
