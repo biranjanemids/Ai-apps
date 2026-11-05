@@ -105,6 +105,8 @@ The agent also protects itself:
 
 To update later, run the same `curl … | bash` line again. Your data and `.env` are kept.
 
+**Apply right now, reliably:** `bash ~/Ai-apps/linkedin-job-agent/termux/apply-now.sh` (or the **Apply Now** widget). It runs with Termux open on screen, which Android doesn't kill, shows each step, and prints the report at the end. Use it if runs keep stopping in the background.
+
 **What happened to each job?** Run `bash ~/Ai-apps/linkedin-job-agent/termux/report.sh` (or the **Job Agent Report** widget). It's light enough to run while a search is going.
 
 **Is it working?** Run `bash ~/Ai-apps/linkedin-job-agent/termux/check.sh`, or tap the **Check Job Agent** widget.
