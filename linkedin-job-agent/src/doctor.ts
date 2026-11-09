@@ -53,7 +53,7 @@ export async function doctor(): Promise<void> {
   if (process.platform === 'android') {
     const sh = (cmd: string, args: string[]) => {
       try {
-        return execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000 }).trim();
+        return execFileSync(cmd, args, { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
       } catch {
         return '';
       }
