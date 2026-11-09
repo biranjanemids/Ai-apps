@@ -3,6 +3,11 @@
 # Pass --no-open to start without opening the browser (used at phone boot).
 cd "$HOME/Ai-apps/linkedin-job-agent" || exit 1
 mkdir -p data
+if ! node --version > /dev/null 2>&1; then
+  echo "❌ Node.js is broken (usually after a partial Termux update). Fix: pkg upgrade -y"
+  echo "   If it still fails: pkg install -y --reinstall libicu nodejs-lts"
+  exit 1
+fi
 rm -f data/stopped
 termux-wake-lock 2>/dev/null || true   # keep the CPU awake while the screen is off
 PORT=$(grep -E '^PORT=' .env | cut -d= -f2); PORT=${PORT:-8787}

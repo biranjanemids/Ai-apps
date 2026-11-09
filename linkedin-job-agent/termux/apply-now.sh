@@ -5,6 +5,11 @@
 # foreground, shows every step, and prints the report at the end.
 cd "$HOME/Ai-apps/linkedin-job-agent" || exit 1
 termux-wake-lock 2>/dev/null || true
+if ! node --version > /dev/null 2>&1; then
+  echo "❌ Node.js is broken (usually after a partial Termux update). Fix: pkg upgrade -y"
+  echo "   If it still fails: pkg install -y --reinstall libicu nodejs-lts"
+  exit 1
+fi
 cat <<'TIP'
 Keep Termux open on the screen until it says "Finished". Plug in the charger and turn on
 Developer options → "Stay awake" so the screen doesn't turn off. Don't switch apps.

@@ -7,10 +7,17 @@ REPO="${REPO:-https://github.com/biranjanemids/Ai-apps.git}"
 DIR="$HOME/Ai-apps"
 
 echo "==> Installing Node.js, git and Chromium (takes a few minutes)…"
-pkg update -y
+# Full upgrade first: installing a new Node.js on top of old system libraries breaks it
+# ("CANNOT LINK EXECUTABLE node: library libicu… not found")
+export DEBIAN_FRONTEND=noninteractive
+yes | pkg upgrade -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold
 pkg install -y nodejs-lts git curl x11-repo
 pkg install -y chromium
 pkg install -y termux-api || true   # optional: phone notifications (also install the Termux:API app)
+if ! node --version > /dev/null 2>&1; then
+  echo "==> Repairing Node.js…"
+  pkg install -y --reinstall libicu nodejs-lts
+fi
 
 echo "==> Downloading the agent…"
 if [ -d "$DIR/.git" ]; then
